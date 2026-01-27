@@ -1,0 +1,274 @@
+//! Application state model
+
+use crate::db::{Comment, ReviewDetail, ReviewSummary, ThreadDetail, ThreadSummary};
+use crate::diff::ParsedDiff;
+use crate::theme::Theme;
+
+/// File content for displaying context when no diff is available
+#[derive(Debug, Clone)]
+pub struct FileContent {
+    pub lines: Vec<String>,
+}
+
+/// Current screen/view
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Screen {
+    #[default]
+    ReviewList,
+    ReviewDetail,
+}
+
+/// Which pane has focus
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Focus {
+    #[default]
+    ReviewList,
+    FileSidebar,
+    DiffPane,
+    ThreadExpanded,
+}
+
+/// Responsive layout mode based on terminal width
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayoutMode {
+    /// >= 120 cols: full sidebar + diff
+    Full,
+    /// 90-119 cols: compact sidebar + diff
+    Compact,
+    /// 70-89 cols: overlay sidebar (toggleable)
+    Overlay,
+    /// < 70 cols: single pane mode
+    Single,
+}
+
+/// Diff view mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DiffViewMode {
+    /// Traditional unified diff (default)
+    #[default]
+    Unified,
+    /// Side-by-side diff (old left, new right)
+    SideBySide,
+}
+
+impl LayoutMode {
+    /// Determine layout mode from terminal width
+    #[must_use]
+    pub const fn from_width(width: u16) -> Self {
+        match width {
+            w if w >= 120 => Self::Full,
+            w if w >= 90 => Self::Compact,
+            w if w >= 70 => Self::Overlay,
+            _ => Self::Single,
+        }
+    }
+
+    /// Get sidebar width for this layout mode
+    #[must_use]
+    pub const fn sidebar_width(self) -> u16 {
+        match self {
+            Self::Full => 20,
+            Self::Compact => 14,
+            Self::Overlay => 20,
+            Self::Single => 0,
+        }
+    }
+}
+
+/// Filter for review list
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ReviewFilter {
+    #[default]
+    All,
+    Open,
+}
+
+/// Application state
+pub struct Model {
+    // === Screen state ===
+    pub screen: Screen,
+    pub focus: Focus,
+
+    // === Data ===
+    pub reviews: Vec<ReviewSummary>,
+    pub current_review: Option<ReviewDetail>,
+    pub threads: Vec<ThreadSummary>,
+    pub current_thread: Option<ThreadDetail>,
+    pub comments: Vec<Comment>,
+    /// Parsed diff for the currently selected file
+    pub current_diff: Option<ParsedDiff>,
+    /// File content for context when no diff available
+    pub current_file_content: Option<FileContent>,
+
+    // === UI state ===
+    /// Selected index in review list
+    pub list_index: usize,
+    /// Scroll offset in review list
+    pub list_scroll: usize,
+    /// Selected file index in sidebar
+    pub file_index: usize,
+    /// Scroll offset in diff pane
+    pub diff_scroll: usize,
+    /// Currently expanded thread ID
+    pub expanded_thread: Option<String>,
+    /// Review list filter
+    pub filter: ReviewFilter,
+    /// Show sidebar in overlay mode
+    pub sidebar_visible: bool,
+    /// Diff view mode (unified or side-by-side)
+    pub diff_view_mode: DiffViewMode,
+
+    // === Layout ===
+    pub width: u16,
+    pub height: u16,
+    pub layout_mode: LayoutMode,
+
+    // === Theme ===
+    pub theme: Theme,
+
+    // === Control ===
+    pub should_quit: bool,
+    /// Flag indicating the view needs a full redraw
+    pub needs_redraw: bool,
+}
+
+impl Model {
+    /// Create a new model
+    #[must_use]
+    pub fn new(width: u16, height: u16) -> Self {
+        Self {
+            screen: Screen::default(),
+            focus: Focus::default(),
+            reviews: Vec::new(),
+            current_review: None,
+            threads: Vec::new(),
+            current_thread: None,
+            comments: Vec::new(),
+            current_diff: None,
+            current_file_content: None,
+            list_index: 0,
+            list_scroll: 0,
+            file_index: 0,
+            diff_scroll: 0,
+            expanded_thread: None,
+            filter: ReviewFilter::default(),
+            sidebar_visible: true,
+            diff_view_mode: DiffViewMode::default(),
+            width,
+            height,
+            layout_mode: LayoutMode::from_width(width),
+            theme: Theme::default(),
+            should_quit: false,
+            needs_redraw: true,
+        }
+    }
+
+    /// Get filtered reviews based on current filter
+    #[must_use]
+    pub fn filtered_reviews(&self) -> Vec<&ReviewSummary> {
+        match self.filter {
+            ReviewFilter::All => self.reviews.iter().collect(),
+            ReviewFilter::Open => self.reviews.iter().filter(|r| r.status == "open").collect(),
+        }
+    }
+
+    /// Get unique files from threads for the sidebar
+    #[must_use]
+    pub fn files_with_threads(&self) -> Vec<FileEntry> {
+        use std::collections::HashMap;
+
+        let mut files: HashMap<String, (usize, usize)> = HashMap::new();
+
+        for thread in &self.threads {
+            let entry = files.entry(thread.file_path.clone()).or_insert((0, 0));
+            if thread.status == "open" {
+                entry.0 += 1;
+            } else {
+                entry.1 += 1;
+            }
+        }
+
+        let mut result: Vec<_> = files
+            .into_iter()
+            .map(|(path, (open, resolved))| FileEntry {
+                path,
+                open_threads: open,
+                resolved_threads: resolved,
+            })
+            .collect();
+
+        result.sort_by(|a, b| a.path.cmp(&b.path));
+        result
+    }
+
+    /// Get threads for the currently selected file
+    #[must_use]
+    pub fn threads_for_current_file(&self) -> Vec<&ThreadSummary> {
+        let files = self.files_with_threads();
+        let Some(file) = files.get(self.file_index) else {
+            return Vec::new();
+        };
+
+        self.threads
+            .iter()
+            .filter(|t| t.file_path == file.path)
+            .collect()
+    }
+
+    /// Get threads that are visible in the current diff (have anchors in diff hunks)
+    #[must_use]
+    pub fn visible_threads_for_current_file(&self) -> Vec<&ThreadSummary> {
+        let all_threads = self.threads_for_current_file();
+
+        // If no diff, return all threads (fallback view shows all)
+        let Some(diff) = &self.current_diff else {
+            return all_threads;
+        };
+
+        // Build sets of line numbers present in the diff
+        let mut old_lines: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        let mut new_lines: std::collections::HashSet<u32> = std::collections::HashSet::new();
+
+        for hunk in &diff.hunks {
+            for line in &hunk.lines {
+                if let Some(ln) = line.old_line {
+                    old_lines.insert(ln);
+                }
+                if let Some(ln) = line.new_line {
+                    new_lines.insert(ln);
+                }
+            }
+        }
+
+        // Filter to threads whose start line is in the diff
+        all_threads
+            .into_iter()
+            .filter(|t| {
+                let start = t.selection_start as u32;
+                new_lines.contains(&start) || old_lines.contains(&start)
+            })
+            .collect()
+    }
+
+    /// Handle terminal resize
+    pub fn resize(&mut self, width: u16, height: u16) {
+        self.width = width;
+        self.height = height;
+        self.layout_mode = LayoutMode::from_width(width);
+    }
+
+    /// Get the visible height for the review list (accounting for chrome)
+    #[must_use]
+    pub const fn list_visible_height(&self) -> usize {
+        // Account for border (2) + title (1) + status bar (1)
+        self.height.saturating_sub(4) as usize
+    }
+}
+
+/// File entry for sidebar display
+#[derive(Debug, Clone)]
+pub struct FileEntry {
+    pub path: String,
+    pub open_threads: usize,
+    pub resolved_threads: usize,
+}

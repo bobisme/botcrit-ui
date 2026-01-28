@@ -211,6 +211,7 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
                 theme,
                 &anchors,
                 &model.comments,
+                &model.highlighted_lines,
             );
         } else {
             render_diff_with_threads(
@@ -221,6 +222,7 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
                 theme,
                 &anchors,
                 &model.comments,
+                &model.highlighted_lines,
             );
         }
         return;

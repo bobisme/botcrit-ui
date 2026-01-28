@@ -5,6 +5,8 @@
 use opentui::Rgba;
 use serde::{Deserialize, Serialize};
 
+use crate::syntax::SyntaxColors;
+
 /// Diff-specific color tokens
 #[derive(Debug, Clone)]
 pub struct DiffTheme {
@@ -65,6 +67,9 @@ pub struct Theme {
 
     // Diff colors
     pub diff: DiffTheme,
+
+    // Syntax highlighting colors
+    pub syntax: SyntaxColors,
 }
 
 impl Default for Theme {
@@ -114,6 +119,8 @@ impl Theme {
                 added_line_number_bg: Rgba::from_hex("#152515").unwrap_or(Rgba::BLACK),
                 removed_line_number_bg: Rgba::from_hex("#251515").unwrap_or(Rgba::BLACK),
             },
+
+            syntax: SyntaxColors::tokyo_night(),
         }
     }
 
@@ -157,6 +164,8 @@ impl Theme {
                 added_line_number_bg: Rgba::from_hex("#b5ccb5").unwrap_or(Rgba::WHITE),
                 removed_line_number_bg: Rgba::from_hex("#ccb5b5").unwrap_or(Rgba::WHITE),
             },
+
+            syntax: SyntaxColors::light(),
         }
     }
 }
@@ -205,6 +214,7 @@ impl TryFrom<ThemeFile> for Theme {
 
     fn try_from(file: ThemeFile) -> Result<Self, Self::Error> {
         let c = &file.colors;
+        let is_light = file.name.to_lowercase().contains("light");
         Ok(Self {
             name: file.name,
             background: parse_color(&c.background)?,
@@ -233,6 +243,13 @@ impl TryFrom<ThemeFile> for Theme {
                 line_number: parse_color(&c.diff_line_number)?,
                 added_line_number_bg: parse_color(&c.diff_added_line_number_bg)?,
                 removed_line_number_bg: parse_color(&c.diff_removed_line_number_bg)?,
+            },
+            // Use default syntax colors based on theme name
+            // TODO: Add syntax colors to ThemeFile for full customization
+            syntax: if is_light {
+                SyntaxColors::light()
+            } else {
+                SyntaxColors::tokyo_night()
             },
         })
     }

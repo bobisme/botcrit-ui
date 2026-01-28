@@ -5,6 +5,7 @@ use opentui::{OptimizedBuffer, Style};
 use super::components::Rect;
 use crate::db::ThreadSummary;
 use crate::diff::{DiffLine, DiffLineKind, ParsedDiff};
+use crate::syntax::HighlightSpan;
 use crate::theme::Theme;
 
 /// Thread anchor info for rendering
@@ -85,6 +86,7 @@ pub fn render_diff_with_threads(
     theme: &Theme,
     anchors: &[ThreadAnchor],
     comments: &[crate::db::Comment],
+    highlighted_lines: &[Vec<HighlightSpan>],
 ) {
     let dt = &theme.diff;
 
@@ -166,6 +168,8 @@ pub fn render_diff_with_threads(
                 );
             }
             DisplayLine::Diff(line) => {
+                // Get highlights for this line if available
+                let highlights = highlighted_lines.get(line_idx);
                 render_diff_line(
                     buffer,
                     area.x + thread_col_width,
@@ -174,6 +178,7 @@ pub fn render_diff_with_threads(
                     content_width,
                     line,
                     dt,
+                    highlights,
                 );
             }
         }
@@ -351,7 +356,7 @@ pub fn render_diff(
     scroll: usize,
     theme: &Theme,
 ) {
-    render_diff_with_threads(buffer, area, diff, scroll, theme, &[], &[]);
+    render_diff_with_threads(buffer, area, diff, scroll, theme, &[], &[], &[]);
 }
 
 /// Render a single diff line
@@ -363,9 +368,10 @@ fn render_diff_line(
     content_width: u32,
     line: &DiffLine,
     dt: &crate::theme::DiffTheme,
+    highlights: Option<&Vec<HighlightSpan>>,
 ) {
     // Determine colors based on line type
-    let (bg, line_num_bg, fg, sign, sign_color) = match line.kind {
+    let (bg, line_num_bg, _default_fg, sign, sign_color) = match line.kind {
         DiffLineKind::Added => (
             dt.added_bg,
             dt.added_line_number_bg,
@@ -423,14 +429,41 @@ fn render_diff_line(
     // Draw sign
     buffer.draw_text(content_x, y, sign, Style::fg(sign_color).with_bg(bg));
 
-    // Draw content (truncated if needed)
+    // Draw content with syntax highlighting if available
     let max_content = content_width.saturating_sub(2) as usize;
-    let content = if line.content.len() > max_content {
-        &line.content[..max_content]
+
+    if let Some(spans) = highlights {
+        // Render with syntax highlighting
+        let mut col = content_x + 1;
+        let mut chars_drawn = 0;
+
+        for span in spans {
+            if chars_drawn >= max_content {
+                break;
+            }
+
+            let remaining = max_content - chars_drawn;
+            let text = if span.text.len() > remaining {
+                &span.text[..remaining]
+            } else {
+                &span.text
+            };
+
+            if !text.is_empty() {
+                buffer.draw_text(col, y, text, Style::fg(span.fg).with_bg(bg));
+                col += text.len() as u32;
+                chars_drawn += text.len();
+            }
+        }
     } else {
-        &line.content
-    };
-    buffer.draw_text(content_x + 1, y, content, Style::fg(fg).with_bg(bg));
+        // Fallback: render without highlighting
+        let content = if line.content.len() > max_content {
+            &line.content[..max_content]
+        } else {
+            &line.content
+        };
+        buffer.draw_text(content_x + 1, y, content, Style::fg(dt.context).with_bg(bg));
+    }
 }
 
 /// A line to display (either hunk header or diff line)
@@ -578,6 +611,7 @@ pub fn render_diff_side_by_side(
     theme: &Theme,
     anchors: &[ThreadAnchor],
     comments: &[crate::db::Comment],
+    _highlighted_lines: &[Vec<HighlightSpan>], // TODO: implement syntax highlighting for side-by-side
 ) {
     let dt = &theme.diff;
 

@@ -2,6 +2,7 @@
 
 use crate::db::{Comment, ReviewDetail, ReviewSummary, ThreadDetail, ThreadSummary};
 use crate::diff::ParsedDiff;
+use crate::syntax::{HighlightSpan, Highlighter};
 use crate::theme::Theme;
 
 /// File content for displaying context when no diff is available
@@ -99,6 +100,10 @@ pub struct Model {
     pub current_diff: Option<ParsedDiff>,
     /// File content for context when no diff available
     pub current_file_content: Option<FileContent>,
+    /// Syntax highlighter
+    pub highlighter: Highlighter,
+    /// Cached highlighted lines for current diff (indexed by display line)
+    pub highlighted_lines: Vec<Vec<HighlightSpan>>,
 
     // === UI state ===
     /// Selected index in review list
@@ -146,6 +151,8 @@ impl Model {
             comments: Vec::new(),
             current_diff: None,
             current_file_content: None,
+            highlighter: Highlighter::new(),
+            highlighted_lines: Vec::new(),
             list_index: 0,
             list_scroll: 0,
             file_index: 0,

@@ -266,6 +266,14 @@ fn handle_data_loading(model: &mut Model, db: &Db, repo_path: Option<&std::path:
                     model.current_diff = vcs::get_file_diff(repo, &file.path, from, to);
                     model.diff_scroll = 0;
 
+                    // Compute syntax highlighting for the diff
+                    if let Some(diff) = &model.current_diff {
+                        model.highlighted_lines =
+                            compute_diff_highlights(diff, &file.path, &model.highlighter);
+                    } else {
+                        model.highlighted_lines.clear();
+                    }
+
                     // If no diff (file didn't change), fetch file content for context
                     if model.current_diff.is_none() {
                         // Use the final commit (or initial if no final) to show current state
@@ -273,6 +281,12 @@ fn handle_data_loading(model: &mut Model, db: &Db, repo_path: Option<&std::path:
                         if let Some(lines) = vcs::get_file_content(repo, &file.path, commit) {
                             model.current_file_content =
                                 Some(botcrit_ui::model::FileContent { lines });
+                            // Compute highlights for file content
+                            model.highlighted_lines = compute_file_highlights(
+                                &model.current_file_content.as_ref().unwrap().lines,
+                                &file.path,
+                                &model.highlighter,
+                            );
                         }
                     }
                 }
@@ -512,4 +526,46 @@ fn read_with_timeout(buf: &mut [u8], _timeout: Duration) -> std::io::Result<usiz
     // poll/select or async I/O for proper timeout handling.
     // For now, we rely on the terminal being in raw mode with VMIN=0, VTIME=1
     std::io::stdin().read(buf)
+}
+
+/// Compute syntax highlighting for diff lines
+fn compute_diff_highlights(
+    diff: &botcrit_ui::diff::ParsedDiff,
+    file_path: &str,
+    highlighter: &botcrit_ui::Highlighter,
+) -> Vec<Vec<botcrit_ui::HighlightSpan>> {
+    let mut result = Vec::new();
+
+    // Get a file highlighter to maintain state across lines
+    let Some(mut file_hl) = highlighter.for_file(file_path) else {
+        return result;
+    };
+
+    for hunk in &diff.hunks {
+        // Hunk header - no highlighting needed
+        result.push(Vec::new());
+
+        for line in &hunk.lines {
+            let spans = file_hl.highlight_line(&line.content);
+            result.push(spans);
+        }
+    }
+
+    result
+}
+
+/// Compute syntax highlighting for file content lines
+fn compute_file_highlights(
+    lines: &[String],
+    file_path: &str,
+    highlighter: &botcrit_ui::Highlighter,
+) -> Vec<Vec<botcrit_ui::HighlightSpan>> {
+    let Some(mut file_hl) = highlighter.for_file(file_path) else {
+        return Vec::new();
+    };
+
+    lines
+        .iter()
+        .map(|line| file_hl.highlight_line(line))
+        .collect()
 }

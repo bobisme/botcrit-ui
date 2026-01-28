@@ -17,6 +17,7 @@ pub fn update(model: &mut Model, msg: Message) {
             model.current_review = None; // Clear to trigger reload
             model.current_diff = None;
             model.current_file_content = None;
+            model.highlighted_lines.clear();
             model.threads.clear();
             model.comments.clear();
             model.needs_redraw = true;
@@ -30,6 +31,7 @@ pub fn update(model: &mut Model, msg: Message) {
                 model.current_review = None;
                 model.current_diff = None;
                 model.current_file_content = None;
+                model.highlighted_lines.clear();
                 model.threads.clear();
                 model.comments.clear();
                 model.needs_redraw = true;
@@ -103,6 +105,7 @@ pub fn update(model: &mut Model, msg: Message) {
                 model.comments.clear();
                 model.current_diff = None;
                 model.current_file_content = None;
+                model.highlighted_lines.clear();
             }
         }
 
@@ -114,6 +117,7 @@ pub fn update(model: &mut Model, msg: Message) {
                 model.comments.clear();
                 model.current_diff = None;
                 model.current_file_content = None;
+                model.highlighted_lines.clear();
             }
         }
 
@@ -126,6 +130,7 @@ pub fn update(model: &mut Model, msg: Message) {
                 model.comments.clear();
                 model.current_diff = None;
                 model.current_file_content = None;
+                model.highlighted_lines.clear();
             }
         }
 

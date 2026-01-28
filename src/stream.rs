@@ -196,7 +196,7 @@ fn comment_block_height(comments: &[Comment], content_width: u32) -> usize {
     }
     let max_width = content_width.saturating_sub((BLOCK_LEFT_PAD + BLOCK_RIGHT_PAD + 1) as u32);
     let max_width = max_width as usize;
-    let mut content_lines = 0usize;
+    let mut content_lines = 1; // thread header line
     for comment in comments {
         content_lines += 1; // author line
         let wrapped = wrap_text(&comment.body, max_width);

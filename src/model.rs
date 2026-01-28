@@ -66,9 +66,9 @@ impl LayoutMode {
     #[must_use]
     pub const fn from_width(width: u16) -> Self {
         match width {
-            w if w >= 120 => Self::Full,
-            w if w >= 90 => Self::Compact,
-            w if w >= 70 => Self::Overlay,
+            w if w >= 130 => Self::Full,
+            w if w >= 100 => Self::Compact,
+            w if w >= 80 => Self::Overlay,
             _ => Self::Single,
         }
     }
@@ -77,9 +77,9 @@ impl LayoutMode {
     #[must_use]
     pub const fn sidebar_width(self) -> u16 {
         match self {
-            Self::Full => 20,
-            Self::Compact => 14,
-            Self::Overlay => 20,
+            Self::Full => 28,
+            Self::Compact => 24,
+            Self::Overlay => 22,
             Self::Single => 0,
         }
     }

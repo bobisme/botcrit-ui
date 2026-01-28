@@ -2,7 +2,9 @@
 
 use crate::message::Message;
 use crate::model::{DiffViewMode, Focus, Model, ReviewFilter, Screen};
-use crate::stream::{active_file_index, compute_stream_layout, file_scroll_offset};
+use crate::stream::{
+    active_file_index, compute_stream_layout, file_scroll_offset, thread_stream_offset,
+};
 
 /// Update the model based on a message, returning an optional command
 pub fn update(model: &mut Model, msg: Message) {
@@ -212,6 +214,7 @@ pub fn update(model: &mut Model, msg: Message) {
         Message::ExpandThread(id) => {
             model.expanded_thread = Some(id);
             model.focus = Focus::ThreadExpanded;
+            center_on_thread(model);
             update_active_file_from_scroll(model);
         }
 
@@ -310,6 +313,25 @@ fn update_active_file_from_scroll(model: &mut Model) {
         model.sync_active_file_cache();
     }
     model.needs_redraw = true;
+}
+
+fn center_on_thread(model: &mut Model) {
+    let Some(thread_id) = model.expanded_thread.clone() else {
+        return;
+    };
+    let layout = stream_layout(model);
+    let files = model.files_with_threads();
+    if let Some(stream_row) = thread_stream_offset(
+        &layout,
+        &files,
+        &model.file_cache,
+        &model.threads,
+        &thread_id,
+    ) {
+        let view_height = model.height.saturating_sub(2) as usize;
+        let center = view_height / 2;
+        model.diff_scroll = stream_row.saturating_sub(center);
+    }
 }
 
 fn stream_layout(model: &Model) -> crate::stream::StreamLayout {

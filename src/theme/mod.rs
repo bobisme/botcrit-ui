@@ -299,13 +299,39 @@ pub struct ThemeLoadResult {
     pub syntax_theme: Option<String>,
 }
 
+const BUILTIN_THEMES: &[(&str, &str)] = &[
+    (
+        "default-dark",
+        include_str!("../../themes/default-dark.json"),
+    ),
+    (
+        "default-light",
+        include_str!("../../themes/default-light.json"),
+    ),
+];
+
 pub fn load_theme_from_path(path: &Path) -> anyhow::Result<ThemeLoadResult> {
     let json = std::fs::read_to_string(path)?;
-    let theme_file: ThemeFile = serde_json::from_str(&json)?;
+    load_theme_from_str(&json)
+}
+
+pub fn load_theme_from_str(json: &str) -> anyhow::Result<ThemeLoadResult> {
+    let theme_file: ThemeFile = serde_json::from_str(json)?;
     let syntax_theme = theme_file.syntax_theme.clone();
     let theme = Theme::try_from(theme_file)?;
     Ok(ThemeLoadResult {
         theme,
         syntax_theme,
     })
+}
+
+pub fn load_built_in_theme(name: &str) -> Option<ThemeLoadResult> {
+    BUILTIN_THEMES
+        .iter()
+        .find(|(theme_name, _)| *theme_name == name)
+        .and_then(|(_, json)| load_theme_from_str(json).ok())
+}
+
+pub fn built_in_theme_names() -> Vec<&'static str> {
+    BUILTIN_THEMES.iter().map(|(name, _)| *name).collect()
 }

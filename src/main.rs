@@ -4,7 +4,7 @@
 //!
 //! If no path is provided, looks for .crit/index.db in current directory.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -13,8 +13,9 @@ use opentui::{
     RendererOptions,
 };
 
-use botcrit_ui::theme::load_theme_from_path;
-use botcrit_ui::{update, vcs, view, Db, Highlighter, Message, Model, Screen};
+use botcrit_ui::config::{load_ui_config, save_ui_config};
+use botcrit_ui::theme::{load_built_in_theme, load_theme_from_path};
+use botcrit_ui::{update, vcs, view, Db, Highlighter, Message, Model, Screen, Theme};
 
 fn main() -> Result<()> {
     let args = parse_args()?;
@@ -43,13 +44,46 @@ fn main() -> Result<()> {
     };
 
     // Load theme (optional)
-    let (theme, syntax_theme) = if let Some(theme_path) = &args.theme_path {
-        let loaded = load_theme_from_path(theme_path)
-            .with_context(|| format!("Failed to load theme: {}", theme_path.display()))?;
-        (loaded.theme, loaded.syntax_theme)
+    let mut config = load_ui_config()?.unwrap_or_default();
+    let theme_override = args
+        .theme
+        .clone()
+        .or_else(|| std::env::var("BOTCRIT_UI_THEME").ok());
+    let theme_selection = theme_override.clone().or_else(|| config.theme.clone());
+
+    let default_theme =
+        load_built_in_theme("default-dark").unwrap_or_else(|| botcrit_ui::theme::ThemeLoadResult {
+            theme: Theme::default(),
+            syntax_theme: None,
+        });
+
+    let mut selected_builtin: Option<String> = None;
+    let (theme, syntax_theme) = if let Some(selection) = theme_selection {
+        if let Some(loaded) = load_built_in_theme(&selection) {
+            selected_builtin = Some(selection);
+            (loaded.theme, loaded.syntax_theme)
+        } else {
+            let path = Path::new(&selection);
+            if path.exists() {
+                let loaded = load_theme_from_path(path)
+                    .with_context(|| format!("Failed to load theme: {}", path.display()))?;
+                (loaded.theme, loaded.syntax_theme)
+            } else if theme_override.is_some() {
+                anyhow::bail!("Unknown theme: {selection}");
+            } else {
+                (default_theme.theme, default_theme.syntax_theme)
+            }
+        }
     } else {
-        (botcrit_ui::Theme::default(), None)
+        (default_theme.theme, default_theme.syntax_theme)
     };
+
+    if theme_override.is_some() {
+        if let Some(name) = selected_builtin {
+            config.theme = Some(name);
+            save_ui_config(&config)?;
+        }
+    }
 
     // Get terminal size
     let (width, height) = terminal_size().unwrap_or((80, 24));
@@ -153,13 +187,13 @@ fn main() -> Result<()> {
 
 struct CliArgs {
     db_path: Option<PathBuf>,
-    theme_path: Option<PathBuf>,
+    theme: Option<String>,
 }
 
 fn parse_args() -> Result<CliArgs> {
     let args: Vec<String> = std::env::args().collect();
     let mut db_path: Option<PathBuf> = None;
-    let mut theme_path = std::env::var("BOTCRIT_UI_THEME").ok().map(PathBuf::from);
+    let mut theme: Option<String> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -168,11 +202,11 @@ fn parse_args() -> Result<CliArgs> {
                 println!("Usage: crit-ui [options] [path-to-crit-db]");
                 println!();
                 println!("Options:");
-                println!("  --theme <path>   Load theme from JSON file");
+                println!("  --theme <name|path>   Load theme by name or JSON path");
                 println!("  --db <path>      Path to .crit/index.db");
                 println!();
                 println!("Environment:");
-                println!("  BOTCRIT_UI_THEME  Theme JSON path");
+                println!("  BOTCRIT_UI_THEME  Theme name or JSON path");
                 println!();
                 println!(
                     "If no DB path is provided, looks for .crit/index.db in current directory."
@@ -185,7 +219,7 @@ fn parse_args() -> Result<CliArgs> {
                 if i >= args.len() {
                     anyhow::bail!("--theme requires a path");
                 }
-                theme_path = Some(PathBuf::from(&args[i]));
+                theme = Some(args[i].clone());
             }
             "--db" => {
                 i += 1;
@@ -216,10 +250,7 @@ fn parse_args() -> Result<CliArgs> {
         }
     }
 
-    Ok(CliArgs {
-        db_path,
-        theme_path,
-    })
+    Ok(CliArgs { db_path, theme })
 }
 
 fn map_event_to_message(model: &Model, event: Event) -> Message {

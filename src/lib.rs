@@ -9,6 +9,7 @@
 
 pub mod db;
 pub mod diff;
+pub mod config;
 pub mod message;
 pub mod model;
 pub mod stream;

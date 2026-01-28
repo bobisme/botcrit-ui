@@ -24,6 +24,12 @@ pub struct ThreadAnchor {
     pub is_expanded: bool,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ChangeCounts {
+    added: usize,
+    removed: usize,
+}
+
 fn block_inner_x(area: Rect) -> u32 {
     area.x + BLOCK_SIDE_MARGIN + 1 + BLOCK_LEFT_PAD
 }
@@ -74,6 +80,117 @@ fn draw_block_text_line(
     };
     draw_block_base_line(buffer, area, y, bg, theme);
     buffer.draw_text(content_x, y, display_text, style.with_bg(bg));
+}
+
+fn draw_block_line_with_right(
+    buffer: &mut OptimizedBuffer,
+    area: Rect,
+    y: u32,
+    bg: Rgba,
+    left: &str,
+    right: Option<&str>,
+    left_style: Style,
+    right_style: Style,
+    theme: &Theme,
+) {
+    draw_block_base_line(buffer, area, y, bg, theme);
+
+    let content_x = block_inner_x(area);
+    let content_width = block_inner_width(area) as usize;
+    let right_text = right.unwrap_or("");
+    let right_len = right_text.len();
+    let left_max = if right_len > 0 {
+        content_width.saturating_sub(right_len + 1)
+    } else {
+        content_width
+    };
+
+    let left_text = if left_max == 0 {
+        ""
+    } else if left.len() > left_max {
+        &left[..left_max]
+    } else {
+        left
+    };
+
+    buffer.draw_text(content_x, y, left_text, left_style.with_bg(bg));
+
+    if right_len > 0 && right_len <= content_width {
+        let right_x = content_x + content_width as u32 - right_len as u32;
+        buffer.draw_text(right_x, y, right_text, right_style.with_bg(bg));
+    }
+}
+
+pub fn diff_change_counts(diff: &ParsedDiff) -> ChangeCounts {
+    let mut added = 0usize;
+    let mut removed = 0usize;
+    for hunk in &diff.hunks {
+        for line in &hunk.lines {
+            match line.kind {
+                DiffLineKind::Added => added += 1,
+                DiffLineKind::Removed => removed += 1,
+                DiffLineKind::Context => {}
+            }
+        }
+    }
+    ChangeCounts { added, removed }
+}
+
+fn draw_file_header_line(
+    buffer: &mut OptimizedBuffer,
+    area: Rect,
+    y: u32,
+    theme: &Theme,
+    file_path: &str,
+    counts: Option<ChangeCounts>,
+) {
+    let bg = theme.panel_bg;
+    draw_block_base_line(buffer, area, y, bg, theme);
+
+    let content_x = block_inner_x(area);
+    let content_width = block_inner_width(area) as usize;
+
+    let mut right_len = 0usize;
+    if let Some(counts) = counts {
+        right_len += format!("+{}", counts.added).len();
+        right_len += 3; // " / "
+        right_len += format!("-{}", counts.removed).len();
+    }
+
+    let left_max = if right_len > 0 {
+        content_width.saturating_sub(right_len + 1)
+    } else {
+        content_width
+    };
+    let left_text = if left_max == 0 {
+        ""
+    } else if file_path.len() > left_max {
+        &file_path[..left_max]
+    } else {
+        file_path
+    };
+
+    buffer.draw_text(
+        content_x,
+        y,
+        left_text,
+        Style::fg(theme.foreground).with_bg(bg),
+    );
+
+    if let Some(counts) = counts {
+        let right_text = format!("+{} / -{}", counts.added, counts.removed);
+        let right_width = right_text.len() as u32;
+        if right_width > 0 && right_width as usize <= content_width {
+            let mut x = content_x + block_inner_width(area) - right_width;
+            let add_text = format!("+{}", counts.added);
+            buffer.draw_text(x, y, &add_text, Style::fg(theme.success).with_bg(bg));
+            x += add_text.len() as u32;
+            buffer.draw_text(x, y, " / ", Style::fg(theme.muted).with_bg(bg));
+            x += 3;
+            let rem_text = format!("-{}", counts.removed);
+            buffer.draw_text(x, y, &rem_text, Style::fg(theme.error).with_bg(bg));
+        }
+    }
 }
 
 /// Map threads to display line indices within the diff
@@ -372,6 +489,7 @@ pub fn render_pinned_header_block(
     area: Rect,
     file_path: &str,
     theme: &Theme,
+    counts: Option<ChangeCounts>,
 ) -> usize {
     let content_lines = 1usize;
     let height = block_height(content_lines) as u32;
@@ -399,15 +517,7 @@ pub fn render_pinned_header_block(
         });
     }
     cursor.emit(|buf, y, theme| {
-        draw_block_text_line(
-            buf,
-            area,
-            y,
-            theme.panel_bg,
-            file_path,
-            Style::fg(theme.foreground),
-            theme,
-        );
+        draw_file_header_line(buf, area, y, theme, file_path, counts);
     });
     for _ in 0..BLOCK_PADDING {
         cursor.emit(|buf, y, theme| {
@@ -467,16 +577,12 @@ pub fn render_diff_stream(
                 draw_block_base_line(buf, area, y, theme.panel_bg, theme);
             });
         }
+        let counts = file_cache
+            .get(&file.path)
+            .and_then(|entry| entry.diff.as_ref())
+            .map(diff_change_counts);
         cursor.emit(|buf, y, theme| {
-            draw_block_text_line(
-                buf,
-                area,
-                y,
-                theme.panel_bg,
-                &file.path,
-                Style::fg(theme.foreground),
-                theme,
-            );
+            draw_file_header_line(buf, area, y, theme, &file.path, counts);
         });
         for _ in 0..BLOCK_PADDING {
             cursor.emit(|buf, y, theme| {
@@ -545,7 +651,12 @@ pub fn render_diff_stream(
 
                             if let Some(anchor) = anchor {
                                 if anchor.is_expanded {
-                                    emit_comment_block(&mut cursor, area, comments);
+                                    if let Some(thread) = file_threads
+                                        .iter()
+                                        .find(|t| t.thread_id == anchor.thread_id)
+                                    {
+                                        emit_comment_block(&mut cursor, area, thread, comments);
+                                    }
                                 }
                             }
 
@@ -572,7 +683,12 @@ pub fn render_diff_stream(
 
                             if let Some(anchor) = anchor {
                                 if anchor.is_expanded {
-                                    emit_comment_block(&mut cursor, area, comments);
+                                    if let Some(thread) = file_threads
+                                        .iter()
+                                        .find(|t| t.thread_id == anchor.thread_id)
+                                    {
+                                        emit_comment_block(&mut cursor, area, thread, comments);
+                                    }
                                 }
                             }
 
@@ -601,7 +717,7 @@ pub fn render_diff_stream(
                             file_threads.iter().find(|t| t.selection_start == *line_num)
                         {
                             if expanded_thread == Some(thread.thread_id.as_str()) {
-                                emit_comment_block(&mut cursor, area, comments);
+                                emit_comment_block(&mut cursor, area, thread, comments);
                             }
                         }
                     }
@@ -793,16 +909,85 @@ fn render_side_by_side_line_block(
     );
 }
 
-fn emit_comment_block(cursor: &mut StreamCursor<'_>, area: Rect, comments: &[crate::db::Comment]) {
+#[derive(Clone)]
+enum CommentLineKind {
+    Header,
+    Author,
+    Body,
+}
+
+#[derive(Clone)]
+struct CommentLine {
+    left: String,
+    right: Option<String>,
+    kind: CommentLineKind,
+}
+
+fn emit_comment_block(
+    cursor: &mut StreamCursor<'_>,
+    area: Rect,
+    thread: &ThreadSummary,
+    comments: &[crate::db::Comment],
+) {
     if comments.is_empty() {
         return;
     }
+
     let content_width = block_inner_width(area) as usize;
-    let mut content_lines = Vec::new();
+    let mut content_lines: Vec<CommentLine> = Vec::new();
+
+    let line_range = if let Some(end) = thread.selection_end {
+        format!("{}-{}", thread.selection_start, end)
+    } else {
+        format!("{}", thread.selection_start)
+    };
+    let mut right_text = format!("{}:{}", thread.file_path, line_range);
+    let right_max = content_width.saturating_sub(thread.thread_id.len().saturating_add(1));
+    if right_max > 0 && right_text.len() > right_max {
+        right_text = super::components::truncate_path(&right_text, right_max);
+    } else if right_max == 0 {
+        right_text.clear();
+    }
+    content_lines.push(CommentLine {
+        left: thread.thread_id.clone(),
+        right: if right_text.is_empty() {
+            None
+        } else {
+            Some(right_text)
+        },
+        kind: CommentLineKind::Header,
+    });
+    content_lines.push(CommentLine {
+        left: String::new(),
+        right: None,
+        kind: CommentLineKind::Body,
+    });
+
     for comment in comments {
-        content_lines.push(format!("@{}", comment.author));
+        let left = format!("@{}", comment.author);
+        let right_max = content_width.saturating_sub(left.len().saturating_add(1));
+        let right = if right_max > 0 {
+            let mut id = comment.comment_id.clone();
+            if id.len() > right_max {
+                id.truncate(right_max);
+            }
+            Some(id)
+        } else {
+            None
+        };
+        content_lines.push(CommentLine {
+            left,
+            right,
+            kind: CommentLineKind::Author,
+        });
         let wrapped = wrap_text(&comment.body, content_width);
-        content_lines.extend(wrapped);
+        for line in wrapped {
+            content_lines.push(CommentLine {
+                left: line,
+                right: None,
+                kind: CommentLineKind::Body,
+            });
+        }
     }
 
     let total_rows = block_height(content_lines.len());
@@ -815,13 +1000,23 @@ fn emit_comment_block(cursor: &mut StreamCursor<'_>, area: Rect, comments: &[cra
             } else if row < BLOCK_MARGIN + BLOCK_PADDING {
                 draw_block_base_line(buf, area, y, theme.panel_bg, theme);
             } else if row < BLOCK_MARGIN + BLOCK_PADDING + content_lines.len() {
-                let text = &content_lines[content_idx];
-                let style = if text.starts_with('@') {
-                    Style::fg(theme.primary)
-                } else {
-                    Style::fg(theme.foreground)
+                let line = &content_lines[content_idx];
+                let (left_style, right_style) = match line.kind {
+                    CommentLineKind::Header => (Style::fg(theme.muted), Style::fg(theme.muted)),
+                    CommentLineKind::Author => (Style::fg(theme.primary), Style::fg(theme.muted)),
+                    CommentLineKind::Body => (Style::fg(theme.foreground), Style::fg(theme.muted)),
                 };
-                draw_block_text_line(buf, area, y, theme.panel_bg, text, style, theme);
+                draw_block_line_with_right(
+                    buf,
+                    area,
+                    y,
+                    theme.panel_bg,
+                    &line.left,
+                    line.right.as_deref(),
+                    left_style,
+                    right_style,
+                    theme,
+                );
                 content_idx += 1;
             } else if row < BLOCK_MARGIN + BLOCK_PADDING + content_lines.len() + BLOCK_PADDING {
                 draw_block_base_line(buf, area, y, theme.panel_bg, theme);

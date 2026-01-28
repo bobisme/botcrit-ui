@@ -3,7 +3,7 @@
 use opentui::{OptimizedBuffer, Style};
 
 use super::components::{draw_text_truncated, truncate_path, Rect};
-use super::diff::{render_diff_stream, render_pinned_header_block};
+use super::diff::{diff_change_counts, render_diff_stream, render_pinned_header_block};
 use crate::model::{Focus, LayoutMode, Model};
 use crate::stream::block_height;
 
@@ -91,17 +91,63 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     buffer.fill_rect(inner.x, inner.y, inner.width, inner.height, theme.panel_bg);
     let files = model.files_with_threads();
 
+    let mut y = inner.y;
+    let text_x = inner.x + 1;
+    let text_width = inner.width.saturating_sub(2);
+
+    if let Some(review) = &model.current_review {
+        y += 1;
+        draw_text_truncated(
+            buffer,
+            text_x,
+            y,
+            &review.review_id,
+            text_width,
+            Style::fg(theme.foreground).with_bold(),
+        );
+        y += 1;
+
+        let bookmark = format!("<{}>", review.jj_change_id);
+        draw_text_truncated(
+            buffer,
+            text_x,
+            y,
+            &bookmark,
+            text_width,
+            Style::fg(theme.muted),
+        );
+        y += 1;
+
+        let from = short_hash(&review.initial_commit);
+        let to = short_hash(
+            review
+                .final_commit
+                .as_deref()
+                .unwrap_or(&review.initial_commit),
+        );
+        let commit_range = format!("@{} -> @{}", from, to);
+        draw_text_truncated(
+            buffer,
+            text_x,
+            y,
+            &commit_range,
+            text_width,
+            Style::fg(theme.muted),
+        );
+        y += 2;
+    }
+
     if files.is_empty() {
-        buffer.draw_text(inner.x + 1, inner.y, "No files", Style::fg(theme.muted));
+        buffer.draw_text(text_x, y, "No files", Style::fg(theme.muted));
         return;
     }
 
     for (i, file) in files.iter().enumerate() {
-        if i >= inner.height as usize {
+        if y >= inner.y + inner.height {
             break;
         }
 
-        let y = inner.y + i as u32;
+        let row_y = y;
         let selected = i == model.file_index;
 
         // Selection indicator and background
@@ -115,7 +161,7 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
             ("  ", Style::fg(theme.foreground))
         };
 
-        buffer.draw_text(inner.x + 1, y, prefix, style);
+        buffer.draw_text(inner.x + 1, row_y, prefix, style);
 
         // Thread count indicator
         let thread_indicator = if file.open_threads > 0 {
@@ -144,7 +190,7 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         draw_text_truncated(
             buffer,
             inner.x + prefix_width + 1,
-            y,
+            row_y,
             &filename,
             filename_width,
             style,
@@ -153,11 +199,19 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         // Draw thread indicator at the end
         buffer.draw_text(
             inner.x + inner.width - indicator_width,
-            y,
+            row_y,
             &thread_indicator,
             Style::fg(indicator_color),
         );
+
+        y += 1;
     }
+}
+
+fn short_hash(hash: &str) -> &str {
+    let len = hash.len();
+    let end = len.min(8);
+    &hash[..end]
 }
 
 fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
@@ -179,6 +233,12 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         .get(model.file_index)
         .map_or("No file selected", |f| f.path.as_str());
 
+    let counts = files
+        .get(model.file_index)
+        .and_then(|file| model.file_cache.get(&file.path))
+        .and_then(|entry| entry.diff.as_ref())
+        .map(diff_change_counts);
+
     render_diff_stream(
         buffer,
         inner,
@@ -199,7 +259,7 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         inner.width,
         pinned_height.min(inner.height),
     );
-    render_pinned_header_block(buffer, pinned_area, file_title, theme);
+    render_pinned_header_block(buffer, pinned_area, file_title, theme, counts);
 }
 
 fn draw_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {

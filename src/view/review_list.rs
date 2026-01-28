@@ -2,7 +2,7 @@
 
 use opentui::{OptimizedBuffer, Style};
 
-use super::components::{draw_box, draw_text_truncated, format_thread_count, Rect};
+use super::components::{draw_text_truncated, format_thread_count, Rect};
 use crate::model::Model;
 
 /// Render the review list screen
@@ -10,16 +10,21 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
     let theme = &model.theme;
     let area = Rect::from_size(model.width, model.height);
 
-    // Main box with title
-    draw_box(
-        buffer,
-        area,
-        theme.border,
-        Some("Reviews"),
-        theme.foreground,
+    // Header
+    buffer.fill_rect(area.x, area.y, area.width, 1, theme.background);
+    buffer.draw_text(
+        area.x + 2,
+        area.y,
+        "Reviews",
+        Style::fg(theme.foreground).with_bold(),
     );
 
-    let inner = area.inner();
+    let inner = Rect::new(
+        area.x,
+        area.y + 1,
+        area.width,
+        area.height.saturating_sub(2),
+    );
     let reviews = model.filtered_reviews();
 
     if reviews.is_empty() {
@@ -172,15 +177,8 @@ fn draw_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     let theme = &model.theme;
     let y = area.y + area.height - 1;
 
-    // Draw separator
-    buffer.draw_text(
-        area.x + 1,
-        y,
-        &"─".repeat(area.width.saturating_sub(2) as usize),
-        Style::fg(theme.border),
-    );
-
     // Help text
+    buffer.fill_rect(area.x, y, area.width, 1, theme.background);
     let help = "j/k navigate  Enter select  o open only  a all  q quit";
     buffer.draw_text(area.x + 2, y, help, Style::fg(theme.muted));
 }

@@ -279,8 +279,8 @@ impl Model {
     /// Get the visible height for the review list (accounting for chrome)
     #[must_use]
     pub const fn list_visible_height(&self) -> usize {
-        // Account for border (2) + title (1) + status bar (1)
-        self.height.saturating_sub(4) as usize
+        // Account for header (1) + status bar (1)
+        self.height.saturating_sub(2) as usize
     }
 
     /// Sync current file fields from the file cache

@@ -9,6 +9,7 @@ use crate::text::wrap_text;
 
 pub const BLOCK_MARGIN: usize = 1;
 pub const BLOCK_PADDING: usize = 1;
+pub const BLOCK_SIDE_MARGIN: u32 = 2;
 pub const BLOCK_LEFT_PAD: u32 = 2;
 pub const BLOCK_RIGHT_PAD: u32 = 2;
 pub const SIDE_BY_SIDE_MIN_WIDTH: u32 = 120;

@@ -134,13 +134,13 @@ pub fn update(model: &mut Model, msg: Message) {
         }
 
         Message::PageUp => {
-            let page = model.height.saturating_sub(4) as usize;
+            let page = model.height.saturating_sub(2) as usize;
             model.diff_scroll = model.diff_scroll.saturating_sub(page);
             update_active_file_from_scroll(model);
         }
 
         Message::PageDown => {
-            let page = model.height.saturating_sub(4) as usize;
+            let page = model.height.saturating_sub(2) as usize;
             // TODO: clamp to content height
             model.diff_scroll += page;
             update_active_file_from_scroll(model);
@@ -303,7 +303,7 @@ fn stream_layout(model: &Model) -> crate::stream::StreamLayout {
 }
 
 fn diff_content_width(model: &Model) -> u32 {
-    let outer_inner_width = model.width.saturating_sub(2) as u32;
+    let outer_inner_width = model.width as u32;
     let diff_pane_width = match model.layout_mode {
         crate::model::LayoutMode::Full | crate::model::LayoutMode::Compact => {
             if model.sidebar_visible {

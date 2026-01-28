@@ -2,7 +2,7 @@
 
 use opentui::{OptimizedBuffer, Style};
 
-use super::components::{draw_box, draw_text_truncated, truncate_path, Rect};
+use super::components::{draw_text_truncated, truncate_path, Rect};
 use super::diff::{render_diff_stream, render_pinned_header_block};
 use crate::model::{Focus, LayoutMode, Model};
 use crate::stream::block_height;
@@ -25,16 +25,21 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
 
     let full_title = format!("{review_id}: {title}");
 
-    // Main outer box
-    draw_box(
-        buffer,
-        area,
-        theme.border,
-        Some(&full_title),
-        theme.foreground,
+    // Header
+    buffer.fill_rect(area.x, area.y, area.width, 1, theme.background);
+    buffer.draw_text(
+        area.x + 2,
+        area.y,
+        &full_title,
+        Style::fg(theme.foreground).with_bold(),
     );
 
-    let inner = area.inner();
+    let inner = Rect::new(
+        area.x,
+        area.y + 1,
+        area.width,
+        area.height.saturating_sub(2),
+    );
 
     // Layout based on mode
     match model.layout_mode {
@@ -82,22 +87,12 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
 
 fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     let theme = &model.theme;
-    let focused = matches!(model.focus, Focus::FileSidebar);
-
-    // Box around sidebar
-    let border_color = if focused {
-        theme.border_focused
-    } else {
-        theme.border
-    };
-
-    draw_box(buffer, area, border_color, Some("Files"), theme.foreground);
-
-    let inner = area.inner();
+    let inner = area;
+    buffer.fill_rect(inner.x, inner.y, inner.width, inner.height, theme.panel_bg);
     let files = model.files_with_threads();
 
     if files.is_empty() {
-        buffer.draw_text(inner.x, inner.y, "No files", Style::fg(theme.muted));
+        buffer.draw_text(inner.x + 1, inner.y, "No files", Style::fg(theme.muted));
         return;
     }
 
@@ -120,7 +115,7 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
             ("  ", Style::fg(theme.foreground))
         };
 
-        buffer.draw_text(inner.x, y, prefix, style);
+        buffer.draw_text(inner.x + 1, y, prefix, style);
 
         // Thread count indicator
         let thread_indicator = if file.open_threads > 0 {
@@ -142,13 +137,13 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         let prefix_width: u32 = 2;
         let filename_width = inner
             .width
-            .saturating_sub(prefix_width + indicator_width + 1);
+            .saturating_sub(prefix_width + indicator_width + 2);
 
         // Draw filename (truncated)
         let filename = truncate_path(&file.path, filename_width as usize);
         draw_text_truncated(
             buffer,
-            inner.x + prefix_width,
+            inner.x + prefix_width + 1,
             y,
             &filename,
             filename_width,
@@ -167,30 +162,7 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
 
 fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     let theme = &model.theme;
-    let focused = matches!(model.focus, Focus::DiffPane | Focus::ThreadExpanded);
-
-    // Box around diff pane
-    let border_color = if focused {
-        theme.border_focused
-    } else {
-        theme.border
-    };
-
-    // Get current file name for title
-    let files = model.files_with_threads();
-    let file_title = files
-        .get(model.file_index)
-        .map_or("No file selected", |f| f.path.as_str());
-
-    draw_box(
-        buffer,
-        area,
-        border_color,
-        Some(file_title),
-        theme.foreground,
-    );
-
-    let inner = area.inner();
+    let inner = area;
 
     let files = model.files_with_threads();
     if files.is_empty() {
@@ -234,6 +206,7 @@ fn draw_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     let theme = &model.theme;
     let y = area.y + area.height - 1;
 
+    buffer.fill_rect(area.x, y, area.width, 1, theme.background);
     // Help text based on focus
     let help = match model.focus {
         Focus::FileSidebar => "j/k files  Enter/Space diff  s sidebar  h back  q quit",

@@ -6,7 +6,7 @@ use super::components::Rect;
 use crate::db::ThreadSummary;
 use crate::diff::{DiffLine, DiffLineKind, ParsedDiff};
 use crate::stream::{
-    block_height, BLOCK_LEFT_PAD, BLOCK_MARGIN, BLOCK_PADDING, BLOCK_RIGHT_PAD,
+    block_height, BLOCK_LEFT_PAD, BLOCK_MARGIN, BLOCK_PADDING, BLOCK_RIGHT_PAD, BLOCK_SIDE_MARGIN,
     SIDE_BY_SIDE_MIN_WIDTH,
 };
 use crate::syntax::HighlightSpan;
@@ -25,12 +25,12 @@ pub struct ThreadAnchor {
 }
 
 fn block_inner_x(area: Rect) -> u32 {
-    area.x + 1 + BLOCK_LEFT_PAD
+    area.x + BLOCK_SIDE_MARGIN + 1 + BLOCK_LEFT_PAD
 }
 
 fn block_inner_width(area: Rect) -> u32 {
     area.width
-        .saturating_sub(1 + BLOCK_LEFT_PAD + BLOCK_RIGHT_PAD)
+        .saturating_sub(BLOCK_SIDE_MARGIN * 2 + 1 + BLOCK_LEFT_PAD + BLOCK_RIGHT_PAD)
 }
 
 fn draw_block_bar(buffer: &mut OptimizedBuffer, x: u32, y: u32, bg: Rgba, theme: &Theme) {
@@ -39,8 +39,21 @@ fn draw_block_bar(buffer: &mut OptimizedBuffer, x: u32, y: u32, bg: Rgba, theme:
 }
 
 fn draw_block_base_line(buffer: &mut OptimizedBuffer, area: Rect, y: u32, bg: Rgba, theme: &Theme) {
-    buffer.fill_rect(area.x, y, area.width, 1, bg);
-    draw_block_bar(buffer, area.x, y, bg, theme);
+    if BLOCK_SIDE_MARGIN > 0 {
+        buffer.fill_rect(area.x, y, BLOCK_SIDE_MARGIN, 1, theme.background);
+        buffer.fill_rect(
+            area.x + area.width.saturating_sub(BLOCK_SIDE_MARGIN),
+            y,
+            BLOCK_SIDE_MARGIN,
+            1,
+            theme.background,
+        );
+    }
+
+    let content_x = area.x + BLOCK_SIDE_MARGIN;
+    let content_width = area.width.saturating_sub(BLOCK_SIDE_MARGIN * 2);
+    buffer.fill_rect(content_x, y, content_width, 1, bg);
+    draw_block_bar(buffer, content_x, y, bg, theme);
 }
 
 fn draw_block_text_line(

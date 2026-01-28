@@ -2,6 +2,8 @@
 //!
 //! Provides color tokens for consistent styling across the UI.
 
+use std::path::Path;
+
 use opentui::Rgba;
 use serde::{Deserialize, Serialize};
 
@@ -175,6 +177,8 @@ impl Theme {
 pub struct ThemeFile {
     pub name: String,
     pub colors: ThemeColors,
+    #[serde(rename = "syntaxTheme")]
+    pub syntax_theme: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -207,6 +211,19 @@ pub struct ThemeColors {
     pub diff_line_number: String,
     pub diff_added_line_number_bg: String,
     pub diff_removed_line_number_bg: String,
+
+    // Optional syntax colors
+    pub syntax_keyword: Option<String>,
+    pub syntax_function: Option<String>,
+    pub syntax_type_name: Option<String>,
+    pub syntax_string: Option<String>,
+    pub syntax_number: Option<String>,
+    pub syntax_comment: Option<String>,
+    pub syntax_operator: Option<String>,
+    pub syntax_punctuation: Option<String>,
+    pub syntax_variable: Option<String>,
+    pub syntax_constant: Option<String>,
+    pub syntax_attribute: Option<String>,
 }
 
 impl TryFrom<ThemeFile> for Theme {
@@ -215,6 +232,22 @@ impl TryFrom<ThemeFile> for Theme {
     fn try_from(file: ThemeFile) -> Result<Self, Self::Error> {
         let c = &file.colors;
         let is_light = file.name.to_lowercase().contains("light");
+        let mut syntax = if is_light {
+            SyntaxColors::light()
+        } else {
+            SyntaxColors::tokyo_night()
+        };
+        apply_syntax_override(&mut syntax.keyword, &c.syntax_keyword)?;
+        apply_syntax_override(&mut syntax.function, &c.syntax_function)?;
+        apply_syntax_override(&mut syntax.type_name, &c.syntax_type_name)?;
+        apply_syntax_override(&mut syntax.string, &c.syntax_string)?;
+        apply_syntax_override(&mut syntax.number, &c.syntax_number)?;
+        apply_syntax_override(&mut syntax.comment, &c.syntax_comment)?;
+        apply_syntax_override(&mut syntax.operator, &c.syntax_operator)?;
+        apply_syntax_override(&mut syntax.punctuation, &c.syntax_punctuation)?;
+        apply_syntax_override(&mut syntax.variable, &c.syntax_variable)?;
+        apply_syntax_override(&mut syntax.constant, &c.syntax_constant)?;
+        apply_syntax_override(&mut syntax.attribute, &c.syntax_attribute)?;
         Ok(Self {
             name: file.name,
             background: parse_color(&c.background)?,
@@ -244,17 +277,35 @@ impl TryFrom<ThemeFile> for Theme {
                 added_line_number_bg: parse_color(&c.diff_added_line_number_bg)?,
                 removed_line_number_bg: parse_color(&c.diff_removed_line_number_bg)?,
             },
-            // Use default syntax colors based on theme name
-            // TODO: Add syntax colors to ThemeFile for full customization
-            syntax: if is_light {
-                SyntaxColors::light()
-            } else {
-                SyntaxColors::tokyo_night()
-            },
+            syntax,
         })
     }
 }
 
 fn parse_color(hex: &str) -> anyhow::Result<Rgba> {
     Rgba::from_hex(hex).ok_or_else(|| anyhow::anyhow!("Invalid hex color: {hex}"))
+}
+
+fn apply_syntax_override(target: &mut Rgba, source: &Option<String>) -> anyhow::Result<()> {
+    if let Some(hex) = source {
+        *target = parse_color(hex)?;
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct ThemeLoadResult {
+    pub theme: Theme,
+    pub syntax_theme: Option<String>,
+}
+
+pub fn load_theme_from_path(path: &Path) -> anyhow::Result<ThemeLoadResult> {
+    let json = std::fs::read_to_string(path)?;
+    let theme_file: ThemeFile = serde_json::from_str(&json)?;
+    let syntax_theme = theme_file.syntax_theme.clone();
+    let theme = Theme::try_from(theme_file)?;
+    Ok(ThemeLoadResult {
+        theme,
+        syntax_theme,
+    })
 }

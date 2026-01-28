@@ -23,6 +23,20 @@ Tools without injection should be added manually:
 - Botty: add runtime/testing notes if needed
 - Beads (br/bv): include the Beads Workflow block below
 
+## Rendering Tests (Botty)
+
+Use Botty for rendering verification with color escape codes:
+
+```bash
+botty spawn --name crit-ui -- <command>
+botty snapshot --raw --name crit-ui
+botty send --name crit-ui "<keys>"
+botty send-bytes --name crit-ui "<hex-bytes>"
+botty kill --name crit-ui
+```
+
+If a real screenshot is needed, use Ghostty + `grim` to capture the window.
+
 ## BotBus Coordination
 
 ```bash

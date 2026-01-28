@@ -66,6 +66,8 @@ pub enum Message {
     FilterAll,
     /// Toggle between unified and side-by-side diff view
     ToggleDiffView,
+    /// Toggle file sidebar visibility
+    ToggleSidebar,
 
     // === System ===
     /// Terminal resize event

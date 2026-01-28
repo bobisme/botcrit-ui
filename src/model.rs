@@ -1,5 +1,7 @@
 //! Application state model
 
+use std::collections::HashMap;
+
 use crate::db::{Comment, ReviewDetail, ReviewSummary, ThreadDetail, ThreadSummary};
 use crate::diff::ParsedDiff;
 use crate::syntax::{HighlightSpan, Highlighter};
@@ -9,6 +11,13 @@ use crate::theme::Theme;
 #[derive(Debug, Clone)]
 pub struct FileContent {
     pub lines: Vec<String>,
+}
+
+/// Cached data for a file in the review stream
+pub struct FileCacheEntry {
+    pub diff: Option<ParsedDiff>,
+    pub file_content: Option<FileContent>,
+    pub highlighted_lines: Vec<Vec<HighlightSpan>>,
 }
 
 /// Current screen/view
@@ -100,6 +109,8 @@ pub struct Model {
     pub current_diff: Option<ParsedDiff>,
     /// File content for context when no diff available
     pub current_file_content: Option<FileContent>,
+    /// Cache for all files in the review stream
+    pub file_cache: HashMap<String, FileCacheEntry>,
     /// Syntax highlighter
     pub highlighter: Highlighter,
     /// Cached highlighted lines for current diff (indexed by display line)
@@ -151,6 +162,7 @@ impl Model {
             comments: Vec::new(),
             current_diff: None,
             current_file_content: None,
+            file_cache: HashMap::new(),
             highlighter: Highlighter::new(),
             highlighted_lines: Vec::new(),
             list_index: 0,
@@ -269,6 +281,27 @@ impl Model {
     pub const fn list_visible_height(&self) -> usize {
         // Account for border (2) + title (1) + status bar (1)
         self.height.saturating_sub(4) as usize
+    }
+
+    /// Sync current file fields from the file cache
+    pub fn sync_active_file_cache(&mut self) {
+        let files = self.files_with_threads();
+        let Some(file) = files.get(self.file_index) else {
+            self.current_diff = None;
+            self.current_file_content = None;
+            self.highlighted_lines.clear();
+            return;
+        };
+
+        if let Some(entry) = self.file_cache.get(&file.path) {
+            self.current_diff = entry.diff.clone();
+            self.current_file_content = entry.file_content.clone();
+            self.highlighted_lines = entry.highlighted_lines.clone();
+        } else {
+            self.current_diff = None;
+            self.current_file_content = None;
+            self.highlighted_lines.clear();
+        }
     }
 }
 

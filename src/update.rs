@@ -2,6 +2,7 @@
 
 use crate::message::Message;
 use crate::model::{DiffViewMode, Focus, Model, ReviewFilter, Screen};
+use crate::stream::{active_file_index, compute_stream_layout, file_scroll_offset};
 
 /// Update the model based on a message, returning an optional command
 pub fn update(model: &mut Model, msg: Message) {
@@ -18,6 +19,7 @@ pub fn update(model: &mut Model, msg: Message) {
             model.current_diff = None;
             model.current_file_content = None;
             model.highlighted_lines.clear();
+            model.file_cache.clear();
             model.threads.clear();
             model.comments.clear();
             model.needs_redraw = true;
@@ -32,6 +34,7 @@ pub fn update(model: &mut Model, msg: Message) {
                 model.current_diff = None;
                 model.current_file_content = None;
                 model.highlighted_lines.clear();
+                model.file_cache.clear();
                 model.threads.clear();
                 model.comments.clear();
                 model.needs_redraw = true;
@@ -99,60 +102,48 @@ pub fn update(model: &mut Model, msg: Message) {
         Message::NextFile => {
             let file_count = model.files_with_threads().len();
             if file_count > 0 && model.file_index < file_count - 1 {
-                model.file_index += 1;
-                model.diff_scroll = 0;
-                model.expanded_thread = None;
-                model.comments.clear();
-                model.current_diff = None;
-                model.current_file_content = None;
-                model.highlighted_lines.clear();
+                let target = model.file_index + 1;
+                jump_to_file(model, target);
             }
         }
 
         Message::PrevFile => {
             if model.file_index > 0 {
-                model.file_index -= 1;
-                model.diff_scroll = 0;
-                model.expanded_thread = None;
-                model.comments.clear();
-                model.current_diff = None;
-                model.current_file_content = None;
-                model.highlighted_lines.clear();
+                let target = model.file_index - 1;
+                jump_to_file(model, target);
             }
         }
 
         Message::SelectFile(idx) => {
             let file_count = model.files_with_threads().len();
             if idx < file_count {
-                model.file_index = idx;
-                model.diff_scroll = 0;
-                model.expanded_thread = None;
-                model.comments.clear();
-                model.current_diff = None;
-                model.current_file_content = None;
-                model.highlighted_lines.clear();
+                jump_to_file(model, idx);
             }
         }
 
         // === Diff/Content Pane ===
         Message::ScrollUp => {
             model.diff_scroll = model.diff_scroll.saturating_sub(1);
+            update_active_file_from_scroll(model);
         }
 
         Message::ScrollDown => {
             // TODO: clamp to content height
             model.diff_scroll += 1;
+            update_active_file_from_scroll(model);
         }
 
         Message::PageUp => {
             let page = model.height.saturating_sub(4) as usize;
             model.diff_scroll = model.diff_scroll.saturating_sub(page);
+            update_active_file_from_scroll(model);
         }
 
         Message::PageDown => {
             let page = model.height.saturating_sub(4) as usize;
             // TODO: clamp to content height
             model.diff_scroll += page;
+            update_active_file_from_scroll(model);
         }
 
         Message::NextThread => {
@@ -197,11 +188,13 @@ pub fn update(model: &mut Model, msg: Message) {
         Message::ExpandThread(id) => {
             model.expanded_thread = Some(id);
             model.focus = Focus::ThreadExpanded;
+            update_active_file_from_scroll(model);
         }
 
         Message::CollapseThread => {
             model.expanded_thread = None;
             model.focus = Focus::DiffPane;
+            update_active_file_from_scroll(model);
         }
 
         // === Focus ===
@@ -243,11 +236,23 @@ pub fn update(model: &mut Model, msg: Message) {
                 DiffViewMode::SideBySide => DiffViewMode::Unified,
             };
             model.needs_redraw = true;
+            update_active_file_from_scroll(model);
+        }
+
+        Message::ToggleSidebar => {
+            model.sidebar_visible = !model.sidebar_visible;
+            if !model.sidebar_visible && matches!(model.focus, Focus::FileSidebar) {
+                model.focus = Focus::DiffPane;
+            }
+            model.needs_redraw = true;
+            update_active_file_from_scroll(model);
         }
 
         // === System ===
         Message::Resize { width, height } => {
             model.resize(width, height);
+            model.needs_redraw = true;
+            update_active_file_from_scroll(model);
         }
 
         Message::Tick => {
@@ -260,4 +265,54 @@ pub fn update(model: &mut Model, msg: Message) {
 
         Message::Noop => {}
     }
+}
+
+fn jump_to_file(model: &mut Model, index: usize) {
+    model.file_index = index;
+    model.expanded_thread = None;
+    model.comments.clear();
+
+    let layout = stream_layout(model);
+    model.diff_scroll = file_scroll_offset(&layout, index);
+    model.sync_active_file_cache();
+    model.needs_redraw = true;
+}
+
+fn update_active_file_from_scroll(model: &mut Model) {
+    let layout = stream_layout(model);
+    let active = active_file_index(&layout, model.diff_scroll);
+    if active != model.file_index {
+        model.file_index = active;
+        model.sync_active_file_cache();
+    }
+    model.needs_redraw = true;
+}
+
+fn stream_layout(model: &Model) -> crate::stream::StreamLayout {
+    let files = model.files_with_threads();
+    let width = diff_content_width(model);
+    compute_stream_layout(
+        &files,
+        &model.file_cache,
+        &model.threads,
+        model.expanded_thread.as_deref(),
+        &model.comments,
+        model.diff_view_mode,
+        width,
+    )
+}
+
+fn diff_content_width(model: &Model) -> u32 {
+    let outer_inner_width = model.width.saturating_sub(2) as u32;
+    let diff_pane_width = match model.layout_mode {
+        crate::model::LayoutMode::Full | crate::model::LayoutMode::Compact => {
+            if model.sidebar_visible {
+                outer_inner_width.saturating_sub(model.layout_mode.sidebar_width() as u32)
+            } else {
+                outer_inner_width
+            }
+        }
+        crate::model::LayoutMode::Overlay | crate::model::LayoutMode::Single => outer_inner_width,
+    };
+    diff_pane_width.saturating_sub(2)
 }

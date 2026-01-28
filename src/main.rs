@@ -13,10 +13,12 @@ use opentui::{
     RendererOptions,
 };
 
-use botcrit_ui::{update, vcs, view, Db, Message, Model, Screen};
+use botcrit_ui::theme::load_theme_from_path;
+use botcrit_ui::{update, vcs, view, Db, Highlighter, Message, Model, Screen};
 
 fn main() -> Result<()> {
-    let db_path = parse_args()?;
+    let args = parse_args()?;
+    let db_path = args.db_path;
 
     // Determine repo root from database path
     // Database is at <repo>/.crit/index.db, so repo is grandparent
@@ -40,11 +42,26 @@ fn main() -> Result<()> {
         None
     };
 
+    // Load theme (optional)
+    let (theme, syntax_theme) = if let Some(theme_path) = &args.theme_path {
+        let loaded = load_theme_from_path(theme_path)
+            .with_context(|| format!("Failed to load theme: {}", theme_path.display()))?;
+        (loaded.theme, loaded.syntax_theme)
+    } else {
+        (botcrit_ui::Theme::default(), None)
+    };
+
     // Get terminal size
     let (width, height) = terminal_size().unwrap_or((80, 24));
 
     // Create model
     let mut model = Model::new(width as u16, height as u16);
+    model.theme = theme;
+    if let Some(theme_name) = syntax_theme {
+        model.highlighter = Highlighter::with_theme(&theme_name);
+    } else if model.theme.name.to_lowercase().contains("light") {
+        model.highlighter = Highlighter::with_theme("base16-ocean.light");
+    }
 
     // Load initial data
     if let Some(db) = &db {
@@ -72,6 +89,19 @@ fn main() -> Result<()> {
 
     // Main loop
     loop {
+        // Detect external terminal resize even if no input events are received
+        if let Ok((term_width, term_height)) = terminal_size() {
+            let term_width_u16 = term_width as u16;
+            let term_height_u16 = term_height as u16;
+            if term_width_u16 != model.width || term_height_u16 != model.height {
+                model.resize(term_width_u16, term_height_u16);
+                model.needs_redraw = true;
+                renderer
+                    .resize(term_width.into(), term_height.into())
+                    .context("Failed to resize renderer")?;
+            }
+        }
+
         // Check if we need a full redraw
         if model.needs_redraw {
             renderer.invalidate();
@@ -92,7 +122,19 @@ fn main() -> Result<()> {
             if n > 0 {
                 if let Ok((event, _bytes_consumed)) = input.parse(&buf[..n]) {
                     let msg = map_event_to_message(&model, event);
+                    let resize = if let Message::Resize { width, height } = msg {
+                        Some((width, height))
+                    } else {
+                        None
+                    };
                     update(&mut model, msg);
+
+                    if let Some((width, height)) = resize {
+                        renderer
+                            .resize(width.into(), height.into())
+                            .context("Failed to resize renderer")?;
+                        model.needs_redraw = true;
+                    }
 
                     // Handle data loading after navigation
                     if let Some(db) = &db {
@@ -109,28 +151,75 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn parse_args() -> Result<Option<PathBuf>> {
+struct CliArgs {
+    db_path: Option<PathBuf>,
+    theme_path: Option<PathBuf>,
+}
+
+fn parse_args() -> Result<CliArgs> {
     let args: Vec<String> = std::env::args().collect();
+    let mut db_path: Option<PathBuf> = None;
+    let mut theme_path = std::env::var("BOTCRIT_UI_THEME").ok().map(PathBuf::from);
 
-    if args.len() > 1 {
-        if args[1] == "--help" || args[1] == "-h" {
-            println!("Usage: crit-ui [path-to-crit-db]");
-            println!();
-            println!("If no path is provided, looks for .crit/index.db in current directory.");
-            println!("If that doesn't exist, runs in demo mode with sample data.");
-            std::process::exit(0);
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--help" | "-h" => {
+                println!("Usage: crit-ui [options] [path-to-crit-db]");
+                println!();
+                println!("Options:");
+                println!("  --theme <path>   Load theme from JSON file");
+                println!("  --db <path>      Path to .crit/index.db");
+                println!();
+                println!("Environment:");
+                println!("  BOTCRIT_UI_THEME  Theme JSON path");
+                println!();
+                println!(
+                    "If no DB path is provided, looks for .crit/index.db in current directory."
+                );
+                println!("If that doesn't exist, runs in demo mode with sample data.");
+                std::process::exit(0);
+            }
+            "--theme" => {
+                i += 1;
+                if i >= args.len() {
+                    anyhow::bail!("--theme requires a path");
+                }
+                theme_path = Some(PathBuf::from(&args[i]));
+            }
+            "--db" => {
+                i += 1;
+                if i >= args.len() {
+                    anyhow::bail!("--db requires a path");
+                }
+                db_path = Some(PathBuf::from(&args[i]));
+            }
+            arg if arg.starts_with('-') => {
+                anyhow::bail!("Unknown option: {arg}");
+            }
+            arg => {
+                if db_path.is_none() {
+                    db_path = Some(PathBuf::from(arg));
+                } else {
+                    anyhow::bail!("Unexpected argument: {arg}");
+                }
+            }
         }
-        return Ok(Some(PathBuf::from(&args[1])));
+        i += 1;
     }
 
-    // Try default location
-    let default_path = PathBuf::from(".crit/index.db");
-    if default_path.exists() {
-        return Ok(Some(default_path));
+    // Try default location if no explicit DB path
+    if db_path.is_none() {
+        let default_path = PathBuf::from(".crit/index.db");
+        if default_path.exists() {
+            db_path = Some(default_path);
+        }
     }
 
-    // No database found, will use demo data
-    Ok(None)
+    Ok(CliArgs {
+        db_path,
+        theme_path,
+    })
 }
 
 fn map_event_to_message(model: &Model, event: Event) -> Message {
@@ -191,6 +280,7 @@ fn map_review_detail_key(model: &Model, key: KeyCode) -> Message {
             KeyCode::Char('j') | KeyCode::Down => Message::NextFile,
             KeyCode::Char('k') | KeyCode::Up => Message::PrevFile,
             KeyCode::Enter | KeyCode::Char('l') => Message::ToggleFocus, // Move to diff pane
+            KeyCode::Char('s') => Message::ToggleSidebar,
             _ => Message::Noop,
         },
         Focus::DiffPane => match key {
@@ -202,6 +292,7 @@ fn map_review_detail_key(model: &Model, key: KeyCode) -> Message {
             KeyCode::Char('n') => Message::NextThread,
             KeyCode::Char('p') | KeyCode::Char('N') => Message::PrevThread,
             KeyCode::Char('v') => Message::ToggleDiffView, // Toggle unified/side-by-side
+            KeyCode::Char('s') => Message::ToggleSidebar,
             KeyCode::Enter => {
                 // Expand the current thread (if one is selected via n/p)
                 if let Some(id) = &model.expanded_thread {
@@ -249,48 +340,45 @@ fn handle_data_loading(model: &mut Model, db: &Db, repo_path: Option<&std::path:
         }
     }
 
-    // Load diff or file content for the currently selected file
+    // Load diff or file content for all files in the review stream
     if model.screen == Screen::ReviewDetail {
         if let (Some(repo), Some(review)) = (repo_path, &model.current_review) {
             let files = model.files_with_threads();
-            if let Some(file) = files.get(model.file_index) {
-                // Check if we need to load new content
-                let needs_load =
-                    model.current_diff.is_none() && model.current_file_content.is_none();
+            let from = &review.initial_commit;
+            let to = review.final_commit.as_deref();
 
-                if needs_load {
-                    // Try to fetch diff from VCS
-                    let from = &review.initial_commit;
-                    let to = review.final_commit.as_deref();
-
-                    model.current_diff = vcs::get_file_diff(repo, &file.path, from, to);
-                    model.diff_scroll = 0;
-
-                    // Compute syntax highlighting for the diff
-                    if let Some(diff) = &model.current_diff {
-                        model.highlighted_lines =
-                            compute_diff_highlights(diff, &file.path, &model.highlighter);
-                    } else {
-                        model.highlighted_lines.clear();
-                    }
-
-                    // If no diff (file didn't change), fetch file content for context
-                    if model.current_diff.is_none() {
-                        // Use the final commit (or initial if no final) to show current state
-                        let commit = to.unwrap_or(from);
-                        if let Some(lines) = vcs::get_file_content(repo, &file.path, commit) {
-                            model.current_file_content =
-                                Some(botcrit_ui::model::FileContent { lines });
-                            // Compute highlights for file content
-                            model.highlighted_lines = compute_file_highlights(
-                                &model.current_file_content.as_ref().unwrap().lines,
-                                &file.path,
-                                &model.highlighter,
-                            );
-                        }
-                    }
+            for file in &files {
+                if model.file_cache.contains_key(&file.path) {
+                    continue;
                 }
+
+                let diff = vcs::get_file_diff(repo, &file.path, from, to);
+                let mut file_content = None;
+                let highlighted_lines = if let Some(parsed) = &diff {
+                    compute_diff_highlights(parsed, &file.path, &model.highlighter)
+                } else {
+                    let commit = to.unwrap_or(from);
+                    if let Some(lines) = vcs::get_file_content(repo, &file.path, commit) {
+                        file_content = Some(botcrit_ui::model::FileContent { lines });
+                    }
+                    if let Some(content) = &file_content {
+                        compute_file_highlights(&content.lines, &file.path, &model.highlighter)
+                    } else {
+                        Vec::new()
+                    }
+                };
+
+                model.file_cache.insert(
+                    file.path.clone(),
+                    botcrit_ui::model::FileCacheEntry {
+                        diff,
+                        file_content,
+                        highlighted_lines,
+                    },
+                );
             }
+
+            model.sync_active_file_cache();
         }
     }
 
@@ -335,21 +423,31 @@ fn handle_demo_data_loading(model: &mut Model) {
         }
     }
 
-    // Load diff for the currently selected file
+    // Load diffs for all files in demo mode
     if model.screen == Screen::ReviewDetail {
         let files = model.files_with_threads();
-        if let Some(file) = files.get(model.file_index) {
-            // Check if we need to load a new diff
-            let needs_load = model
-                .current_diff
-                .as_ref()
-                .map_or(true, |d| d.file_b.as_deref() != Some(&file.path));
-
-            if needs_load {
-                model.current_diff = get_demo_diff(&file.path);
-                model.diff_scroll = 0; // Reset scroll when changing files
+        for file in &files {
+            if model.file_cache.contains_key(&file.path) {
+                continue;
             }
+            let diff = get_demo_diff(&file.path);
+            let highlighted_lines = if let Some(parsed) = &diff {
+                compute_diff_highlights(parsed, &file.path, &model.highlighter)
+            } else {
+                Vec::new()
+            };
+
+            model.file_cache.insert(
+                file.path.clone(),
+                botcrit_ui::model::FileCacheEntry {
+                    diff,
+                    file_content: None,
+                    highlighted_lines,
+                },
+            );
         }
+
+        model.sync_active_file_cache();
     }
 }
 

@@ -3,11 +3,9 @@
 use opentui::{OptimizedBuffer, Style};
 
 use super::components::{draw_box, draw_text_truncated, truncate_path, Rect};
-use super::diff::{
-    map_threads_to_diff, render_diff_side_by_side, render_diff_with_threads, render_file_context,
-    SIDE_BY_SIDE_MIN_WIDTH,
-};
-use crate::model::{DiffViewMode, Focus, LayoutMode, Model};
+use super::diff::{render_diff_stream, render_pinned_header_block};
+use crate::model::{Focus, LayoutMode, Model};
+use crate::stream::block_height;
 
 /// Render the review detail screen
 pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
@@ -41,11 +39,15 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
     // Layout based on mode
     match model.layout_mode {
         LayoutMode::Full | LayoutMode::Compact => {
-            let sidebar_width = model.layout_mode.sidebar_width() as u32;
-            let (sidebar_area, diff_area) = inner.split_left(sidebar_width);
+            if model.sidebar_visible {
+                let sidebar_width = model.layout_mode.sidebar_width() as u32;
+                let (sidebar_area, diff_area) = inner.split_left(sidebar_width);
 
-            draw_file_sidebar(model, buffer, sidebar_area);
-            draw_diff_pane(model, buffer, diff_area);
+                draw_file_sidebar(model, buffer, sidebar_area);
+                draw_diff_pane(model, buffer, diff_area);
+            } else {
+                draw_diff_pane(model, buffer, inner);
+            }
         }
         LayoutMode::Overlay => {
             // Draw diff pane full width, overlay sidebar if visible
@@ -66,7 +68,7 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
         }
         LayoutMode::Single => {
             // Show either sidebar or diff based on focus
-            if matches!(model.focus, Focus::FileSidebar) {
+            if matches!(model.focus, Focus::FileSidebar) && model.sidebar_visible {
                 draw_file_sidebar(model, buffer, inner);
             } else {
                 draw_diff_pane(model, buffer, inner);
@@ -190,62 +192,8 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
 
     let inner = area.inner();
 
-    // Get threads for current file
-    let threads = model.threads_for_current_file();
-
-    // Render diff if available
-    if let Some(diff) = &model.current_diff {
-        // Map threads to diff display lines
-        let anchors = map_threads_to_diff(diff, &threads, model.expanded_thread.as_deref());
-
-        // Choose side-by-side or unified based on width and preference
-        let use_side_by_side = model.diff_view_mode == DiffViewMode::SideBySide
-            && inner.width >= SIDE_BY_SIDE_MIN_WIDTH;
-
-        if use_side_by_side {
-            render_diff_side_by_side(
-                buffer,
-                inner,
-                diff,
-                model.diff_scroll,
-                theme,
-                &anchors,
-                &model.comments,
-                &model.highlighted_lines,
-            );
-        } else {
-            render_diff_with_threads(
-                buffer,
-                inner,
-                diff,
-                model.diff_scroll,
-                theme,
-                &anchors,
-                &model.comments,
-                &model.highlighted_lines,
-            );
-        }
-        return;
-    }
-
-    // Render file content if available (for files without diffs)
-    if let Some(file_content) = &model.current_file_content {
-        render_file_context(
-            buffer,
-            inner,
-            &file_content.lines,
-            model.diff_scroll,
-            theme,
-            &threads,
-            model.expanded_thread.as_deref(),
-            &model.comments,
-        );
-        return;
-    }
-
-    // Fallback: show threads as a simple list when no diff or file content
-
-    if threads.is_empty() {
+    let files = model.files_with_threads();
+    if files.is_empty() {
         buffer.draw_text(
             inner.x + 2,
             inner.y + 1,
@@ -255,94 +203,31 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         return;
     }
 
-    // Show threads as a simple list when no diff is loaded
-    buffer.draw_text(
-        inner.x + 2,
-        inner.y,
-        &format!("{} thread(s) - no diff loaded", threads.len()),
-        Style::fg(theme.muted),
+    let file_title = files
+        .get(model.file_index)
+        .map_or("No file selected", |f| f.path.as_str());
+
+    render_diff_stream(
+        buffer,
+        inner,
+        &files,
+        &model.file_cache,
+        &model.threads,
+        model.expanded_thread.as_deref(),
+        &model.comments,
+        model.diff_scroll,
+        theme,
+        model.diff_view_mode,
     );
 
-    let mut row = 2u32;
-    for thread in threads.iter() {
-        if row >= inner.height {
-            break;
-        }
-
-        let y = inner.y + row;
-        let is_expanded = model
-            .expanded_thread
-            .as_ref()
-            .is_some_and(|id| id == &thread.thread_id);
-
-        // Line range
-        let line_range = if let Some(end) = thread.selection_end {
-            format!("L{}-{}", thread.selection_start, end)
-        } else {
-            format!("L{}", thread.selection_start)
-        };
-
-        // Status indicator
-        let (status_char, status_color) = if thread.status == "resolved" {
-            ("✓", theme.success)
-        } else {
-            ("●", theme.warning)
-        };
-
-        let prefix = if is_expanded { "▼ " } else { "▸ " };
-
-        buffer.draw_text(inner.x + 2, y, prefix, Style::fg(theme.foreground));
-        buffer.draw_text(inner.x + 4, y, status_char, Style::fg(status_color));
-        buffer.draw_text(inner.x + 6, y, &line_range, Style::fg(theme.primary));
-        buffer.draw_text(
-            inner.x + 16,
-            y,
-            &format!("({} comments)", thread.comment_count),
-            Style::fg(theme.muted),
-        );
-
-        row += 1;
-
-        // If expanded, show comments inline
-        if is_expanded && !model.comments.is_empty() {
-            for comment in &model.comments {
-                if row >= inner.height {
-                    break;
-                }
-
-                // Author
-                buffer.draw_text(
-                    inner.x + 6,
-                    inner.y + row,
-                    &format!("  {} ", comment.author),
-                    Style::fg(theme.primary),
-                );
-                row += 1;
-
-                if row >= inner.height {
-                    break;
-                }
-
-                // Comment body (first line, truncated)
-                let body_line = comment.body.lines().next().unwrap_or("");
-                let max_len = inner.width.saturating_sub(10) as usize;
-                let display_body = if body_line.len() > max_len {
-                    format!("{}...", &body_line[..max_len.saturating_sub(3)])
-                } else {
-                    body_line.to_string()
-                };
-                buffer.draw_text(
-                    inner.x + 8,
-                    inner.y + row,
-                    &display_body,
-                    Style::fg(theme.foreground),
-                );
-                row += 1;
-            }
-            // Add spacing after comments
-            row += 1;
-        }
-    }
+    let pinned_height = block_height(1) as u32;
+    let pinned_area = Rect::new(
+        inner.x,
+        inner.y,
+        inner.width,
+        pinned_height.min(inner.height),
+    );
+    render_pinned_header_block(buffer, pinned_area, file_title, theme);
 }
 
 fn draw_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
@@ -351,8 +236,8 @@ fn draw_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
 
     // Help text based on focus
     let help = match model.focus {
-        Focus::FileSidebar => "j/k files  Enter/Space diff  h back  q quit",
-        Focus::DiffPane => "j/k scroll  n/p thread  v view  Space files  Esc back",
+        Focus::FileSidebar => "j/k files  Enter/Space diff  s sidebar  h back  q quit",
+        Focus::DiffPane => "j/k scroll  n/p thread  v view  s sidebar  Esc back  q quit",
         Focus::ThreadExpanded => "j/k scroll  r resolve  Esc collapse",
         _ => "Space switch  Esc back  q quit",
     };

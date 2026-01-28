@@ -1,0 +1,40 @@
+## Blocks
+
+Blocks use this icon, "┃" to provide contrast & vertical alignment:
+
+┃
+┃  This is called a "block." This is the block title.
+┃
+┃  Prefer a blank line of padding at the top and bottom of
+┃  the main content of the block.
+┃
+
+┃
+┃  Use 2 spaces of padding between the glyph and the start
+┃  of the text and between the end of text and the end of whatever
+┃  background color is used for the block.
+┃
+┃  Note: blocks can have footers sometimes without vertical padding.
+
+## Review detail view
+
+See ./design.png
+
+## Interpretation notes (proposed)
+
+- Overall layout is a three-zone stack: left file list, top diff block, mid thread block, then another diff block below.
+- Left sidebar shows review id, bookmark/commit breadcrumb, then file list with counts; selected file uses a leading arrow.
+- File path header is a block with the vertical bar glyph on the left and the path text in muted white.
+- The changes summary in the header uses +green and -red counts aligned to the right.
+- Side-by-side diff uses two solid color panels (red for deletions, blue for additions), no visible divider line.
+- Line numbers are present on both sides but the right side is more muted to reduce redundancy.
+- Hunk separator is minimal (no @@ line in the main diff; separation is implied by block spacing).
+- Thread block is a separate section with id on left, file+line range on right, and per-comment ids on the far right.
+- Thread block uses the same vertical bar glyph and spacing rules as other blocks.
+- Comments show author handles in color (blue for reviewer, green for author), followed by body text in neutral.
+- Bottom-right hint shows "ctrl+p commands" as a lightweight footer.
+
+## Streamed diff layout addendum
+
+- The pinned current-file header uses the full block format (vertical bar, 1 row top/bottom padding inside the block, and 1 row margin above/below the block).
+- All right-side sections (file header, diff, thread block) should be rendered as blocks per the block format rules.

@@ -263,7 +263,7 @@ fn map_event_to_message(model: &Model, event: Event) -> Message {
 
             match model.screen {
                 Screen::ReviewList => map_review_list_key(key.code, model),
-                Screen::ReviewDetail => map_review_detail_key(model, key.code),
+                Screen::ReviewDetail => map_review_detail_key(model, key.code, key.modifiers),
             }
         }
         Event::Resize(resize) => Message::Resize {
@@ -300,8 +300,16 @@ fn map_review_list_key(key: KeyCode, model: &Model) -> Message {
     }
 }
 
-fn map_review_detail_key(model: &Model, key: KeyCode) -> Message {
+fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -> Message {
     use botcrit_ui::Focus;
+
+    if modifiers.contains(KeyModifiers::CTRL) {
+        match key {
+            KeyCode::Char('j') => return Message::ScrollTenDown,
+            KeyCode::Char('k') => return Message::ScrollTenUp,
+            _ => {}
+        }
+    }
 
     match model.focus {
         Focus::FileSidebar => match key {
@@ -323,6 +331,11 @@ fn map_review_detail_key(model: &Model, key: KeyCode) -> Message {
             KeyCode::Char('n') => Message::NextThread,
             KeyCode::Char('p') | KeyCode::Char('N') => Message::PrevThread,
             KeyCode::Char('v') => Message::ToggleDiffView, // Toggle unified/side-by-side
+            KeyCode::Char('u') => Message::ScrollHalfPageUp,
+            KeyCode::Char('d') => Message::ScrollHalfPageDown,
+            KeyCode::Char('b') => Message::PageUp,
+            KeyCode::Char('f') => Message::PageDown,
+            KeyCode::Char('h') => Message::ToggleFocus,
             KeyCode::Char('s') => Message::ToggleSidebar,
             KeyCode::Enter => {
                 // Expand the current thread (if one is selected via n/p)

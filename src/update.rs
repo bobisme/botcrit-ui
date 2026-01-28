@@ -133,6 +133,30 @@ pub fn update(model: &mut Model, msg: Message) {
             update_active_file_from_scroll(model);
         }
 
+        Message::ScrollHalfPageUp => {
+            let page = model.height.saturating_sub(2) as usize;
+            let half = page.max(1) / 2;
+            model.diff_scroll = model.diff_scroll.saturating_sub(half.max(1));
+            update_active_file_from_scroll(model);
+        }
+
+        Message::ScrollHalfPageDown => {
+            let page = model.height.saturating_sub(2) as usize;
+            let half = page.max(1) / 2;
+            model.diff_scroll += half.max(1);
+            update_active_file_from_scroll(model);
+        }
+
+        Message::ScrollTenUp => {
+            model.diff_scroll = model.diff_scroll.saturating_sub(10);
+            update_active_file_from_scroll(model);
+        }
+
+        Message::ScrollTenDown => {
+            model.diff_scroll += 10;
+            update_active_file_from_scroll(model);
+        }
+
         Message::PageUp => {
             let page = model.height.saturating_sub(2) as usize;
             model.diff_scroll = model.diff_scroll.saturating_sub(page);

@@ -36,6 +36,14 @@ pub enum Message {
     ScrollUp,
     /// Scroll content down
     ScrollDown,
+    /// Scroll up by half a page
+    ScrollHalfPageUp,
+    /// Scroll down by half a page
+    ScrollHalfPageDown,
+    /// Scroll up by 10 lines
+    ScrollTenUp,
+    /// Scroll down by 10 lines
+    ScrollTenDown,
     /// Page up in content
     PageUp,
     /// Page down in content

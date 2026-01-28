@@ -105,7 +105,7 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
             text_width,
             Style::fg(theme.foreground).with_bold(),
         );
-        y += 1;
+        y += 2;
 
         let bookmark = format!("<{}>", review.jj_change_id);
         draw_text_truncated(

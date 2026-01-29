@@ -7,7 +7,6 @@ use crate::db::ThreadSummary;
 use crate::diff::{DiffLine, DiffLineKind, ParsedDiff};
 use crate::stream::{
     block_height, BLOCK_LEFT_PAD, BLOCK_MARGIN, BLOCK_PADDING, BLOCK_RIGHT_PAD, BLOCK_SIDE_MARGIN,
-    SIDE_BY_SIDE_MIN_WIDTH,
 };
 use crate::syntax::HighlightSpan;
 use crate::text::wrap_text;
@@ -560,13 +559,6 @@ pub fn render_diff_stream(
     theme: &Theme,
     view_mode: crate::model::DiffViewMode,
 ) {
-    let effective_mode = if view_mode == crate::model::DiffViewMode::SideBySide
-        && area.width >= SIDE_BY_SIDE_MIN_WIDTH
-    {
-        crate::model::DiffViewMode::SideBySide
-    } else {
-        crate::model::DiffViewMode::Unified
-    };
     let mut cursor = StreamCursor {
         buffer,
         area,
@@ -640,7 +632,7 @@ pub fn render_diff_stream(
                     anchor_map.insert(anchor.display_line, anchor);
                 }
 
-                match effective_mode {
+                match view_mode {
                     crate::model::DiffViewMode::Unified => {
                         let mut display_lines: Vec<DisplayLine> = Vec::new();
                         for hunk in &diff.hunks {

@@ -120,6 +120,7 @@ fn main() -> Result<()> {
     let mut renderer = Renderer::new_with_options(width.into(), height.into(), options)
         .context("Failed to initialize renderer")?;
     let _wrap_guard = AutoWrapGuard::new().context("Failed to disable line wrap")?;
+    let _cursor_guard = CursorGuard::new().context("Failed to hide cursor")?;
     renderer.set_background(model.theme.background);
 
     // Input parser
@@ -213,6 +214,25 @@ impl Drop for AutoWrapGuard {
     fn drop(&mut self) {
         let mut out = std::io::stdout();
         let _ = out.write_all(b"\x1b[?7h"); // Re-enable line wrap
+        let _ = out.flush();
+    }
+}
+
+struct CursorGuard;
+
+impl CursorGuard {
+    fn new() -> std::io::Result<Self> {
+        let mut out = std::io::stdout();
+        out.write_all(b"\x1b[?25l")?; // Hide cursor
+        out.flush()?;
+        Ok(Self)
+    }
+}
+
+impl Drop for CursorGuard {
+    fn drop(&mut self) {
+        let mut out = std::io::stdout();
+        let _ = out.write_all(b"\x1b[?25h"); // Show cursor
         let _ = out.flush();
     }
 }
@@ -458,6 +478,8 @@ fn handle_data_loading(model: &mut Model, db: &Db, repo_path: Option<&std::path:
         }
     }
 
+    ensure_default_expanded_thread(model);
+
     // Load comments when thread is expanded
     if let Some(thread_id) = &model.expanded_thread {
         if model.comments.is_empty()
@@ -525,6 +547,8 @@ fn handle_demo_data_loading(model: &mut Model) {
 
         model.sync_active_file_cache();
     }
+
+    ensure_default_expanded_thread(model);
 }
 
 fn load_demo_data(model: &mut Model) {
@@ -600,6 +624,21 @@ fn load_demo_data(model: &mut Model) {
             comment_count: 1,
         },
     ];
+}
+
+fn ensure_default_expanded_thread(model: &mut Model) {
+    if model.expanded_thread.is_some() {
+        return;
+    }
+
+    if let Some(thread) = model.threads_for_current_file().first() {
+        model.expanded_thread = Some(thread.thread_id.clone());
+        return;
+    }
+
+    if let Some(thread) = model.threads.first() {
+        model.expanded_thread = Some(thread.thread_id.clone());
+    }
 }
 
 /// Get demo diff content for a file path

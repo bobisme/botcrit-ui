@@ -32,12 +32,6 @@ pub fn compute_stream_layout(
     view_mode: DiffViewMode,
     content_width: u32,
 ) -> StreamLayout {
-    let effective_mode =
-        if view_mode == DiffViewMode::SideBySide && content_width >= SIDE_BY_SIDE_MIN_WIDTH {
-            DiffViewMode::SideBySide
-        } else {
-            DiffViewMode::Unified
-        };
     let mut file_offsets = Vec::with_capacity(files.len());
     let mut total = 0usize;
 
@@ -47,7 +41,7 @@ pub fn compute_stream_layout(
 
         if let Some(entry) = file_cache.get(&file.path) {
             let diff_lines = if let Some(diff) = &entry.diff {
-                diff_line_count_for_view(diff, effective_mode)
+                diff_line_count_for_view(diff, view_mode)
                     + expanded_thread_extra_lines(
                         diff,
                         threads,

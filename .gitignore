@@ -2,3 +2,6 @@
 # BotBus index (generated)
 .botbus/index.sqlite
 opencode.json
+
+# bv (beads viewer) local config and caches
+.bv/

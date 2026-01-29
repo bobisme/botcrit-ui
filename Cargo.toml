@@ -12,7 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Rendering
-opentui = { path = "../../repos/opentui_rust" }
+opentui = { git = "https://github.com/Dicklesworthstone/opentui_rust", version = "0.1.0" }
 
 # Database (direct access to botcrit's SQLite)
 rusqlite = { version = "0.32", features = ["bundled"] }
@@ -32,3 +32,7 @@ unsafe_code = "warn"
 all = "warn"
 pedantic = "warn"
 nursery = "warn"
+
+# TODO: remove patch once https://github.com/Dicklesworthstone/opentui_rust/pull/3 is merged
+[patch."https://github.com/Dicklesworthstone/opentui_rust"]
+opentui = { git = "https://github.com/bobisme/opentui_rust", branch = "fix/present-force-cursor-home" }

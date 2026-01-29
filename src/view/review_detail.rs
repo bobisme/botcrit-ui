@@ -12,34 +12,7 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
     let theme = &model.theme;
     let area = Rect::from_size(model.width, model.height);
 
-    // Get review title for the main box
-    let title = model
-        .current_review
-        .as_ref()
-        .map_or("Review", |r| r.title.as_str());
-
-    let review_id = model
-        .current_review
-        .as_ref()
-        .map_or("", |r| r.review_id.as_str());
-
-    let full_title = format!("{review_id}: {title}");
-
-    // Header
-    buffer.fill_rect(area.x, area.y, area.width, 1, theme.background);
-    buffer.draw_text(
-        area.x + 2,
-        area.y,
-        &full_title,
-        Style::fg(theme.foreground).with_bold(),
-    );
-
-    let inner = Rect::new(
-        area.x,
-        area.y + 1,
-        area.width,
-        area.height.saturating_sub(2),
-    );
+    let inner = Rect::new(area.x, area.y, area.width, area.height.saturating_sub(1));
 
     // Layout based on mode
     match model.layout_mode {

@@ -1,4 +1,8 @@
-# Multi-Agent Coordination Template
+# botcrit-ui
+
+GitHub-style code review TUI for `botcrit`, built on `opentui_rust` (experimental fork of "opentui" under heavy development) with an Elm-style architecture (Model/Message/Update/View). Provides review lists, diff rendering (unified + side-by-side), thread anchoring, and themed UI.
+
+## Multi-Agent Coordination
 
 Use this template for decentralized mesh workflows across multiple agents.
 
@@ -9,19 +13,6 @@ Canonical spec: `https://raw.githubusercontent.com/bobisme/ai-docs/main/agents/m
 Keep chat human-readable. Use labels for machine-readable events. Project is implied by channel.
 
 Claims are mandatory for files, beads, and agent roles. Release claims when done.
-
-## Setup (One-Time per Repo)
-
-Use tool-provided AGENTS.md snippets when available:
-
-- BotBus: `botbus agentsmd show` then `botbus agentsmd init`
-- MAW: `maw agents init`
-- Botcrit: `crit agents show` then `crit agents init`
-
-Tools without injection should be added manually:
-
-- Botty: add runtime/testing notes if needed
-- Beads (br/bv): include the Beads Workflow block below
 
 ## Rendering Tests (Botty)
 
@@ -181,13 +172,13 @@ maw ws status                  # See all agent work
 
 ### Quick Reference
 
-| Task | Command |
-|------|---------|
-| Create workspace | `maw ws create <name>` |
-| Check status | `maw ws status` |
-| Sync stale workspace | `maw ws sync` |
-| Merge all work | `maw ws merge --all` |
-| Destroy workspace | `maw ws destroy <name> --force` |
+| Task                 | Command                         |
+| -------------------- | ------------------------------- |
+| Create workspace     | `maw ws create <name>`          |
+| Check status         | `maw ws status`                 |
+| Sync stale workspace | `maw ws sync`                   |
+| Merge all work       | `maw ws merge --all`            |
+| Destroy workspace    | `maw ws destroy <name> --force` |
 
 **Note:** Your workspace starts with an empty commit. This is intentional - it gives you ownership immediately, preventing conflicts when multiple agents work concurrently.
 
@@ -260,21 +251,25 @@ crit threads resolve <thread_id>
 ### Agent Best Practices
 
 1. **Use optimistic locking** to avoid stale comments:
+
    ```bash
    crit comments add <thread_id> "message" --expected-hash <hash>
    ```
 
 2. **Use request IDs** for idempotent retries:
+
    ```bash
    crit comments add <thread_id> "message" --request-id <uuid>
    ```
 
 3. **Check status before acting**:
+
    ```bash
    crit status <review_id> --unresolved-only
    ```
 
 4. **Run doctor** to verify setup:
+
    ```bash
    crit doctor
    ```
@@ -339,6 +334,7 @@ botbus release --all                    # When done
 ### Message Conventions
 
 Keep messages concise and actionable:
+
 - "Starting work on issue #123: Add foo feature"
 - "Blocked: need database credentials to proceed"
 - "Question: should auth middleware go in src/api or src/auth?"

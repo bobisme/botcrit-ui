@@ -123,8 +123,12 @@ pub fn draw_text_truncated(
     }
 
     let text = if text.len() > max_width as usize {
-        let truncated = &text[..max_width.saturating_sub(1) as usize];
-        format!("{truncated}…")
+        if max_width <= 3 {
+            text[..max_width as usize].to_string()
+        } else {
+            let truncated = &text[..max_width.saturating_sub(3) as usize];
+            format!("{truncated}...")
+        }
     } else {
         text.to_string()
     };

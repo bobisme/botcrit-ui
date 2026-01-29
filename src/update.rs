@@ -56,6 +56,7 @@ pub fn update(model: &mut Model, msg: Message) {
                     model.list_scroll = model.list_index;
                 }
             }
+            model.needs_redraw = true;
         }
 
         Message::ListDown => {
@@ -68,12 +69,14 @@ pub fn update(model: &mut Model, msg: Message) {
                     model.list_scroll = model.list_index - visible + 1;
                 }
             }
+            model.needs_redraw = true;
         }
 
         Message::ListPageUp => {
             let visible = model.list_visible_height();
             model.list_index = model.list_index.saturating_sub(visible);
             model.list_scroll = model.list_scroll.saturating_sub(visible);
+            model.needs_redraw = true;
         }
 
         Message::ListPageDown => {
@@ -84,11 +87,13 @@ pub fn update(model: &mut Model, msg: Message) {
 
             model.list_index = (model.list_index + visible).min(max_index);
             model.list_scroll = (model.list_scroll + visible).min(max_scroll);
+            model.needs_redraw = true;
         }
 
         Message::ListTop => {
             model.list_index = 0;
             model.list_scroll = 0;
+            model.needs_redraw = true;
         }
 
         Message::ListBottom => {
@@ -98,6 +103,7 @@ pub fn update(model: &mut Model, msg: Message) {
                 let visible = model.list_visible_height();
                 model.list_scroll = count.saturating_sub(visible);
             }
+            model.needs_redraw = true;
         }
 
         // === File Sidebar ===
@@ -249,12 +255,14 @@ pub fn update(model: &mut Model, msg: Message) {
             model.filter = ReviewFilter::Open;
             model.list_index = 0;
             model.list_scroll = 0;
+            model.needs_redraw = true;
         }
 
         Message::FilterAll => {
             model.filter = ReviewFilter::All;
             model.list_index = 0;
             model.list_scroll = 0;
+            model.needs_redraw = true;
         }
 
         Message::ToggleDiffView => {

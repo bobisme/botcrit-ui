@@ -4,10 +4,12 @@
 //!
 //! If no path is provided, looks for .crit/index.db in current directory.
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use opentui::input::ParseError;
 use opentui::{
     enable_raw_mode, terminal_size, Event, InputParser, KeyCode, KeyModifiers, Renderer,
     RendererOptions,
@@ -86,7 +88,8 @@ fn main() -> Result<()> {
     }
 
     // Get terminal size
-    let (width, height) = terminal_size().unwrap_or((80, 24));
+    let (term_width, height) = terminal_size().unwrap_or((80, 24));
+    let width = term_width.saturating_sub(2).max(1);
 
     // Create model
     let mut model = Model::new(width as u16, height as u16);
@@ -117,6 +120,8 @@ fn main() -> Result<()> {
     };
     let mut renderer = Renderer::new_with_options(width.into(), height.into(), options)
         .context("Failed to initialize renderer")?;
+    let _wrap_guard = AutoWrapGuard::new().context("Failed to disable line wrap")?;
+    renderer.set_background(model.theme.background);
 
     // Input parser
     let mut input = InputParser::new();
@@ -125,24 +130,24 @@ fn main() -> Result<()> {
     loop {
         // Detect external terminal resize even if no input events are received
         if let Ok((term_width, term_height)) = terminal_size() {
-            let term_width_u16 = term_width as u16;
+            let ui_width = term_width.saturating_sub(2).max(1);
+            let term_width_u16 = ui_width as u16;
             let term_height_u16 = term_height as u16;
             if term_width_u16 != model.width || term_height_u16 != model.height {
                 model.resize(term_width_u16, term_height_u16);
                 model.needs_redraw = true;
                 renderer
-                    .resize(term_width.into(), term_height.into())
+                    .resize(ui_width.into(), term_height.into())
                     .context("Failed to resize renderer")?;
             }
         }
 
-        // Check if we need a full redraw
-        if model.needs_redraw {
-            renderer.invalidate();
-            model.needs_redraw = false;
-        }
+        // Force a full redraw to avoid render artifacts
+        renderer.invalidate();
+        model.needs_redraw = false;
 
         // Render
+        renderer.clear();
         view(&model, renderer.buffer());
         renderer.present().context("Failed to present frame")?;
 
@@ -154,28 +159,38 @@ fn main() -> Result<()> {
         let mut buf = [0u8; 32];
         if let Ok(n) = read_with_timeout(&mut buf, Duration::from_millis(100)) {
             if n > 0 {
-                if let Ok((event, _bytes_consumed)) = input.parse(&buf[..n]) {
-                    let msg = map_event_to_message(&model, event);
-                    let resize = if let Message::Resize { width, height } = msg {
-                        Some((width, height))
-                    } else {
-                        None
-                    };
-                    update(&mut model, msg);
+                let mut offset = 0usize;
+                while offset < n {
+                    match input.parse(&buf[offset..n]) {
+                        Ok((event, consumed)) => {
+                            offset = offset.saturating_add(consumed);
+                            let msg = map_event_to_message(&model, event);
+                            let resize = if let Message::Resize { width, height } = msg {
+                                Some((width, height))
+                            } else {
+                                None
+                            };
+                            update(&mut model, msg);
 
-                    if let Some((width, height)) = resize {
-                        renderer
-                            .resize(width.into(), height.into())
-                            .context("Failed to resize renderer")?;
-                        model.needs_redraw = true;
-                    }
+                            if let Some((width, height)) = resize {
+                                renderer
+                                    .resize(width.into(), height.into())
+                                    .context("Failed to resize renderer")?;
+                                model.needs_redraw = true;
+                            }
 
-                    // Handle data loading after navigation
-                    if let Some(db) = &db {
-                        handle_data_loading(&mut model, db, repo_path.as_deref());
-                    } else {
-                        // Demo mode - simulate data loading
-                        handle_demo_data_loading(&mut model);
+                            // Handle data loading after navigation
+                            if let Some(db) = &db {
+                                handle_data_loading(&mut model, db, repo_path.as_deref());
+                            } else {
+                                // Demo mode - simulate data loading
+                                handle_demo_data_loading(&mut model);
+                            }
+                        }
+                        Err(ParseError::Empty) | Err(ParseError::Incomplete) => break,
+                        Err(_) => {
+                            offset = offset.saturating_add(1);
+                        }
                     }
                 }
             }
@@ -183,6 +198,25 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+struct AutoWrapGuard;
+
+impl AutoWrapGuard {
+    fn new() -> std::io::Result<Self> {
+        let mut out = std::io::stdout();
+        out.write_all(b"\x1b[?7l")?; // Disable line wrap
+        out.flush()?;
+        Ok(Self)
+    }
+}
+
+impl Drop for AutoWrapGuard {
+    fn drop(&mut self) {
+        let mut out = std::io::stdout();
+        let _ = out.write_all(b"\x1b[?7h"); // Re-enable line wrap
+        let _ = out.flush();
+    }
 }
 
 struct CliArgs {
@@ -267,7 +301,7 @@ fn map_event_to_message(model: &Model, event: Event) -> Message {
             }
         }
         Event::Resize(resize) => Message::Resize {
-            width: resize.width,
+            width: resize.width.saturating_sub(2).max(1),
             height: resize.height,
         },
         Event::Mouse(_) => Message::Noop,

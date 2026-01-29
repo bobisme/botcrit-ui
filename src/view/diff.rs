@@ -9,7 +9,7 @@ use crate::stream::{
     block_height, BLOCK_LEFT_PAD, BLOCK_MARGIN, BLOCK_PADDING, BLOCK_RIGHT_PAD, BLOCK_SIDE_MARGIN,
 };
 use crate::syntax::HighlightSpan;
-use crate::text::wrap_text;
+use crate::text::{wrap_text, wrap_text_preserve};
 use crate::theme::Theme;
 
 /// Thread anchor info for rendering
@@ -493,6 +493,20 @@ impl<'a> StreamCursor<'a> {
         self.stream_row += 1;
     }
 
+    fn emit_rows<F>(&mut self, rows: usize, mut draw: F)
+    where
+        F: FnMut(&mut OptimizedBuffer, u32, &Theme, usize),
+    {
+        for row in 0..rows {
+            if self.stream_row >= self.scroll && self.screen_row < self.area.height as usize {
+                let y = self.area.y + self.screen_row as u32;
+                draw(self.buffer, y, self.theme, row);
+                self.screen_row += 1;
+            }
+            self.stream_row += 1;
+        }
+    }
+
     fn remaining_rows(&self) -> usize {
         self.area.height.saturating_sub(self.screen_row as u32) as usize
     }
@@ -558,6 +572,7 @@ pub fn render_diff_stream(
     scroll: usize,
     theme: &Theme,
     view_mode: crate::model::DiffViewMode,
+    wrap: bool,
 ) {
     let mut cursor = StreamCursor {
         buffer,
@@ -644,17 +659,53 @@ pub fn render_diff_stream(
 
                         for (idx, display_line) in display_lines.iter().enumerate() {
                             let anchor = anchor_map.get(&idx).copied();
-                            cursor.emit(|buf, y, theme| {
-                                render_unified_diff_line_block(
-                                    buf,
-                                    area,
-                                    y,
-                                    display_line,
-                                    theme,
-                                    anchor,
-                                    entry.highlighted_lines.get(idx),
-                                );
-                            });
+                            match display_line {
+                                DisplayLine::HunkHeader(_) => {
+                                    cursor.emit(|buf, y, theme| {
+                                        render_unified_diff_line_block(
+                                            buf,
+                                            area,
+                                            y,
+                                            display_line,
+                                            theme,
+                                            anchor,
+                                            entry.highlighted_lines.get(idx),
+                                        );
+                                    });
+                                }
+                                DisplayLine::Diff(line) => {
+                                    if wrap {
+                                        let thread_col_width: u32 = 2;
+                                        let line_num_width: u32 = 12;
+                                        let content_width = block_inner_width(area)
+                                            .saturating_sub(thread_col_width + line_num_width);
+                                        let max_content = content_width.saturating_sub(2) as usize;
+                                        let wrapped = wrap_content(
+                                            entry.highlighted_lines.get(idx),
+                                            &line.content,
+                                            max_content,
+                                        );
+                                        let rows = wrapped.len().max(1);
+                                        cursor.emit_rows(rows, |buf, y, theme, row| {
+                                            render_unified_diff_line_wrapped_row(
+                                                buf, area, y, line, theme, anchor, &wrapped, row,
+                                            );
+                                        });
+                                    } else {
+                                        cursor.emit(|buf, y, theme| {
+                                            render_unified_diff_line_block(
+                                                buf,
+                                                area,
+                                                y,
+                                                display_line,
+                                                theme,
+                                                anchor,
+                                                entry.highlighted_lines.get(idx),
+                                            );
+                                        });
+                                    }
+                                }
+                            }
 
                             if let Some(anchor) = anchor {
                                 if anchor.is_expanded {
@@ -676,17 +727,63 @@ pub fn render_diff_stream(
                         let sbs_lines = build_side_by_side_lines(diff);
                         for (idx, sbs_line) in sbs_lines.iter().enumerate() {
                             let anchor = anchor_map.get(&idx).copied();
-                            cursor.emit(|buf, y, theme| {
-                                render_side_by_side_line_block(
-                                    buf,
-                                    area,
-                                    y,
-                                    sbs_line,
-                                    theme,
-                                    anchor,
-                                    entry.highlighted_lines.as_slice(),
-                                );
-                            });
+                            if wrap && !sbs_line.is_header {
+                                let thread_col_width: u32 = 2;
+                                let divider_width: u32 = 1;
+                                let line_num_width: u32 = 6;
+                                let available = block_inner_width(area)
+                                    .saturating_sub(thread_col_width + divider_width);
+                                let half_width = available / 2;
+                                let left_width = half_width.saturating_sub(line_num_width) as usize;
+                                let right_width =
+                                    half_width.saturating_sub(line_num_width) as usize;
+
+                                let left_highlights = sbs_line.left.as_ref().and_then(|line| {
+                                    entry.highlighted_lines.get(line.display_index)
+                                });
+                                let right_highlights = sbs_line.right.as_ref().and_then(|line| {
+                                    entry.highlighted_lines.get(line.display_index)
+                                });
+
+                                let left_wrapped = sbs_line.left.as_ref().map(|line| {
+                                    wrap_content(left_highlights, &line.content, left_width)
+                                });
+                                let right_wrapped = sbs_line.right.as_ref().map(|line| {
+                                    wrap_content(right_highlights, &line.content, right_width)
+                                });
+
+                                let left_rows =
+                                    left_wrapped.as_ref().map(|lines| lines.len()).unwrap_or(1);
+                                let right_rows =
+                                    right_wrapped.as_ref().map(|lines| lines.len()).unwrap_or(1);
+                                let rows = left_rows.max(right_rows);
+
+                                cursor.emit_rows(rows, |buf, y, theme, row| {
+                                    render_side_by_side_line_wrapped_row(
+                                        buf,
+                                        area,
+                                        y,
+                                        sbs_line,
+                                        theme,
+                                        anchor,
+                                        left_wrapped.as_ref(),
+                                        right_wrapped.as_ref(),
+                                        row,
+                                    );
+                                });
+                            } else {
+                                cursor.emit(|buf, y, theme| {
+                                    render_side_by_side_line_block(
+                                        buf,
+                                        area,
+                                        y,
+                                        sbs_line,
+                                        theme,
+                                        anchor,
+                                        entry.highlighted_lines.as_slice(),
+                                    );
+                                });
+                            }
 
                             if let Some(anchor) = anchor {
                                 if anchor.is_expanded {
@@ -708,16 +805,47 @@ pub fn render_diff_stream(
             } else if let Some(content) = &entry.file_content {
                 let display_items = build_context_items(content.lines.as_slice(), &file_threads);
                 for item in display_items {
-                    cursor.emit(|buf, y, theme| {
-                        render_context_item_block(
-                            buf,
-                            area,
-                            y,
-                            &item,
-                            theme,
-                            entry.highlighted_lines.as_slice(),
-                        );
-                    });
+                    match &item {
+                        DisplayItem::Separator(_) => {
+                            cursor.emit(|buf, y, theme| {
+                                render_context_item_block(
+                                    buf,
+                                    area,
+                                    y,
+                                    &item,
+                                    theme,
+                                    entry.highlighted_lines.as_slice(),
+                                );
+                            });
+                        }
+                        DisplayItem::Line { line_num, content } => {
+                            if wrap {
+                                let line_index = (*line_num).saturating_sub(1) as usize;
+                                let highlight = entry.highlighted_lines.get(line_index);
+                                let line_num_width: u32 = 6;
+                                let content_width =
+                                    block_inner_width(area).saturating_sub(line_num_width) as usize;
+                                let wrapped = wrap_content(highlight, content, content_width);
+                                let rows = wrapped.len().max(1);
+                                cursor.emit_rows(rows, |buf, y, theme, row| {
+                                    render_context_line_wrapped_row(
+                                        buf, area, y, *line_num, theme, &wrapped, row,
+                                    );
+                                });
+                            } else {
+                                cursor.emit(|buf, y, theme| {
+                                    render_context_item_block(
+                                        buf,
+                                        area,
+                                        y,
+                                        &item,
+                                        theme,
+                                        entry.highlighted_lines.as_slice(),
+                                    );
+                                });
+                            }
+                        }
+                    }
 
                     if let DisplayItem::Line { line_num, .. } = &item {
                         if let Some(thread) =
@@ -825,6 +953,105 @@ fn render_unified_diff_line_block(
     }
 }
 
+fn render_unified_diff_line_wrapped_row(
+    buffer: &mut OptimizedBuffer,
+    area: Rect,
+    y: u32,
+    line: &DiffLine,
+    theme: &Theme,
+    anchor: Option<&ThreadAnchor>,
+    wrapped: &[WrappedLine],
+    row: usize,
+) {
+    let dt = &theme.diff;
+    let (bg, line_num_bg, default_fg, sign, sign_color) = match line.kind {
+        DiffLineKind::Added => (
+            dt.added_bg,
+            dt.added_line_number_bg,
+            dt.added,
+            "+",
+            dt.highlight_added,
+        ),
+        DiffLineKind::Removed => (
+            dt.removed_bg,
+            dt.removed_line_number_bg,
+            dt.removed,
+            "-",
+            dt.highlight_removed,
+        ),
+        DiffLineKind::Context => (dt.context_bg, dt.context_bg, dt.context, " ", dt.context),
+    };
+
+    draw_block_base_line(buffer, area, y, bg, theme);
+
+    let thread_x = block_inner_x(area);
+    let thread_col_width: u32 = 2;
+    buffer.fill_rect(thread_x, y, thread_col_width, 1, bg);
+    if row == 0 {
+        if let Some(anchor) = anchor {
+            let (indicator, color) = thread_marker(anchor, theme);
+            buffer.draw_text(thread_x, y, indicator, Style::fg(color).with_bg(bg));
+        }
+    }
+
+    let line_num_width: u32 = 12;
+    let line_num_x = thread_x + thread_col_width;
+    buffer.fill_rect(line_num_x, y, line_num_width, 1, line_num_bg);
+    if row == 0 {
+        let old_ln = line
+            .old_line
+            .map_or("     ".to_string(), |n| format!("{:>5}", n));
+        let new_ln = line
+            .new_line
+            .map_or("     ".to_string(), |n| format!("{:>5}", n));
+
+        buffer.draw_text(
+            line_num_x,
+            y,
+            &old_ln,
+            Style::fg(dt.line_number).with_bg(line_num_bg),
+        );
+        buffer.draw_text(
+            line_num_x + 5,
+            y,
+            " ",
+            Style::fg(dt.line_number).with_bg(line_num_bg),
+        );
+        buffer.draw_text(
+            line_num_x + 6,
+            y,
+            &new_ln,
+            Style::fg(dt.line_number).with_bg(line_num_bg),
+        );
+        buffer.draw_text(
+            line_num_x + 11,
+            y,
+            " ",
+            Style::fg(dt.line_number).with_bg(line_num_bg),
+        );
+    }
+
+    let content_start = line_num_x + line_num_width;
+    let content_width = block_inner_width(area).saturating_sub(thread_col_width + line_num_width);
+    buffer.fill_rect(content_start, y, content_width, 1, bg);
+    if row == 0 {
+        buffer.draw_text(content_start, y, sign, Style::fg(sign_color).with_bg(bg));
+    }
+
+    if let Some(line_content) = wrapped.get(row) {
+        let max_content = content_width.saturating_sub(2);
+        draw_wrapped_line(
+            buffer,
+            content_start + 1,
+            y,
+            max_content,
+            line_content,
+            default_fg,
+            bg,
+        );
+    }
+}
+
 fn render_side_by_side_line_block(
     buffer: &mut OptimizedBuffer,
     area: Rect,
@@ -902,6 +1129,118 @@ fn render_side_by_side_line_block(
         theme.muted,
         right_highlights,
     );
+}
+
+fn render_side_by_side_line_wrapped_row(
+    buffer: &mut OptimizedBuffer,
+    area: Rect,
+    y: u32,
+    sbs_line: &SideBySideLine,
+    theme: &Theme,
+    anchor: Option<&ThreadAnchor>,
+    left_wrapped: Option<&Vec<WrappedLine>>,
+    right_wrapped: Option<&Vec<WrappedLine>>,
+    row: usize,
+) {
+    let dt = &theme.diff;
+    let base_bg = dt.context_bg;
+    draw_block_base_line(buffer, area, y, base_bg, theme);
+
+    let thread_x = block_inner_x(area);
+    let thread_col_width: u32 = 2;
+    buffer.fill_rect(thread_x, y, thread_col_width, 1, base_bg);
+    if row == 0 {
+        if let Some(anchor) = anchor {
+            let (indicator, color) = thread_marker(anchor, theme);
+            buffer.draw_text(thread_x, y, indicator, Style::fg(color).with_bg(base_bg));
+        }
+    }
+
+    let divider_width: u32 = 1;
+    let line_num_width: u32 = 6;
+    let available = block_inner_width(area).saturating_sub(thread_col_width + divider_width);
+    let half_width = available / 2;
+    let left_content_width = half_width.saturating_sub(line_num_width);
+    let right_content_width = half_width.saturating_sub(line_num_width);
+
+    let left_ln_x = thread_x + thread_col_width;
+    let left_content_x = left_ln_x + line_num_width;
+    let divider_x = thread_x + thread_col_width + half_width;
+    let right_ln_x = divider_x + divider_width;
+    let right_content_x = right_ln_x + line_num_width;
+
+    render_side_line_wrapped_row(
+        buffer,
+        left_ln_x,
+        left_content_x,
+        y,
+        left_content_width,
+        &sbs_line.left,
+        dt,
+        dt.line_number,
+        left_wrapped,
+        row,
+    );
+
+    buffer.fill_rect(divider_x, y, divider_width, 1, base_bg);
+
+    render_side_line_wrapped_row(
+        buffer,
+        right_ln_x,
+        right_content_x,
+        y,
+        right_content_width,
+        &sbs_line.right,
+        dt,
+        theme.muted,
+        right_wrapped,
+        row,
+    );
+}
+
+fn render_side_line_wrapped_row(
+    buffer: &mut OptimizedBuffer,
+    ln_x: u32,
+    content_x: u32,
+    y: u32,
+    content_width: u32,
+    side: &Option<SideLine>,
+    dt: &crate::theme::DiffTheme,
+    line_number_color: Rgba,
+    wrapped: Option<&Vec<WrappedLine>>,
+    row: usize,
+) {
+    match side {
+        Some(line) => {
+            let (bg, line_num_bg, fg) = match line.kind {
+                DiffLineKind::Added => (dt.added_bg, dt.added_line_number_bg, dt.added),
+                DiffLineKind::Removed => (dt.removed_bg, dt.removed_line_number_bg, dt.removed),
+                DiffLineKind::Context => (dt.context_bg, dt.context_bg, dt.context),
+            };
+
+            buffer.fill_rect(ln_x, y, 6, 1, line_num_bg);
+            if row == 0 {
+                let ln_str = format!("{:>5} ", line.line_num);
+                buffer.draw_text(
+                    ln_x,
+                    y,
+                    &ln_str,
+                    Style::fg(line_number_color).with_bg(line_num_bg),
+                );
+            }
+
+            buffer.fill_rect(content_x, y, content_width, 1, bg);
+            if let Some(lines) = wrapped {
+                if let Some(line_content) = lines.get(row) {
+                    draw_wrapped_line(buffer, content_x, y, content_width, line_content, fg, bg);
+                }
+            }
+        }
+        None => {
+            buffer.fill_rect(ln_x, y, 6, 1, dt.context_bg);
+            buffer.fill_rect(content_x, y, content_width, 1, dt.context_bg);
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -1108,6 +1447,153 @@ fn render_context_item_block(
                 theme.foreground,
                 theme.background,
             );
+        }
+    }
+}
+
+fn render_context_line_wrapped_row(
+    buffer: &mut OptimizedBuffer,
+    area: Rect,
+    y: u32,
+    line_num: i64,
+    theme: &Theme,
+    wrapped: &[WrappedLine],
+    row: usize,
+) {
+    draw_block_base_line(buffer, area, y, theme.background, theme);
+
+    let ln_str = format!("{:5} ", line_num);
+    let line_num_width: u32 = 6;
+    let ln_x = block_inner_x(area);
+    buffer.fill_rect(ln_x, y, line_num_width, 1, theme.panel_bg);
+    if row == 0 {
+        buffer.draw_text(
+            ln_x,
+            y,
+            &ln_str,
+            Style::fg(theme.muted).with_bg(theme.panel_bg),
+        );
+    }
+
+    let content_x = ln_x + line_num_width;
+    let content_width = block_inner_width(area).saturating_sub(line_num_width);
+    buffer.fill_rect(content_x, y, content_width, 1, theme.background);
+    if let Some(line_content) = wrapped.get(row) {
+        draw_wrapped_line(
+            buffer,
+            content_x,
+            y,
+            content_width,
+            line_content,
+            theme.foreground,
+            theme.background,
+        );
+    }
+}
+
+enum WrappedLine {
+    Spans(Vec<HighlightSpan>),
+    Text(String),
+}
+
+fn split_at_char(text: &str, max_chars: usize) -> (&str, &str) {
+    if max_chars == 0 {
+        return ("", text);
+    }
+    let mut count = 0usize;
+    for (idx, _) in text.char_indices() {
+        if count == max_chars {
+            return (&text[..idx], &text[idx..]);
+        }
+        count += 1;
+    }
+    (text, "")
+}
+
+fn wrap_highlight_spans(spans: &[HighlightSpan], max_width: usize) -> Vec<Vec<HighlightSpan>> {
+    if max_width == 0 {
+        return Vec::new();
+    }
+    let mut lines: Vec<Vec<HighlightSpan>> = Vec::new();
+    let mut current: Vec<HighlightSpan> = Vec::new();
+    let mut width = 0usize;
+
+    for span in spans {
+        let mut remaining = span.text.as_str();
+        while !remaining.is_empty() {
+            let available = max_width.saturating_sub(width);
+            if available == 0 {
+                lines.push(current);
+                current = Vec::new();
+                width = 0;
+                continue;
+            }
+            let (chunk, rest) = split_at_char(remaining, available);
+            if !chunk.is_empty() {
+                current.push(HighlightSpan {
+                    text: chunk.to_string(),
+                    fg: span.fg,
+                    bold: span.bold,
+                    italic: span.italic,
+                });
+                width += chunk.chars().count();
+            }
+            remaining = rest;
+            if width >= max_width {
+                lines.push(current);
+                current = Vec::new();
+                width = 0;
+            }
+        }
+    }
+
+    if !current.is_empty() || lines.is_empty() {
+        lines.push(current);
+    }
+
+    lines
+}
+
+fn wrap_content(
+    spans: Option<&Vec<HighlightSpan>>,
+    text: &str,
+    max_width: usize,
+) -> Vec<WrappedLine> {
+    if max_width == 0 {
+        return vec![WrappedLine::Text(String::new())];
+    }
+    if let Some(spans) = spans {
+        if spans.is_empty() {
+            return wrap_text_preserve(text, max_width)
+                .into_iter()
+                .map(WrappedLine::Text)
+                .collect();
+        }
+        let wrapped = wrap_highlight_spans(spans, max_width);
+        return wrapped.into_iter().map(WrappedLine::Spans).collect();
+    }
+
+    wrap_text_preserve(text, max_width)
+        .into_iter()
+        .map(WrappedLine::Text)
+        .collect()
+}
+
+fn draw_wrapped_line(
+    buffer: &mut OptimizedBuffer,
+    x: u32,
+    y: u32,
+    max_width: u32,
+    line: &WrappedLine,
+    fallback_fg: Rgba,
+    bg: Rgba,
+) {
+    match line {
+        WrappedLine::Spans(spans) => {
+            draw_highlighted_text(buffer, x, y, max_width, Some(spans), "", fallback_fg, bg);
+        }
+        WrappedLine::Text(text) => {
+            draw_highlighted_text(buffer, x, y, max_width, None, text, fallback_fg, bg);
         }
     }
 }

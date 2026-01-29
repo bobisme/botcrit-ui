@@ -133,6 +133,8 @@ pub struct Model {
     pub sidebar_visible: bool,
     /// Diff view mode (unified or side-by-side)
     pub diff_view_mode: DiffViewMode,
+    /// Wrap diff lines when enabled
+    pub diff_wrap: bool,
 
     // === Layout ===
     pub width: u16,
@@ -173,6 +175,7 @@ impl Model {
             filter: ReviewFilter::default(),
             sidebar_visible: true,
             diff_view_mode: DiffViewMode::default(),
+            diff_wrap: false,
             width,
             height,
             layout_mode: LayoutMode::from_width(width),

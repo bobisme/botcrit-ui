@@ -243,6 +243,7 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         model.diff_scroll,
         theme,
         model.diff_view_mode,
+        model.diff_wrap,
     );
 
     let pinned_height = block_height(1) as u32;
@@ -288,7 +289,7 @@ fn draw_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     // Help text based on focus
     let help = match model.focus {
         Focus::FileSidebar => "j/k files  Enter/Space diff  s sidebar  h back  q quit",
-        Focus::DiffPane => "j/k scroll  n/p thread  v view  s sidebar  Esc back  q quit",
+        Focus::DiffPane => "j/k scroll  n/p thread  v view  w wrap  s sidebar  Esc back  q quit",
         Focus::ThreadExpanded => "j/k scroll  r resolve  Esc collapse",
         _ => "Space switch  Esc back  q quit",
     };

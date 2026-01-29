@@ -383,6 +383,7 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
             KeyCode::Char('n') => Message::NextThread,
             KeyCode::Char('p') | KeyCode::Char('N') => Message::PrevThread,
             KeyCode::Char('v') => Message::ToggleDiffView, // Toggle unified/side-by-side
+            KeyCode::Char('w') => Message::ToggleDiffWrap,
             KeyCode::Char('u') => Message::ScrollHalfPageUp,
             KeyCode::Char('d') => Message::ScrollHalfPageDown,
             KeyCode::Char('b') => Message::PageUp,

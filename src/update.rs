@@ -283,6 +283,11 @@ pub fn update(model: &mut Model, msg: Message) {
             update_active_file_from_scroll(model);
         }
 
+        Message::ToggleDiffWrap => {
+            model.diff_wrap = !model.diff_wrap;
+            model.needs_redraw = true;
+        }
+
         // === System ===
         Message::Resize { width, height } => {
             model.resize(width, height);
@@ -329,12 +334,16 @@ fn center_on_thread(model: &mut Model) {
     };
     let layout = stream_layout(model);
     let files = model.files_with_threads();
+    let width = diff_content_width(model);
     if let Some(stream_row) = thread_stream_offset(
         &layout,
         &files,
         &model.file_cache,
         &model.threads,
         &thread_id,
+        model.diff_view_mode,
+        model.diff_wrap,
+        width,
     ) {
         let view_height = model.height.saturating_sub(2) as usize;
         let center = view_height / 2;
@@ -352,6 +361,7 @@ fn stream_layout(model: &Model) -> crate::stream::StreamLayout {
         model.expanded_thread.as_deref(),
         &model.comments,
         model.diff_view_mode,
+        model.diff_wrap,
         width,
     )
 }

@@ -76,6 +76,8 @@ pub enum Message {
     ToggleDiffView,
     /// Toggle file sidebar visibility
     ToggleSidebar,
+    /// Toggle diff line wrapping
+    ToggleDiffWrap,
 
     // === System ===
     /// Terminal resize event

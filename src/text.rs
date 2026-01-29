@@ -57,3 +57,33 @@ pub fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
 
     lines
 }
+
+pub fn wrap_text_preserve(text: &str, max_width: usize) -> Vec<String> {
+    if max_width == 0 {
+        return Vec::new();
+    }
+
+    let mut lines = Vec::new();
+    for raw_line in text.split('\n') {
+        if raw_line.is_empty() {
+            lines.push(String::new());
+            continue;
+        }
+
+        let mut start = 0usize;
+        let mut count = 0usize;
+        for (idx, _) in raw_line.char_indices() {
+            if count == max_width {
+                lines.push(raw_line[start..idx].to_string());
+                start = idx;
+                count = 0;
+            }
+            count += 1;
+        }
+        if start <= raw_line.len() {
+            lines.push(raw_line[start..].to_string());
+        }
+    }
+
+    lines
+}

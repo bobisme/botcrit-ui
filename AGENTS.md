@@ -16,15 +16,31 @@ Claims are mandatory for files, beads, and agent roles. Release claims when done
 
 ## Rendering Tests (Botty)
 
-Use Botty for rendering verification with color escape codes:
+Use Botty for rendering verification. The agent ID is always a **positional argument** (not a `--name` flag, except on `spawn`):
 
 ```bash
-botty spawn --name crit-ui -- <command>
-botty snapshot --raw --name crit-ui
-botty send --name crit-ui "<keys>"
-botty send-bytes --name crit-ui "<hex-bytes>"
-botty kill --name crit-ui
+botty spawn --name <id> -- <command>   # spawn (--name sets the ID)
+botty snapshot <id>                    # plain text snapshot (no ANSI)
+botty snapshot --raw <id>              # snapshot with ANSI color codes
+botty send <id> "<keys>"              # send printable keys
+botty send-bytes <id> "<hex-bytes>"   # send raw bytes (e.g. "1b" for ESC)
+botty kill <id>                        # kill a running agent
+botty list                             # show all running agents
 ```
+
+### Tips
+
+- **Use absolute paths** when spawning — botty's cwd may differ from the project root:
+  ```bash
+  botty spawn --name crit-ui -- /home/bob/src/botcrit-ui/target/release/crit-ui
+  ```
+- **Wait after spawn** before snapshot (`sleep 2-3`) to let the TUI render its first frame.
+- **Wait after send** before snapshot (`sleep 0.3-0.5`) to let the app process input and redraw.
+- **Prefer plain `botty snapshot <id>`** (without `--raw`) for analyzing layout and content. Use `--raw` only when verifying colors/styling.
+- **`botty send-bytes <id> "1b"`** sends ESC — useful for Escape key presses in TUI apps.
+- **Know the app's keybindings** before sending keys — `q` may quit the entire app, not navigate back. Check key mappings in source first.
+- **After `botty kill`**, wait ~1s before respawning with the same ID.
+- **Empty snapshots** can mean the app crashed on startup. Check `botty list` to verify it's still running.
 
 If a real screenshot is needed, use Ghostty + `grim` to capture the window.
 

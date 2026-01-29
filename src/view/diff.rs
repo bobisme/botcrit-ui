@@ -24,6 +24,28 @@ pub struct ThreadAnchor {
     pub is_expanded: bool,
 }
 
+fn thread_marker(anchor: &ThreadAnchor, theme: &Theme) -> (&'static str, Rgba) {
+    thread_marker_from_status(anchor.is_expanded, &anchor.status, theme)
+}
+
+fn thread_marker_from_status(
+    is_expanded: bool,
+    status: &str,
+    theme: &Theme,
+) -> (&'static str, Rgba) {
+    if is_expanded {
+        if status == "resolved" {
+            ("▽", theme.success)
+        } else {
+            ("▼", theme.warning)
+        }
+    } else if status == "resolved" {
+        ("▷", theme.success)
+    } else {
+        ("▶", theme.warning)
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ChangeCounts {
     added: usize,
@@ -305,14 +327,7 @@ pub fn render_diff_with_threads(
 
         // Draw thread indicator column
         if let Some(anchor) = thread_anchor {
-            // Show different indicator if expanded vs collapsed
-            let (indicator, color) = if anchor.is_expanded {
-                ("*", theme.primary) // expanded thread
-            } else if anchor.status == "resolved" {
-                ("o", theme.success) // resolved thread
-            } else {
-                ("o", theme.warning) // open thread
-            };
+            let (indicator, color) = thread_marker(anchor, theme);
             buffer.fill_rect(area.x, y, thread_col_width, 1, theme.panel_bg);
             buffer.draw_text(area.x, y, indicator, Style::fg(color));
         } else {
@@ -796,13 +811,7 @@ fn render_unified_diff_line_block(
             let thread_col_width: u32 = 2;
             buffer.fill_rect(thread_x, y, thread_col_width, 1, line_bg);
             if let Some(anchor) = anchor {
-                let (indicator, color) = if anchor.is_expanded {
-                    ("*", theme.primary)
-                } else if anchor.status == "resolved" {
-                    ("o", theme.success)
-                } else {
-                    ("o", theme.warning)
-                };
+                let (indicator, color) = thread_marker(anchor, theme);
                 buffer.draw_text(thread_x, y, indicator, Style::fg(color).with_bg(line_bg));
             }
 
@@ -850,13 +859,7 @@ fn render_side_by_side_line_block(
     let thread_col_width: u32 = 2;
     buffer.fill_rect(thread_x, y, thread_col_width, 1, base_bg);
     if let Some(anchor) = anchor {
-        let (indicator, color) = if anchor.is_expanded {
-            ("*", theme.primary)
-        } else if anchor.status == "resolved" {
-            ("o", theme.success)
-        } else {
-            ("o", theme.warning)
-        };
+        let (indicator, color) = thread_marker(anchor, theme);
         buffer.draw_text(thread_x, y, indicator, Style::fg(color).with_bg(base_bg));
     }
 
@@ -1457,13 +1460,7 @@ pub fn render_diff_side_by_side(
 
         // Draw thread indicator column
         if let Some(anchor) = thread_anchor {
-            let (indicator, color) = if anchor.is_expanded {
-                ("*", theme.primary)
-            } else if anchor.status == "resolved" {
-                ("o", theme.success)
-            } else {
-                ("o", theme.warning)
-            };
+            let (indicator, color) = thread_marker(anchor, theme);
             buffer.fill_rect(area.x, y, thread_col_width, 1, theme.panel_bg);
             buffer.draw_text(area.x, y, indicator, Style::fg(color));
         } else {
@@ -1762,13 +1759,8 @@ pub fn render_file_context(
 
                 // Draw thread indicator column
                 if let Some(t) = thread {
-                    let (indicator, color) = if is_expanded {
-                        ("*", theme.primary)
-                    } else if t.status == "resolved" {
-                        ("o", theme.success)
-                    } else {
-                        ("o", theme.warning)
-                    };
+                    let (indicator, color) =
+                        thread_marker_from_status(is_expanded, &t.status, theme);
                     buffer.fill_rect(area.x, y, thread_col_width, 1, theme.panel_bg);
                     buffer.draw_text(area.x, y, indicator, Style::fg(color));
                 } else {

@@ -12,7 +12,7 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
     let theme = &model.theme;
     let area = Rect::from_size(model.width, model.height);
 
-    let inner = Rect::new(area.x, area.y, area.width, area.height.saturating_sub(1));
+    let inner = Rect::new(area.x, area.y, area.width, area.height);
 
     // Layout based on mode
     match model.layout_mode {
@@ -63,13 +63,16 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     let inner = area;
     buffer.fill_rect(inner.x, inner.y, inner.width, inner.height, theme.panel_bg);
     let files = model.files_with_threads();
+    let focused = matches!(model.focus, Focus::FileSidebar);
 
-    let mut y = inner.y;
-    let text_x = inner.x + 1;
-    let text_width = inner.width.saturating_sub(2);
+    let left_pad: u32 = 2;
+    let right_pad: u32 = 2;
+    let mut y = inner.y + 1;
+    let text_x = inner.x + left_pad;
+    let text_width = inner.width.saturating_sub(left_pad + right_pad);
+    let bottom = inner.y + inner.height.saturating_sub(1);
 
     if let Some(review) = &model.current_review {
-        y += 1;
         draw_text_truncated(
             buffer,
             text_x,
@@ -111,12 +114,14 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     }
 
     if files.is_empty() {
-        buffer.draw_text(text_x, y, "No files", Style::fg(theme.muted));
+        if y < bottom {
+            buffer.draw_text(text_x, y, "No files", Style::fg(theme.muted));
+        }
         return;
     }
 
     for (i, file) in files.iter().enumerate() {
-        if y >= inner.y + inner.height {
+        if y >= bottom {
             break;
         }
 
@@ -124,17 +129,22 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         let selected = i == model.file_index;
 
         // Selection indicator and background
-        let (prefix, style) = if selected {
-            buffer.fill_rect(inner.x, y, inner.width, 1, theme.selection_bg);
-            (
-                "▸ ",
-                Style::fg(theme.selection_fg).with_bg(theme.selection_bg),
-            )
+        let row_bg = if selected && focused {
+            theme.selection_bg
         } else {
-            ("  ", Style::fg(theme.foreground))
+            theme.panel_bg
+        };
+        if selected && focused {
+            buffer.fill_rect(inner.x, y, inner.width, 1, row_bg);
+        }
+        let (prefix, style) = if selected {
+            ("◉ ", Style::fg(theme.primary).with_bg(row_bg))
+        } else {
+            ("  ", Style::fg(theme.foreground).with_bg(row_bg))
         };
 
-        buffer.draw_text(inner.x + 1, row_y, prefix, style);
+        let prefix_x = inner.x + left_pad;
+        buffer.draw_text(prefix_x, row_y, prefix, style);
 
         // Thread count indicator
         let thread_indicator = if file.open_threads > 0 {
@@ -152,17 +162,17 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         };
 
         // Calculate available width for filename
-        let indicator_width: u32 = 2;
+        let indicator_len = thread_indicator.chars().count() as u32;
         let prefix_width: u32 = 2;
         let filename_width = inner
             .width
-            .saturating_sub(prefix_width + indicator_width + 2);
+            .saturating_sub(prefix_width + indicator_len + left_pad + right_pad);
 
         // Draw filename (truncated)
         let filename = truncate_path(&file.path, filename_width as usize);
         draw_text_truncated(
             buffer,
-            inner.x + prefix_width + 1,
+            prefix_x + prefix_width,
             row_y,
             &filename,
             filename_width,
@@ -170,11 +180,15 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         );
 
         // Draw thread indicator at the end
+        let indicator_x = inner
+            .x
+            .saturating_add(inner.width)
+            .saturating_sub(right_pad + indicator_len);
         buffer.draw_text(
-            inner.x + inner.width - indicator_width,
+            indicator_x,
             row_y,
             &thread_indicator,
-            Style::fg(indicator_color),
+            Style::fg(indicator_color).with_bg(row_bg),
         );
 
         y += 1;
@@ -190,6 +204,12 @@ fn short_hash(hash: &str) -> &str {
 fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     let theme = &model.theme;
     let inner = area;
+    let content_area = Rect::new(
+        inner.x,
+        inner.y,
+        inner.width,
+        inner.height.saturating_sub(2),
+    );
 
     let files = model.files_with_threads();
     if files.is_empty() {
@@ -214,7 +234,7 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
 
     render_diff_stream(
         buffer,
-        inner,
+        content_area,
         &files,
         &model.file_cache,
         &model.threads,
@@ -227,19 +247,44 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
 
     let pinned_height = block_height(1) as u32;
     let pinned_area = Rect::new(
-        inner.x,
-        inner.y,
-        inner.width,
-        pinned_height.min(inner.height),
+        content_area.x,
+        content_area.y,
+        content_area.width,
+        pinned_height.min(content_area.height),
     );
     render_pinned_header_block(buffer, pinned_area, file_title, theme, counts);
+
+    // Bottom margin between content and footer
+    if inner.height >= 2 {
+        let margin_y = inner.y + inner.height - 2;
+        buffer.fill_rect(inner.x, margin_y, inner.width, 1, theme.background);
+    }
 }
 
 fn draw_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     let theme = &model.theme;
     let y = area.y + area.height - 1;
 
-    buffer.fill_rect(area.x, y, area.width, 1, theme.background);
+    let mut footer_x = area.x;
+    let mut footer_width = area.width;
+    if model.sidebar_visible {
+        let sidebar_width = model.layout_mode.sidebar_width() as u32;
+        if sidebar_width < area.width
+            && matches!(
+                model.layout_mode,
+                LayoutMode::Full | LayoutMode::Compact | LayoutMode::Overlay
+            )
+        {
+            footer_x = area.x + sidebar_width;
+            footer_width = area.width.saturating_sub(sidebar_width);
+        }
+    }
+
+    if footer_width == 0 {
+        return;
+    }
+
+    buffer.fill_rect(footer_x, y, footer_width, 1, theme.background);
     // Help text based on focus
     let help = match model.focus {
         Focus::FileSidebar => "j/k files  Enter/Space diff  s sidebar  h back  q quit",
@@ -248,5 +293,12 @@ fn draw_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         _ => "Space switch  Esc back  q quit",
     };
 
-    buffer.draw_text(area.x + 2, y, help, Style::fg(theme.muted));
+    let padding: u32 = 2;
+    let text_width = help.len() as u32;
+    let x = if footer_width > text_width + padding {
+        footer_x + footer_width - text_width - padding
+    } else {
+        footer_x + padding.min(footer_width)
+    };
+    buffer.draw_text(x, y, help, Style::fg(theme.muted));
 }

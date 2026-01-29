@@ -88,8 +88,7 @@ fn main() -> Result<()> {
     }
 
     // Get terminal size
-    let (term_width, height) = terminal_size().unwrap_or((80, 24));
-    let width = term_width.saturating_sub(2).max(1);
+    let (width, height) = terminal_size().unwrap_or((80, 24));
 
     // Create model
     let mut model = Model::new(width as u16, height as u16);
@@ -130,14 +129,13 @@ fn main() -> Result<()> {
     loop {
         // Detect external terminal resize even if no input events are received
         if let Ok((term_width, term_height)) = terminal_size() {
-            let ui_width = term_width.saturating_sub(2).max(1);
-            let term_width_u16 = ui_width as u16;
+            let term_width_u16 = term_width as u16;
             let term_height_u16 = term_height as u16;
             if term_width_u16 != model.width || term_height_u16 != model.height {
                 model.resize(term_width_u16, term_height_u16);
                 model.needs_redraw = true;
                 renderer
-                    .resize(ui_width.into(), term_height.into())
+                    .resize(term_width.into(), term_height.into())
                     .context("Failed to resize renderer")?;
             }
         }
@@ -301,7 +299,7 @@ fn map_event_to_message(model: &Model, event: Event) -> Message {
             }
         }
         Event::Resize(resize) => Message::Resize {
-            width: resize.width.saturating_sub(2).max(1),
+            width: resize.width,
             height: resize.height,
         },
         Event::Mouse(_) => Message::Noop,

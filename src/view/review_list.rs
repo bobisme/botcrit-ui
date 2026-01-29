@@ -9,7 +9,7 @@ use crate::model::Model;
 pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
     let theme = &model.theme;
     let area = Rect::from_size(model.width, model.height);
-    let safe_width = area.width.saturating_sub(2);
+    let safe_width = area.width;
 
     buffer.fill_rect(area.x, area.y, safe_width, 1, theme.background);
     buffer.draw_text(
@@ -89,7 +89,7 @@ fn draw_review_row(
         ("  ", Style::fg(theme.foreground).with_bg(bg))
     };
 
-    let row_width = area.width.saturating_sub(1);
+    let row_width = area.width;
     // Fill row background (avoid last column to prevent terminal wrap)
     buffer.fill_rect(area.x, y, row_width, 1, bg);
 

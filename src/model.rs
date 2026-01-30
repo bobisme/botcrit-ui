@@ -183,7 +183,7 @@ impl Model {
             filter: ReviewFilter::default(),
             sidebar_visible: true,
             diff_view_mode: DiffViewMode::default(),
-            diff_wrap: false,
+            diff_wrap: true,
             pending_editor_request: None,
             width,
             height,

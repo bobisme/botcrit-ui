@@ -296,7 +296,8 @@ pub fn update(model: &mut Model, msg: Message) {
                     .as_ref()
                     .and_then(|thread_id| model.threads.iter().find(|t| t.thread_id == *thread_id))
                     .and_then(|thread| {
-                        if thread.selection_start > 0 {
+                        // Only use line number if thread is for the current file
+                        if thread.file_path == file.path && thread.selection_start > 0 {
                             Some(thread.selection_start as u32)
                         } else {
                             None

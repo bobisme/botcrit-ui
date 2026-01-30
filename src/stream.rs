@@ -12,7 +12,7 @@ pub const BLOCK_PADDING: usize = 1;
 pub const BLOCK_SIDE_MARGIN: u32 = 2;
 pub const BLOCK_LEFT_PAD: u32 = 2;
 pub const BLOCK_RIGHT_PAD: u32 = 2;
-pub const SIDE_BY_SIDE_MIN_WIDTH: u32 = 120;
+pub const SIDE_BY_SIDE_MIN_WIDTH: u32 = 100;
 
 pub struct StreamLayout {
     pub file_offsets: Vec<usize>,

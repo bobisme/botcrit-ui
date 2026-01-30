@@ -9,7 +9,6 @@ use crate::stream::block_height;
 
 /// Render the review detail screen
 pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
-    let theme = &model.theme;
     let area = Rect::from_size(model.width, model.height);
 
     let inner = Rect::new(area.x, area.y, area.width, area.height);
@@ -28,20 +27,14 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
             }
         }
         LayoutMode::Overlay => {
-            // Draw diff pane full width, overlay sidebar if visible
-            draw_diff_pane(model, buffer, inner);
             if model.sidebar_visible {
-                let sidebar_width = 20;
-                let sidebar_area = Rect::new(inner.x, inner.y, sidebar_width, inner.height);
-                // Draw with panel background to overlay
-                buffer.fill_rect(
-                    sidebar_area.x,
-                    sidebar_area.y,
-                    sidebar_area.width,
-                    sidebar_area.height,
-                    theme.panel_bg,
-                );
+                let sidebar_width = model.layout_mode.sidebar_width() as u32;
+                let (sidebar_area, diff_area) = inner.split_left(sidebar_width);
+
                 draw_file_sidebar(model, buffer, sidebar_area);
+                draw_diff_pane(model, buffer, diff_area);
+            } else {
+                draw_diff_pane(model, buffer, inner);
             }
         }
         LayoutMode::Single => {

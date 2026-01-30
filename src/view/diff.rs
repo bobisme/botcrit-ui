@@ -51,6 +51,8 @@ pub(crate) struct ChangeCounts {
     removed: usize,
 }
 
+// --- Block helpers (for file headers, pinned headers, comments) ---
+
 fn block_inner_x(area: Rect) -> u32 {
     area.x + BLOCK_SIDE_MARGIN + 1 + BLOCK_LEFT_PAD
 }
@@ -65,7 +67,13 @@ fn draw_block_bar(buffer: &mut OptimizedBuffer, x: u32, y: u32, bg: Rgba, theme:
     buffer.draw_text(x, y, "┃", Style::fg(theme.muted).with_bg(bg));
 }
 
-fn draw_block_base_line(buffer: &mut OptimizedBuffer, area: Rect, y: u32, bg: Rgba, theme: &Theme) {
+fn draw_block_base_line(
+    buffer: &mut OptimizedBuffer,
+    area: Rect,
+    y: u32,
+    bg: Rgba,
+    theme: &Theme,
+) {
     if BLOCK_SIDE_MARGIN > 0 {
         buffer.fill_rect(area.x, y, BLOCK_SIDE_MARGIN, 1, theme.background);
         buffer.fill_rect(
@@ -81,6 +89,51 @@ fn draw_block_base_line(buffer: &mut OptimizedBuffer, area: Rect, y: u32, bg: Rg
     let content_width = area.width.saturating_sub(BLOCK_SIDE_MARGIN * 2);
     buffer.fill_rect(content_x, y, content_width, 1, bg);
     draw_block_bar(buffer, content_x, y, bg, theme);
+}
+
+// --- Diff helpers (no bar, no side margins, no padding) ---
+
+const DIFF_H_PAD: u32 = 2;
+
+fn diff_content_x(area: Rect) -> u32 {
+    area.x + DIFF_H_PAD
+}
+
+fn diff_content_width(area: Rect) -> u32 {
+    area.width.saturating_sub(DIFF_H_PAD * 2)
+}
+
+fn draw_diff_base_line(buffer: &mut OptimizedBuffer, area: Rect, y: u32, bg: Rgba) {
+    buffer.fill_rect(area.x, y, area.width, 1, bg);
+}
+
+// --- Comment bar (┃ in darkest background color) ---
+
+const COMMENT_H_MARGIN: u32 = 2;
+const COMMENT_H_PAD: u32 = 2;
+
+fn draw_comment_bar(buffer: &mut OptimizedBuffer, x: u32, y: u32, bg: Rgba, theme: &Theme) {
+    buffer.fill_rect(x, y, 1, 1, bg);
+    buffer.draw_text(x, y, "┃", Style::fg(theme.background).with_bg(bg));
+}
+
+/// The comment block area inset by the horizontal margin (bar goes here).
+fn comment_block_area(area: Rect) -> Rect {
+    Rect {
+        x: area.x + COMMENT_H_MARGIN,
+        width: area.width.saturating_sub(COMMENT_H_MARGIN * 2),
+        ..area
+    }
+}
+
+/// Padded content area inside a comment (after bar + margin + padding).
+fn comment_content_area(block: Rect) -> Rect {
+    // block already has bar at block.x; content starts 1 (bar) + pad from block.x
+    Rect {
+        x: block.x + 1 + COMMENT_H_PAD,
+        width: block.width.saturating_sub(1 + COMMENT_H_PAD * 2),
+        ..block
+    }
 }
 
 fn draw_block_text_line(
@@ -118,6 +171,43 @@ fn draw_block_line_with_right(
 
     let content_x = block_inner_x(area);
     let content_width = block_inner_width(area) as usize;
+    let right_text = right.unwrap_or("");
+    let right_len = right_text.len();
+    let left_max = if right_len > 0 {
+        content_width.saturating_sub(right_len + 1)
+    } else {
+        content_width
+    };
+
+    let left_text = if left_max == 0 {
+        ""
+    } else if left.len() > left_max {
+        &left[..left_max]
+    } else {
+        left
+    };
+
+    buffer.draw_text(content_x, y, left_text, left_style.with_bg(bg));
+
+    if right_len > 0 && right_len <= content_width {
+        let right_x = content_x + content_width as u32 - right_len as u32;
+        buffer.draw_text(right_x, y, right_text, right_style.with_bg(bg));
+    }
+}
+
+/// Draw left/right text directly in the area without block formatting.
+fn draw_plain_line_with_right(
+    buffer: &mut OptimizedBuffer,
+    area: Rect,
+    y: u32,
+    bg: Rgba,
+    left: &str,
+    right: Option<&str>,
+    left_style: Style,
+    right_style: Style,
+) {
+    let content_x = area.x;
+    let content_width = area.width as usize;
     let right_text = right.unwrap_or("");
     let right_len = right_text.len();
     let left_max = if right_len > 0 {
@@ -418,7 +508,10 @@ fn render_comment_bubble(
         return 0;
     }
 
-    let content_width = block_inner_width(area) as usize;
+    // Layout: area → block (margined) → padded content
+    let block = comment_block_area(area);
+    let padded = comment_content_area(block);
+    let content_width = padded.width as usize;
     let mut content_lines = Vec::new();
     for comment in comments {
         content_lines.push(format!("@{}", comment.author));
@@ -439,7 +532,9 @@ fn render_comment_bubble(
         if row < BLOCK_MARGIN {
             buffer.fill_rect(area.x, y, area.width, 1, theme.background);
         } else if row < BLOCK_MARGIN + BLOCK_PADDING {
-            draw_block_base_line(buffer, area, y, theme.panel_bg, theme);
+            buffer.fill_rect(area.x, y, area.width, 1, theme.background);
+            buffer.fill_rect(block.x, y, block.width, 1, theme.panel_bg);
+            draw_comment_bar(buffer, block.x, y, theme.panel_bg, theme);
         } else if row < BLOCK_MARGIN + BLOCK_PADDING + content_lines.len() {
             let text = &content_lines[content_idx];
             let style = if text.starts_with('@') {
@@ -447,10 +542,20 @@ fn render_comment_bubble(
             } else {
                 Style::fg(theme.foreground)
             };
-            draw_block_text_line(buffer, area, y, theme.panel_bg, text, style, theme);
+            buffer.fill_rect(area.x, y, area.width, 1, theme.background);
+            buffer.fill_rect(block.x, y, block.width, 1, theme.panel_bg);
+            draw_comment_bar(buffer, block.x, y, theme.panel_bg, theme);
+            let display_text = if text.len() > content_width {
+                &text[..content_width]
+            } else {
+                text.as_str()
+            };
+            buffer.draw_text(padded.x, y, display_text, style.with_bg(theme.panel_bg));
             content_idx += 1;
         } else if row < BLOCK_MARGIN + BLOCK_PADDING + content_lines.len() + BLOCK_PADDING {
-            draw_block_base_line(buffer, area, y, theme.panel_bg, theme);
+            buffer.fill_rect(area.x, y, area.width, 1, theme.background);
+            buffer.fill_rect(block.x, y, block.width, 1, theme.panel_bg);
+            draw_comment_bar(buffer, block.x, y, theme.panel_bg, theme);
         } else {
             buffer.fill_rect(area.x, y, area.width, 1, theme.background);
         }
@@ -621,18 +726,6 @@ pub fn render_diff_stream(
             break;
         }
 
-        // Diff/context block
-        for _ in 0..BLOCK_MARGIN {
-            cursor.emit(|buf, y, _| {
-                buf.fill_rect(area.x, y, area.width, 1, theme.background);
-            });
-        }
-        for _ in 0..BLOCK_PADDING {
-            cursor.emit(|buf, y, theme| {
-                draw_block_base_line(buf, area, y, theme.diff.context_bg, theme);
-            });
-        }
-
         let file_threads: Vec<&ThreadSummary> = threads
             .iter()
             .filter(|t| t.file_path == file.path)
@@ -677,7 +770,7 @@ pub fn render_diff_stream(
                                     if wrap {
                                         let thread_col_width: u32 = 2;
                                         let line_num_width: u32 = 12;
-                                        let content_width = block_inner_width(area)
+                                        let content_width = diff_content_width(area)
                                             .saturating_sub(thread_col_width + line_num_width);
                                         let max_content = content_width.saturating_sub(2) as usize;
                                         let wrapped = wrap_content(
@@ -731,7 +824,7 @@ pub fn render_diff_stream(
                                 let thread_col_width: u32 = 2;
                                 let divider_width: u32 = 1;
                                 let line_num_width: u32 = 6;
-                                let available = block_inner_width(area)
+                                let available = diff_content_width(area)
                                     .saturating_sub(thread_col_width + divider_width);
                                 let half_width = available / 2;
                                 let left_width = half_width.saturating_sub(line_num_width) as usize;
@@ -824,7 +917,7 @@ pub fn render_diff_stream(
                                 let highlight = entry.highlighted_lines.get(line_index);
                                 let line_num_width: u32 = 6;
                                 let content_width =
-                                    block_inner_width(area).saturating_sub(line_num_width) as usize;
+                                    diff_content_width(area).saturating_sub(line_num_width) as usize;
                                 let wrapped = wrap_content(highlight, content, content_width);
                                 let rows = wrapped.len().max(1);
                                 cursor.emit_rows(rows, |buf, y, theme, row| {
@@ -876,16 +969,6 @@ pub fn render_diff_stream(
             }
         }
 
-        for _ in 0..BLOCK_PADDING {
-            cursor.emit(|buf, y, theme| {
-                draw_block_base_line(buf, area, y, theme.diff.context_bg, theme);
-            });
-        }
-        for _ in 0..BLOCK_MARGIN {
-            cursor.emit(|buf, y, _| {
-                buf.fill_rect(area.x, y, area.width, 1, theme.background);
-            });
-        }
     }
 
     if cursor.remaining_rows() > 0 {
@@ -913,10 +996,10 @@ fn render_unified_diff_line_block(
     let dt = &theme.diff;
     match display_line {
         DisplayLine::HunkHeader(_) => {
-            draw_block_base_line(buffer, area, y, dt.context_bg, theme);
+            draw_diff_base_line(buffer, area, y, dt.context_bg);
             let sep = "···";
             let sep_x =
-                block_inner_x(area) + block_inner_width(area).saturating_sub(sep.len() as u32) / 2;
+                diff_content_x(area) + diff_content_width(area).saturating_sub(sep.len() as u32) / 2;
             buffer.draw_text(sep_x, y, sep, Style::fg(theme.muted).with_bg(dt.context_bg));
         }
         DisplayLine::Diff(line) => {
@@ -925,9 +1008,9 @@ fn render_unified_diff_line_block(
                 DiffLineKind::Removed => dt.removed_bg,
                 DiffLineKind::Context => dt.context_bg,
             };
-            draw_block_base_line(buffer, area, y, line_bg, theme);
+            draw_diff_base_line(buffer, area, y, line_bg);
 
-            let thread_x = block_inner_x(area);
+            let thread_x = diff_content_x(area);
             let thread_col_width: u32 = 2;
             buffer.fill_rect(thread_x, y, thread_col_width, 1, line_bg);
             if let Some(anchor) = anchor {
@@ -938,7 +1021,7 @@ fn render_unified_diff_line_block(
             let line_num_width: u32 = 12;
             let content_start = thread_x + thread_col_width + line_num_width;
             let content_width =
-                block_inner_width(area).saturating_sub(thread_col_width + line_num_width);
+                diff_content_width(area).saturating_sub(thread_col_width + line_num_width);
             render_diff_line(
                 buffer,
                 thread_x + thread_col_width,
@@ -982,9 +1065,9 @@ fn render_unified_diff_line_wrapped_row(
         DiffLineKind::Context => (dt.context_bg, dt.context_bg, dt.context, " ", dt.context),
     };
 
-    draw_block_base_line(buffer, area, y, bg, theme);
+    draw_diff_base_line(buffer, area, y, bg);
 
-    let thread_x = block_inner_x(area);
+    let thread_x = diff_content_x(area);
     let thread_col_width: u32 = 2;
     buffer.fill_rect(thread_x, y, thread_col_width, 1, bg);
     if row == 0 {
@@ -1032,7 +1115,7 @@ fn render_unified_diff_line_wrapped_row(
     }
 
     let content_start = line_num_x + line_num_width;
-    let content_width = block_inner_width(area).saturating_sub(thread_col_width + line_num_width);
+    let content_width = diff_content_width(area).saturating_sub(thread_col_width + line_num_width);
     buffer.fill_rect(content_start, y, content_width, 1, bg);
     if row == 0 {
         buffer.draw_text(content_start, y, sign, Style::fg(sign_color).with_bg(bg));
@@ -1063,18 +1146,18 @@ fn render_side_by_side_line_block(
 ) {
     let dt = &theme.diff;
     if sbs_line.is_header {
-        draw_block_base_line(buffer, area, y, dt.context_bg, theme);
+        draw_diff_base_line(buffer, area, y, dt.context_bg);
         let sep = "···";
         let sep_x =
-            block_inner_x(area) + block_inner_width(area).saturating_sub(sep.len() as u32) / 2;
+            diff_content_x(area) + diff_content_width(area).saturating_sub(sep.len() as u32) / 2;
         buffer.draw_text(sep_x, y, sep, Style::fg(theme.muted).with_bg(dt.context_bg));
         return;
     }
 
     let base_bg = dt.context_bg;
-    draw_block_base_line(buffer, area, y, base_bg, theme);
+    draw_diff_base_line(buffer, area, y, base_bg);
 
-    let thread_x = block_inner_x(area);
+    let thread_x = diff_content_x(area);
     let thread_col_width: u32 = 2;
     buffer.fill_rect(thread_x, y, thread_col_width, 1, base_bg);
     if let Some(anchor) = anchor {
@@ -1084,7 +1167,7 @@ fn render_side_by_side_line_block(
 
     let divider_width: u32 = 1;
     let line_num_width: u32 = 6;
-    let available = block_inner_width(area).saturating_sub(thread_col_width + divider_width);
+    let available = diff_content_width(area).saturating_sub(thread_col_width + divider_width);
     let half_width = available / 2;
     let left_content_width = half_width.saturating_sub(line_num_width);
     let right_content_width = half_width.saturating_sub(line_num_width);
@@ -1144,9 +1227,9 @@ fn render_side_by_side_line_wrapped_row(
 ) {
     let dt = &theme.diff;
     let base_bg = dt.context_bg;
-    draw_block_base_line(buffer, area, y, base_bg, theme);
+    draw_diff_base_line(buffer, area, y, base_bg);
 
-    let thread_x = block_inner_x(area);
+    let thread_x = diff_content_x(area);
     let thread_col_width: u32 = 2;
     buffer.fill_rect(thread_x, y, thread_col_width, 1, base_bg);
     if row == 0 {
@@ -1158,7 +1241,7 @@ fn render_side_by_side_line_wrapped_row(
 
     let divider_width: u32 = 1;
     let line_num_width: u32 = 6;
-    let available = block_inner_width(area).saturating_sub(thread_col_width + divider_width);
+    let available = diff_content_width(area).saturating_sub(thread_col_width + divider_width);
     let half_width = available / 2;
     let left_content_width = half_width.saturating_sub(line_num_width);
     let right_content_width = half_width.saturating_sub(line_num_width);
@@ -1267,7 +1350,10 @@ fn emit_comment_block(
         return;
     }
 
-    let content_width = block_inner_width(area) as usize;
+    // Layout: area → block (margined) → padded content
+    let block = comment_block_area(area);
+    let padded = comment_content_area(block);
+    let content_width = padded.width as usize;
     let mut content_lines: Vec<CommentLine> = Vec::new();
 
     let line_range = if let Some(end) = thread.selection_end {
@@ -1332,7 +1418,9 @@ fn emit_comment_block(
             if row < BLOCK_MARGIN {
                 buf.fill_rect(area.x, y, area.width, 1, theme.background);
             } else if row < BLOCK_MARGIN + BLOCK_PADDING {
-                draw_block_base_line(buf, area, y, theme.panel_bg, theme);
+                buf.fill_rect(area.x, y, area.width, 1, theme.background);
+                buf.fill_rect(block.x, y, block.width, 1, theme.panel_bg);
+                draw_comment_bar(buf, block.x, y, theme.panel_bg, theme);
             } else if row < BLOCK_MARGIN + BLOCK_PADDING + content_lines.len() {
                 let line = &content_lines[content_idx];
                 let (left_style, right_style) = match line.kind {
@@ -1340,20 +1428,24 @@ fn emit_comment_block(
                     CommentLineKind::Author => (Style::fg(theme.primary), Style::fg(theme.muted)),
                     CommentLineKind::Body => (Style::fg(theme.foreground), Style::fg(theme.muted)),
                 };
-                draw_block_line_with_right(
+                buf.fill_rect(area.x, y, area.width, 1, theme.background);
+                buf.fill_rect(block.x, y, block.width, 1, theme.panel_bg);
+                draw_comment_bar(buf, block.x, y, theme.panel_bg, theme);
+                draw_plain_line_with_right(
                     buf,
-                    area,
+                    padded,
                     y,
                     theme.panel_bg,
                     &line.left,
                     line.right.as_deref(),
                     left_style,
                     right_style,
-                    theme,
                 );
                 content_idx += 1;
             } else if row < BLOCK_MARGIN + BLOCK_PADDING + content_lines.len() + BLOCK_PADDING {
-                draw_block_base_line(buf, area, y, theme.panel_bg, theme);
+                buf.fill_rect(area.x, y, area.width, 1, theme.background);
+                buf.fill_rect(block.x, y, block.width, 1, theme.panel_bg);
+                draw_comment_bar(buf, block.x, y, theme.panel_bg, theme);
             } else {
                 buf.fill_rect(area.x, y, area.width, 1, theme.background);
             }
@@ -1404,14 +1496,14 @@ fn render_context_item_block(
 ) {
     match item {
         DisplayItem::Separator(gap) => {
-            draw_block_base_line(buffer, area, y, theme.panel_bg, theme);
+            draw_diff_base_line(buffer, area, y, theme.panel_bg);
             let sep_text = if *gap > 0 {
                 format!("··· {} lines ···", gap)
             } else {
                 "···".to_string()
             };
-            let sep_x = block_inner_x(area)
-                + block_inner_width(area).saturating_sub(sep_text.len() as u32) / 2;
+            let sep_x = diff_content_x(area)
+                + diff_content_width(area).saturating_sub(sep_text.len() as u32) / 2;
             buffer.draw_text(
                 sep_x,
                 y,
@@ -1420,11 +1512,11 @@ fn render_context_item_block(
             );
         }
         DisplayItem::Line { line_num, content } => {
-            draw_block_base_line(buffer, area, y, theme.background, theme);
+            draw_diff_base_line(buffer, area, y, theme.background);
 
             let ln_str = format!("{:5} ", line_num);
             let line_num_width: u32 = 6;
-            let ln_x = block_inner_x(area);
+            let ln_x = diff_content_x(area);
             buffer.fill_rect(ln_x, y, line_num_width, 1, theme.panel_bg);
             buffer.draw_text(
                 ln_x,
@@ -1434,7 +1526,7 @@ fn render_context_item_block(
             );
 
             let content_x = ln_x + line_num_width;
-            let content_width = block_inner_width(area).saturating_sub(line_num_width);
+            let content_width = diff_content_width(area).saturating_sub(line_num_width);
             buffer.fill_rect(content_x, y, content_width, 1, theme.background);
             let highlight = highlighted_lines.get((*line_num as usize).saturating_sub(1));
             draw_highlighted_text(
@@ -1460,11 +1552,11 @@ fn render_context_line_wrapped_row(
     wrapped: &[WrappedLine],
     row: usize,
 ) {
-    draw_block_base_line(buffer, area, y, theme.background, theme);
+    draw_diff_base_line(buffer, area, y, theme.background);
 
     let ln_str = format!("{:5} ", line_num);
     let line_num_width: u32 = 6;
-    let ln_x = block_inner_x(area);
+    let ln_x = diff_content_x(area);
     buffer.fill_rect(ln_x, y, line_num_width, 1, theme.panel_bg);
     if row == 0 {
         buffer.draw_text(
@@ -1476,7 +1568,7 @@ fn render_context_line_wrapped_row(
     }
 
     let content_x = ln_x + line_num_width;
-    let content_width = block_inner_width(area).saturating_sub(line_num_width);
+    let content_width = diff_content_width(area).saturating_sub(line_num_width);
     buffer.fill_rect(content_x, y, content_width, 1, theme.background);
     if let Some(line_content) = wrapped.get(row) {
         draw_wrapped_line(

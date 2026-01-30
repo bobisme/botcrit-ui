@@ -14,6 +14,9 @@ pub const BLOCK_LEFT_PAD: u32 = 2;
 pub const BLOCK_RIGHT_PAD: u32 = 2;
 pub const SIDE_BY_SIDE_MIN_WIDTH: u32 = 100;
 
+/// Horizontal padding for diff lines (must match DIFF_H_PAD in diff.rs).
+const DIFF_H_PAD: u32 = 2;
+
 pub struct StreamLayout {
     pub file_offsets: Vec<usize>,
     pub total_lines: usize,
@@ -23,30 +26,31 @@ pub fn block_height(content_lines: usize) -> usize {
     content_lines + (BLOCK_MARGIN * 2) + (BLOCK_PADDING * 2)
 }
 
-fn block_inner_width(content_width: u32) -> u32 {
-    content_width.saturating_sub(BLOCK_SIDE_MARGIN * 2 + 1 + BLOCK_LEFT_PAD + BLOCK_RIGHT_PAD)
+/// Inner width for diff content (no block bar/margins, just horizontal padding).
+fn diff_inner_width(pane_width: u32) -> u32 {
+    pane_width.saturating_sub(DIFF_H_PAD * 2)
 }
 
-fn unified_wrap_width(content_width: u32) -> usize {
+fn unified_wrap_width(pane_width: u32) -> usize {
     let thread_col_width: u32 = 2;
     let line_num_width: u32 = 12;
     let content_width =
-        block_inner_width(content_width).saturating_sub(thread_col_width + line_num_width);
+        diff_inner_width(pane_width).saturating_sub(thread_col_width + line_num_width);
     let max_content = content_width.saturating_sub(2);
     max_content as usize
 }
 
-fn context_wrap_width(content_width: u32) -> usize {
+fn context_wrap_width(pane_width: u32) -> usize {
     let line_num_width: u32 = 6;
-    block_inner_width(content_width).saturating_sub(line_num_width) as usize
+    diff_inner_width(pane_width).saturating_sub(line_num_width) as usize
 }
 
-fn side_by_side_wrap_widths(content_width: u32) -> (usize, usize) {
+fn side_by_side_wrap_widths(pane_width: u32) -> (usize, usize) {
     let thread_col_width: u32 = 2;
     let divider_width: u32 = 1;
     let line_num_width: u32 = 6;
     let available =
-        block_inner_width(content_width).saturating_sub(thread_col_width + divider_width);
+        diff_inner_width(pane_width).saturating_sub(thread_col_width + divider_width);
     let half_width = available / 2;
     let left = half_width.saturating_sub(line_num_width) as usize;
     let right = half_width.saturating_sub(line_num_width) as usize;
@@ -106,9 +110,9 @@ pub fn compute_stream_layout(
                 0
             };
 
-            total += block_height(diff_lines.max(1));
+            total += diff_lines.max(1);
         } else {
-            total += block_height(1);
+            total += 1;
         }
     }
 
@@ -147,8 +151,7 @@ pub fn thread_stream_offset(
     let thread = threads.iter().find(|t| t.thread_id == thread_id)?;
     let file_index = files.iter().position(|f| f.path == thread.file_path)?;
     let file_offset = layout.file_offsets.get(file_index).copied()?;
-    let diff_block_start = file_offset + block_height(1);
-    let content_start = diff_block_start + BLOCK_MARGIN + BLOCK_PADDING;
+    let content_start = file_offset + block_height(1);
 
     let entry = file_cache.get(&thread.file_path)?;
     if let Some(diff) = &entry.diff {

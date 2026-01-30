@@ -197,6 +197,8 @@ pub fn update(model: &mut Model, msg: Message) {
             } else if let Some(first) = threads.first() {
                 model.expanded_thread = Some(first.thread_id.clone());
             }
+            center_on_thread(model);
+            update_active_file_from_scroll(model);
         }
 
         Message::PrevThread => {
@@ -216,6 +218,8 @@ pub fn update(model: &mut Model, msg: Message) {
             } else if let Some(last) = threads.last() {
                 model.expanded_thread = Some(last.thread_id.clone());
             }
+            center_on_thread(model);
+            update_active_file_from_scroll(model);
         }
 
         Message::ExpandThread(id) => {
@@ -289,6 +293,7 @@ pub fn update(model: &mut Model, msg: Message) {
         Message::ToggleDiffWrap => {
             model.diff_wrap = !model.diff_wrap;
             model.needs_redraw = true;
+            update_active_file_from_scroll(model);
         }
 
         Message::CycleTheme => {
@@ -561,18 +566,19 @@ fn stream_layout(model: &Model) -> crate::stream::StreamLayout {
 }
 
 fn diff_content_width(model: &Model) -> u32 {
-    let outer_inner_width = model.width as u32;
-    let diff_pane_width = match model.layout_mode {
-        crate::model::LayoutMode::Full | crate::model::LayoutMode::Compact => {
+    let total_width = model.width as u32;
+    match model.layout_mode {
+        crate::model::LayoutMode::Full
+        | crate::model::LayoutMode::Compact
+        | crate::model::LayoutMode::Overlay => {
             if model.sidebar_visible {
-                outer_inner_width.saturating_sub(model.layout_mode.sidebar_width() as u32)
+                total_width.saturating_sub(model.layout_mode.sidebar_width() as u32)
             } else {
-                outer_inner_width
+                total_width
             }
         }
-        crate::model::LayoutMode::Overlay | crate::model::LayoutMode::Single => outer_inner_width,
-    };
-    diff_pane_width.saturating_sub(2)
+        crate::model::LayoutMode::Single => total_width,
+    }
 }
 
 /// If the theme picker is active, apply the currently highlighted theme as a preview.

@@ -5,6 +5,7 @@ use crate::model::{DiffViewMode, EditorRequest, Focus, Model, ReviewFilter, Scre
 use crate::stream::{
     active_file_index, compute_stream_layout, file_scroll_offset, thread_stream_offset,
 };
+use crate::{config, theme, Highlighter};
 
 /// Update the model based on a message, returning an optional command
 pub fn update(model: &mut Model, msg: Message) {
@@ -286,6 +287,37 @@ pub fn update(model: &mut Model, msg: Message) {
         Message::ToggleDiffWrap => {
             model.diff_wrap = !model.diff_wrap;
             model.needs_redraw = true;
+        }
+
+        Message::CycleTheme => {
+            let theme_names = theme::built_in_theme_names();
+            if theme_names.is_empty() {
+                return;
+            }
+            let current_pos = theme_names
+                .iter()
+                .position(|&name| name == model.theme.name);
+            let next_pos = match current_pos {
+                Some(pos) => (pos + 1) % theme_names.len(),
+                None => 0,
+            };
+            let next_theme_name = theme_names[next_pos];
+
+            if let Some(loaded) = theme::load_built_in_theme(next_theme_name) {
+                model.theme = loaded.theme;
+                if let Some(theme_name) = loaded.syntax_theme {
+                    model.highlighter = Highlighter::with_theme(&theme_name);
+                } else if model.theme.name.to_lowercase().contains("light") {
+                    model.highlighter = Highlighter::with_theme("base16-ocean.light");
+                } else {
+                    model.highlighter = Highlighter::with_theme("base16-ocean.dark");
+                }
+                model.config.theme = Some(next_theme_name.to_string());
+                if config::save_ui_config(&model.config).is_ok() {
+                    // Saved successfully
+                }
+                model.needs_redraw = true;
+            }
         }
 
         Message::OpenFileInEditor => {

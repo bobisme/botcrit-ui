@@ -80,6 +80,8 @@ pub enum Message {
     ToggleDiffWrap,
     /// Open current file in editor
     OpenFileInEditor,
+    /// Cycle to the next theme
+    CycleTheme,
 
     // === System ===
     /// Terminal resize event

@@ -94,7 +94,7 @@ fn main() -> Result<()> {
     let (width, height) = terminal_size().unwrap_or((80, 24));
 
     // Create model
-    let mut model = Model::new(width as u16, height as u16);
+    let mut model = Model::new(width as u16, height as u16, config);
     model.theme = theme;
     if let Some(theme_name) = syntax_theme {
         model.highlighter = Highlighter::with_theme(&theme_name);
@@ -480,6 +480,7 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
             KeyCode::Char('v') => Message::ToggleDiffView, // Toggle unified/side-by-side
             KeyCode::Char('w') => Message::ToggleDiffWrap,
             KeyCode::Char('o') => Message::OpenFileInEditor,
+            KeyCode::Char('T') => Message::CycleTheme,
             KeyCode::Char('u') => Message::ScrollHalfPageUp,
             KeyCode::Char('d') => Message::ScrollHalfPageDown,
             KeyCode::Char('b') => Message::PageUp,

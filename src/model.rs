@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use crate::config::UiConfig;
 use crate::db::{Comment, ReviewDetail, ReviewSummary, ThreadDetail, ThreadSummary};
 use crate::diff::ParsedDiff;
 use crate::syntax::{HighlightSpan, Highlighter};
@@ -151,6 +152,7 @@ pub struct Model {
 
     // === Theme ===
     pub theme: Theme,
+    pub config: UiConfig,
 
     // === Control ===
     pub should_quit: bool,
@@ -161,7 +163,7 @@ pub struct Model {
 impl Model {
     /// Create a new model
     #[must_use]
-    pub fn new(width: u16, height: u16) -> Self {
+    pub fn new(width: u16, height: u16, config: UiConfig) -> Self {
         Self {
             screen: Screen::default(),
             focus: Focus::default(),
@@ -189,6 +191,7 @@ impl Model {
             height,
             layout_mode: LayoutMode::from_width(width),
             theme: Theme::default(),
+            config,
             should_quit: false,
             needs_redraw: true,
         }

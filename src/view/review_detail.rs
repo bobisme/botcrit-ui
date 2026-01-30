@@ -266,6 +266,15 @@ fn draw_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     let theme = &model.theme;
     let y = area.y + area.height - 1;
 
+    // Draw theme name on the left
+    let theme_name_text = format!("[{}]", model.theme.name);
+    buffer.draw_text(
+        area.x + 2,
+        y,
+        &theme_name_text,
+        Style::fg(theme.primary).with_bold(),
+    );
+
     let mut footer_x = area.x;
     let mut footer_width = area.width;
     if model.sidebar_visible {

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UiConfig {
     pub theme: Option<String>,
+    pub default_diff_view: Option<String>,
 }
 
 pub fn load_ui_config() -> anyhow::Result<Option<UiConfig>> {

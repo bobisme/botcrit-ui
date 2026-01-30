@@ -78,6 +78,8 @@ pub enum Message {
     ToggleSidebar,
     /// Toggle diff line wrapping
     ToggleDiffWrap,
+    /// Open current file in editor
+    OpenFileInEditor,
 
     // === System ===
     /// Terminal resize event

@@ -61,6 +61,12 @@ pub enum DiffViewMode {
     SideBySide,
 }
 
+#[derive(Debug, Clone)]
+pub struct EditorRequest {
+    pub file_path: String,
+    pub line: Option<u32>,
+}
+
 impl LayoutMode {
     /// Determine layout mode from terminal width
     #[must_use]
@@ -135,6 +141,8 @@ pub struct Model {
     pub diff_view_mode: DiffViewMode,
     /// Wrap diff lines when enabled
     pub diff_wrap: bool,
+    /// Pending editor launch request
+    pub pending_editor_request: Option<EditorRequest>,
 
     // === Layout ===
     pub width: u16,
@@ -176,6 +184,7 @@ impl Model {
             sidebar_visible: true,
             diff_view_mode: DiffViewMode::default(),
             diff_wrap: false,
+            pending_editor_request: None,
             width,
             height,
             layout_mode: LayoutMode::from_width(width),

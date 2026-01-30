@@ -6,6 +6,7 @@
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -15,9 +16,11 @@ use opentui::{
     RendererOptions,
 };
 
-use botcrit_ui::config::{load_ui_config, save_ui_config};
+use botcrit_ui::config::{load_ui_config, save_ui_config, UiConfig};
+use botcrit_ui::model::{DiffViewMode, EditorRequest};
+use botcrit_ui::stream::SIDE_BY_SIDE_MIN_WIDTH;
 use botcrit_ui::theme::{load_built_in_theme, load_theme_from_path};
-use botcrit_ui::{update, vcs, view, Db, Highlighter, Message, Model, Screen, Theme};
+use botcrit_ui::{update, vcs, view, Db, Highlighter, LayoutMode, Message, Model, Screen, Theme};
 
 fn main() -> Result<()> {
     let args = parse_args()?;
@@ -99,6 +102,8 @@ fn main() -> Result<()> {
         model.highlighter = Highlighter::with_theme("base16-ocean.light");
     }
 
+    apply_default_diff_view(&mut model, &config);
+
     // Load initial data
     if let Some(db) = &db {
         model.reviews = db.list_reviews(None).unwrap_or_default();
@@ -108,7 +113,7 @@ fn main() -> Result<()> {
     }
 
     // Enter raw mode for input handling
-    let _raw_guard = enable_raw_mode().context("Failed to enable raw mode")?;
+    let mut raw_guard = Some(enable_raw_mode().context("Failed to enable raw mode")?);
 
     // Initialize renderer
     let options = RendererOptions {
@@ -119,8 +124,8 @@ fn main() -> Result<()> {
     };
     let mut renderer = Renderer::new_with_options(width.into(), height.into(), options)
         .context("Failed to initialize renderer")?;
-    let _wrap_guard = AutoWrapGuard::new().context("Failed to disable line wrap")?;
-    let _cursor_guard = CursorGuard::new().context("Failed to hide cursor")?;
+    let mut wrap_guard = Some(AutoWrapGuard::new().context("Failed to disable line wrap")?);
+    let mut cursor_guard = Some(CursorGuard::new().context("Failed to hide cursor")?);
     renderer.set_background(model.theme.background);
 
     // Input parser
@@ -184,6 +189,38 @@ fn main() -> Result<()> {
                             } else {
                                 // Demo mode - simulate data loading
                                 handle_demo_data_loading(&mut model);
+                            }
+
+                            if let Some(request) = model.pending_editor_request.take() {
+                                let (prev_width, prev_height) = renderer.size();
+                                let prev_width = prev_width as u16;
+                                let prev_height = prev_height as u16;
+                                drop(renderer);
+                                raw_guard.take();
+                                wrap_guard.take();
+                                cursor_guard.take();
+
+                                let _ = open_file_in_editor(repo_path.as_deref(), request);
+
+                                raw_guard =
+                                    Some(enable_raw_mode().context("Failed to enable raw mode")?);
+                                let (width, height) =
+                                    terminal_size().unwrap_or((prev_width, prev_height));
+                                renderer = Renderer::new_with_options(
+                                    width.into(),
+                                    height.into(),
+                                    options,
+                                )
+                                .context("Failed to initialize renderer")?;
+                                renderer.set_background(model.theme.background);
+                                wrap_guard = Some(
+                                    AutoWrapGuard::new().context("Failed to disable line wrap")?,
+                                );
+                                cursor_guard =
+                                    Some(CursorGuard::new().context("Failed to hide cursor")?);
+                                model.resize(width as u16, height as u16);
+                                model.needs_redraw = true;
+                                renderer.invalidate();
                             }
                         }
                         Err(ParseError::Empty) | Err(ParseError::Incomplete) => break,
@@ -305,6 +342,64 @@ fn parse_args() -> Result<CliArgs> {
     Ok(CliArgs { db_path, theme })
 }
 
+fn apply_default_diff_view(model: &mut Model, config: &UiConfig) {
+    if let Some(value) = config.default_diff_view.as_deref() {
+        if let Some(mode) = parse_diff_view_mode(value) {
+            model.diff_view_mode = mode;
+        }
+        return;
+    }
+
+    if should_default_side_by_side(model) {
+        model.diff_view_mode = DiffViewMode::SideBySide;
+    }
+}
+
+fn parse_diff_view_mode(value: &str) -> Option<DiffViewMode> {
+    let normalized = value.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "unified" | "unify" | "uni" => Some(DiffViewMode::Unified),
+        "side-by-side" | "side_by_side" | "sidebyside" | "sbs" => Some(DiffViewMode::SideBySide),
+        _ => None,
+    }
+}
+
+fn should_default_side_by_side(model: &Model) -> bool {
+    let diff_pane_width = match model.layout_mode {
+        LayoutMode::Full | LayoutMode::Compact => {
+            if model.sidebar_visible {
+                model
+                    .width
+                    .saturating_sub(model.layout_mode.sidebar_width())
+            } else {
+                model.width
+            }
+        }
+        LayoutMode::Overlay | LayoutMode::Single => model.width,
+    };
+
+    u32::from(diff_pane_width) >= SIDE_BY_SIDE_MIN_WIDTH
+}
+
+fn open_file_in_editor(repo_path: Option<&Path>, request: EditorRequest) -> Result<()> {
+    let Some(repo_root) = repo_path else {
+        return Ok(());
+    };
+
+    let file_path = repo_root.join(&request.file_path);
+    if !file_path.exists() {
+        return Ok(());
+    }
+
+    let mut cmd = Command::new("nvim");
+    if let Some(line) = request.line {
+        cmd.arg(format!("+{}", line));
+    }
+    cmd.arg(file_path);
+    let _ = cmd.status();
+    Ok(())
+}
+
 fn map_event_to_message(model: &Model, event: Event) -> Message {
     match event {
         Event::Key(key) => {
@@ -384,6 +479,7 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
             KeyCode::Char('p') | KeyCode::Char('N') => Message::PrevThread,
             KeyCode::Char('v') => Message::ToggleDiffView, // Toggle unified/side-by-side
             KeyCode::Char('w') => Message::ToggleDiffWrap,
+            KeyCode::Char('o') => Message::OpenFileInEditor,
             KeyCode::Char('u') => Message::ScrollHalfPageUp,
             KeyCode::Char('d') => Message::ScrollHalfPageDown,
             KeyCode::Char('b') => Message::PageUp,

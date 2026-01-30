@@ -1,7 +1,7 @@
 //! State update logic (Elm Architecture)
 
 use crate::message::Message;
-use crate::model::{DiffViewMode, Focus, Model, ReviewFilter, Screen};
+use crate::model::{DiffViewMode, EditorRequest, Focus, Model, ReviewFilter, Screen};
 use crate::stream::{
     active_file_index, compute_stream_layout, file_scroll_offset, thread_stream_offset,
 };
@@ -286,6 +286,27 @@ pub fn update(model: &mut Model, msg: Message) {
         Message::ToggleDiffWrap => {
             model.diff_wrap = !model.diff_wrap;
             model.needs_redraw = true;
+        }
+
+        Message::OpenFileInEditor => {
+            let files = model.files_with_threads();
+            if let Some(file) = files.get(model.file_index) {
+                let line = model
+                    .expanded_thread
+                    .as_ref()
+                    .and_then(|thread_id| model.threads.iter().find(|t| t.thread_id == *thread_id))
+                    .and_then(|thread| {
+                        if thread.selection_start > 0 {
+                            Some(thread.selection_start as u32)
+                        } else {
+                            None
+                        }
+                    });
+                model.pending_editor_request = Some(EditorRequest {
+                    file_path: file.path.clone(),
+                    line,
+                });
+            }
         }
 
         // === System ===

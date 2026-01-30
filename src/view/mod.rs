@@ -1,5 +1,6 @@
 //! View rendering
 
+mod command_palette;
 mod components;
 mod diff;
 mod review_detail;
@@ -22,4 +23,6 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
         Screen::ReviewList => review_list::view(model, buffer),
         Screen::ReviewDetail => review_detail::view(model, buffer),
     }
+
+    command_palette::view(model, buffer);
 }

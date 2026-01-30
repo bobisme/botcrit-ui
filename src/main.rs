@@ -408,6 +408,15 @@ fn map_event_to_message(model: &Model, event: Event) -> Message {
                 return Message::Quit;
             }
 
+            if key.modifiers.contains(KeyModifiers::CTRL) && key.code == KeyCode::Char('p') {
+                return Message::ShowCommandPalette;
+            }
+
+            match model.focus {
+                Focus::CommandPalette => return map_command_palette_key(key.code),
+                _ => {}
+            }
+
             match model.screen {
                 Screen::ReviewList => map_review_list_key(key.code, model),
                 Screen::ReviewDetail => map_review_detail_key(model, key.code, key.modifiers),
@@ -515,6 +524,18 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
             }
             _ => Message::Noop,
         },
+        _ => Message::Noop,
+    }
+}
+
+fn map_command_palette_key(key: KeyCode) -> Message {
+    match key {
+        KeyCode::Esc => Message::HideCommandPalette,
+        KeyCode::Up => Message::CommandPalettePrev,
+        KeyCode::Down => Message::CommandPaletteNext,
+        KeyCode::Enter => Message::CommandPaletteExecute,
+        KeyCode::Char(c) => Message::CommandPaletteUpdateInput(c.to_string()),
+        KeyCode::Backspace => Message::CommandPaletteInputBackspace,
         _ => Message::Noop,
     }
 }

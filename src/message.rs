@@ -83,9 +83,21 @@ pub enum Message {
     /// Cycle to the next theme
     CycleTheme,
 
+    // === Command Palette ===
+    ShowCommandPalette,
+    HideCommandPalette,
+    CommandPaletteNext,
+    CommandPalettePrev,
+    CommandPaletteUpdateInput(String),
+    CommandPaletteInputBackspace,
+    CommandPaletteExecute,
+
     // === System ===
     /// Terminal resize event
-    Resize { width: u16, height: u16 },
+    Resize {
+        width: u16,
+        height: u16,
+    },
     /// Periodic tick for animations/refresh
     Tick,
     /// Request to quit

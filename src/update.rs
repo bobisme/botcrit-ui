@@ -1,11 +1,48 @@
 //! State update logic (Elm Architecture)
 
+use crate::command::{command_id_to_message, get_commands};
 use crate::message::Message;
-use crate::model::{DiffViewMode, EditorRequest, Focus, Model, ReviewFilter, Screen};
+use crate::message::Message;
+use crate::model::{CommandSpec, DiffViewMode, EditorRequest, Focus, Model, ReviewFilter, Screen};
 use crate::stream::{
     active_file_index, compute_stream_layout, file_scroll_offset, thread_stream_offset,
 };
 use crate::{config, theme, Highlighter};
+
+fn get_commands() -> Vec<CommandSpec> {
+    vec![
+        CommandSpec {
+            name: "quit",
+            description: "Quit the application",
+            message: Message::Quit,
+        },
+        CommandSpec {
+            name: "theme: cycle",
+            description: "Cycle to the next theme",
+            message: Message::CycleTheme,
+        },
+        CommandSpec {
+            name: "diff: toggle view",
+            description: "Toggle between unified and side-by-side diff",
+            message: Message::ToggleDiffView,
+        },
+        CommandSpec {
+            name: "diff: toggle wrap",
+            description: "Toggle line wrapping in diffs",
+            message: Message::ToggleDiffWrap,
+        },
+        CommandSpec {
+            name: "sidebar: toggle",
+            description: "Show or hide the file sidebar",
+            message: Message::ToggleSidebar,
+        },
+        CommandSpec {
+            name: "editor: open file",
+            description: "Open the current file in an external editor",
+            message: Message::OpenFileInEditor,
+        },
+    ]
+}
 
 /// Update the model based on a message, returning an optional command
 pub fn update(model: &mut Model, msg: Message) {
@@ -238,6 +275,7 @@ pub fn update(model: &mut Model, msg: Message) {
                 Focus::FileSidebar => Focus::DiffPane,
                 Focus::DiffPane => Focus::FileSidebar,
                 Focus::ThreadExpanded => Focus::DiffPane,
+                Focus::CommandPalette => model.previous_focus.take().unwrap_or(Focus::DiffPane),
             };
         }
 
@@ -317,6 +355,78 @@ pub fn update(model: &mut Model, msg: Message) {
                     // Saved successfully
                 }
                 model.needs_redraw = true;
+            }
+        }
+
+        // === Command Palette ===
+        Message::ShowCommandPalette => {
+            model.command_palette_commands = get_commands();
+            model.command_palette_input.clear();
+            model.command_palette_selection = 0;
+            model.previous_focus = Some(model.focus);
+            model.focus = Focus::CommandPalette;
+            model.needs_redraw = true;
+        }
+        Message::HideCommandPalette => {
+            model.focus = model.previous_focus.take().unwrap_or(Focus::DiffPane);
+            model.needs_redraw = true;
+        }
+        Message::CommandPaletteNext => {
+            let count = model.command_palette_commands.len();
+            if count > 0 {
+                model.command_palette_selection = (model.command_palette_selection + 1) % count;
+            }
+            model.needs_redraw = true;
+        }
+        Message::CommandPalettePrev => {
+            let count = model.command_palette_commands.len();
+            if count > 0 {
+                model.command_palette_selection =
+                    (model.command_palette_selection + count - 1) % count;
+            }
+            model.needs_redraw = true;
+        }
+        Message::CommandPaletteUpdateInput(input) => {
+            model.command_palette_input.push_str(&input);
+            model.command_palette_selection = 0;
+            let commands = get_commands();
+            model.command_palette_commands = commands
+                .into_iter()
+                .filter(|cmd| {
+                    let search_terms: Vec<&str> =
+                        model.command_palette_input.split_whitespace().collect();
+                    if search_terms.is_empty() {
+                        return true;
+                    }
+                    search_terms.iter().all(|term| cmd.name.contains(term))
+                })
+                .collect();
+            model.needs_redraw = true;
+        }
+        Message::CommandPaletteInputBackspace => {
+            model.command_palette_input.pop();
+            model.command_palette_selection = 0;
+            let commands = get_commands();
+            model.command_palette_commands = commands
+                .into_iter()
+                .filter(|cmd| {
+                    let search_terms: Vec<&str> =
+                        model.command_palette_input.split_whitespace().collect();
+                    if search_terms.is_empty() {
+                        return true;
+                    }
+                    search_terms.iter().all(|term| cmd.name.contains(term))
+                })
+                .collect();
+            model.needs_redraw = true;
+        }
+        Message::CommandPaletteExecute => {
+            let commands = model.command_palette_commands.clone();
+            if let Some(command) = commands.get(model.command_palette_selection) {
+                // First hide the palette, then dispatch the command
+                update(model, Message::HideCommandPalette);
+                let msg = command_id_to_message(command.id);
+                update(model, msg);
             }
         }
 

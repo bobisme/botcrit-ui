@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use crate::command::CommandSpec;
 use crate::config::UiConfig;
 use crate::db::{Comment, ReviewDetail, ReviewSummary, ThreadDetail, ThreadSummary};
 use crate::diff::ParsedDiff;
@@ -37,6 +38,7 @@ pub enum Focus {
     FileSidebar,
     DiffPane,
     ThreadExpanded,
+    CommandPalette,
 }
 
 /// Responsive layout mode based on terminal width
@@ -105,6 +107,7 @@ pub struct Model {
     // === Screen state ===
     pub screen: Screen,
     pub focus: Focus,
+    pub previous_focus: Option<Focus>,
 
     // === Data ===
     pub reviews: Vec<ReviewSummary>,
@@ -145,6 +148,11 @@ pub struct Model {
     /// Pending editor launch request
     pub pending_editor_request: Option<EditorRequest>,
 
+    // === Command Palette ===
+    pub command_palette_input: String,
+    pub command_palette_selection: usize,
+    pub command_palette_commands: Vec<CommandSpec>,
+
     // === Layout ===
     pub width: u16,
     pub height: u16,
@@ -167,6 +175,7 @@ impl Model {
         Self {
             screen: Screen::default(),
             focus: Focus::default(),
+            previous_focus: None,
             reviews: Vec::new(),
             current_review: None,
             threads: Vec::new(),
@@ -187,6 +196,9 @@ impl Model {
             diff_view_mode: DiffViewMode::default(),
             diff_wrap: true,
             pending_editor_request: None,
+            command_palette_input: String::new(),
+            command_palette_selection: 0,
+            command_palette_commands: Vec::new(),
             width,
             height,
             layout_mode: LayoutMode::from_width(width),

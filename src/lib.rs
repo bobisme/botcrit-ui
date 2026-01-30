@@ -7,9 +7,10 @@
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_sign_loss)]
 
+pub mod command;
+pub mod config;
 pub mod db;
 pub mod diff;
-pub mod config;
 pub mod message;
 pub mod model;
 pub mod stream;

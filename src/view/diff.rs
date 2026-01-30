@@ -308,7 +308,6 @@ fn draw_file_header_line(
 pub fn map_threads_to_diff(
     diff: &ParsedDiff,
     threads: &[&ThreadSummary],
-    expanded_thread: Option<&str>,
 ) -> Vec<ThreadAnchor> {
     let mut anchors = Vec::new();
 
@@ -352,7 +351,7 @@ pub fn map_threads_to_diff(
                 line_count,
                 status: thread.status.clone(),
                 comment_count: thread.comment_count,
-                is_expanded: expanded_thread == Some(&thread.thread_id),
+                is_expanded: true,
             });
         }
     }
@@ -672,8 +671,7 @@ pub fn render_diff_stream(
     files: &[crate::model::FileEntry],
     file_cache: &std::collections::HashMap<String, crate::model::FileCacheEntry>,
     threads: &[ThreadSummary],
-    expanded_thread: Option<&str>,
-    comments: &[crate::db::Comment],
+    all_comments: &std::collections::HashMap<String, Vec<crate::db::Comment>>,
     scroll: usize,
     theme: &Theme,
     view_mode: crate::model::DiffViewMode,
@@ -733,7 +731,7 @@ pub fn render_diff_stream(
 
         if let Some(entry) = file_cache.get(&file.path) {
             if let Some(diff) = &entry.diff {
-                let anchors = map_threads_to_diff(diff, &file_threads, expanded_thread);
+                let anchors = map_threads_to_diff(diff, &file_threads);
                 let mut anchor_map: std::collections::HashMap<usize, &ThreadAnchor> =
                     std::collections::HashMap::new();
                 for anchor in &anchors {
@@ -801,11 +799,11 @@ pub fn render_diff_stream(
                             }
 
                             if let Some(anchor) = anchor {
-                                if anchor.is_expanded {
-                                    if let Some(thread) = file_threads
-                                        .iter()
-                                        .find(|t| t.thread_id == anchor.thread_id)
-                                    {
+                                if let Some(thread) = file_threads
+                                    .iter()
+                                    .find(|t| t.thread_id == anchor.thread_id)
+                                {
+                                    if let Some(comments) = all_comments.get(&anchor.thread_id) {
                                         emit_comment_block(&mut cursor, area, thread, comments);
                                     }
                                 }
@@ -879,11 +877,11 @@ pub fn render_diff_stream(
                             }
 
                             if let Some(anchor) = anchor {
-                                if anchor.is_expanded {
-                                    if let Some(thread) = file_threads
-                                        .iter()
-                                        .find(|t| t.thread_id == anchor.thread_id)
-                                    {
+                                if let Some(thread) = file_threads
+                                    .iter()
+                                    .find(|t| t.thread_id == anchor.thread_id)
+                                {
+                                    if let Some(comments) = all_comments.get(&anchor.thread_id) {
                                         emit_comment_block(&mut cursor, area, thread, comments);
                                     }
                                 }
@@ -944,7 +942,7 @@ pub fn render_diff_stream(
                         if let Some(thread) =
                             file_threads.iter().find(|t| t.selection_start == *line_num)
                         {
-                            if expanded_thread == Some(thread.thread_id.as_str()) {
+                            if let Some(comments) = all_comments.get(&thread.thread_id) {
                                 emit_comment_block(&mut cursor, area, thread, comments);
                             }
                         }

@@ -69,8 +69,7 @@ pub fn compute_stream_layout(
     files: &[FileEntry],
     file_cache: &HashMap<String, FileCacheEntry>,
     threads: &[ThreadSummary],
-    expanded_thread: Option<&str>,
-    comments: &[Comment],
+    all_comments: &HashMap<String, Vec<Comment>>,
     view_mode: DiffViewMode,
     wrap: bool,
     content_width: u32,
@@ -83,13 +82,16 @@ pub fn compute_stream_layout(
         total += block_height(1); // file header block
 
         if let Some(entry) = file_cache.get(&file.path) {
+            let file_threads: Vec<&ThreadSummary> = threads
+                .iter()
+                .filter(|t| t.file_path == file.path)
+                .collect();
             let diff_lines = if let Some(diff) = &entry.diff {
                 diff_line_count_for_view(diff, view_mode, wrap, content_width)
-                    + expanded_thread_extra_lines(
+                    + all_threads_extra_lines(
                         diff,
-                        threads,
-                        expanded_thread,
-                        comments,
+                        &file_threads,
+                        all_comments,
                         content_width,
                     )
             } else if let Some(content) = &entry.file_content {
@@ -99,11 +101,10 @@ pub fn compute_stream_layout(
                     &file.path,
                     wrap,
                     content_width,
-                ) + expanded_context_extra_lines(
+                ) + all_context_extra_lines(
                     content.lines.len(),
-                    threads,
-                    expanded_thread,
-                    comments,
+                    &file_threads,
+                    all_comments,
                     content_width,
                 )
             } else {
@@ -303,26 +304,23 @@ fn side_by_side_line_count_wrapped(
     count
 }
 
-fn expanded_thread_extra_lines(
+fn all_threads_extra_lines(
     diff: &ParsedDiff,
-    threads: &[ThreadSummary],
-    expanded_thread: Option<&str>,
-    comments: &[Comment],
+    file_threads: &[&ThreadSummary],
+    all_comments: &HashMap<String, Vec<Comment>>,
     content_width: u32,
 ) -> usize {
-    let Some(thread_id) = expanded_thread else {
-        return 0;
-    };
-    let Some(thread) = threads.iter().find(|t| t.thread_id == thread_id) else {
-        return 0;
-    };
-
-    let display_line = find_display_line(diff, thread.selection_start as u32);
-    if display_line.is_none() {
-        return 0;
+    let mut total = 0;
+    for thread in file_threads {
+        let display_line = find_display_line(diff, thread.selection_start as u32);
+        if display_line.is_none() {
+            continue;
+        }
+        if let Some(comments) = all_comments.get(&thread.thread_id) {
+            total += comment_block_height(comments, content_width);
+        }
     }
-
-    comment_block_height(comments, content_width)
+    total
 }
 
 pub(crate) fn find_display_line(diff: &ParsedDiff, line: u32) -> Option<usize> {
@@ -363,18 +361,28 @@ fn diff_display_row_for_line(
             if !wrap {
                 return find_display_line(diff, line);
             }
-            let mut display_row = 0usize;
             let max_width = unified_wrap_width(content_width);
+            // Prefer new_line match (added side, where ▽ marker renders),
+            // fall back to old_line match (removed side).
+            let mut new_match = None;
+            let mut old_match = None;
+            let mut display_row = 0usize;
             for hunk in &diff.hunks {
                 display_row += 1;
                 for diff_line in &hunk.lines {
-                    if diff_line.new_line == Some(line) || diff_line.old_line == Some(line) {
-                        return Some(display_row);
+                    if new_match.is_none() && diff_line.new_line == Some(line) {
+                        new_match = Some(display_row);
+                    }
+                    if old_match.is_none() && diff_line.old_line == Some(line) {
+                        old_match = Some(display_row);
+                    }
+                    if new_match.is_some() {
+                        return new_match;
                     }
                     display_row += wrap_line_count(&diff_line.content, max_width);
                 }
             }
-            None
+            new_match.or(old_match)
         }
         DiffViewMode::SideBySide => {
             let mut display_row = 0usize;
@@ -613,21 +621,20 @@ fn context_display_count(
     count
 }
 
-fn expanded_context_extra_lines(
+fn all_context_extra_lines(
     total_lines: usize,
-    threads: &[ThreadSummary],
-    expanded_thread: Option<&str>,
-    comments: &[Comment],
+    file_threads: &[&ThreadSummary],
+    all_comments: &HashMap<String, Vec<Comment>>,
     content_width: u32,
 ) -> usize {
-    let Some(thread_id) = expanded_thread else {
-        return 0;
-    };
-    let Some(thread) = threads.iter().find(|t| t.thread_id == thread_id) else {
-        return 0;
-    };
-    if thread.selection_start <= 0 || thread.selection_start as usize > total_lines {
-        return 0;
+    let mut total = 0;
+    for thread in file_threads {
+        if thread.selection_start <= 0 || thread.selection_start as usize > total_lines {
+            continue;
+        }
+        if let Some(comments) = all_comments.get(&thread.thread_id) {
+            total += comment_block_height(comments, content_width);
+        }
     }
-    comment_block_height(comments, content_width)
+    total
 }

@@ -664,6 +664,16 @@ fn handle_data_loading(model: &mut Model, db: &Db, repo_path: Option<&std::path:
             if let Ok(threads) = db.list_threads(&review_id, None, None) {
                 model.threads = threads;
             }
+            // Bulk-load comments for all threads
+            for thread in &model.threads {
+                if !model.all_comments.contains_key(&thread.thread_id) {
+                    if let Ok(comments) = db.list_comments(&thread.thread_id) {
+                        if !comments.is_empty() {
+                            model.all_comments.insert(thread.thread_id.clone(), comments);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -710,20 +720,6 @@ fn handle_data_loading(model: &mut Model, db: &Db, repo_path: Option<&std::path:
     }
 
     ensure_default_expanded_thread(model);
-
-    // Load comments when thread is expanded
-    if let Some(thread_id) = &model.expanded_thread {
-        if model.comments.is_empty()
-            || model.current_thread.as_ref().map(|t| &t.thread_id) != Some(thread_id)
-        {
-            if let Ok(Some(thread)) = db.get_thread(thread_id) {
-                model.current_thread = Some(thread);
-            }
-            if let Ok(comments) = db.list_comments(thread_id) {
-                model.comments = comments;
-            }
-        }
-    }
 }
 
 fn handle_demo_data_loading(model: &mut Model) {

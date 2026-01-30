@@ -123,7 +123,7 @@ pub struct Model {
     pub current_review: Option<ReviewDetail>,
     pub threads: Vec<ThreadSummary>,
     pub current_thread: Option<ThreadDetail>,
-    pub comments: Vec<Comment>,
+    pub all_comments: HashMap<String, Vec<Comment>>,
     /// Parsed diff for the currently selected file
     pub current_diff: Option<ParsedDiff>,
     /// File content for context when no diff available
@@ -196,7 +196,7 @@ impl Model {
             current_review: None,
             threads: Vec::new(),
             current_thread: None,
-            comments: Vec::new(),
+            all_comments: HashMap::new(),
             current_diff: None,
             current_file_content: None,
             file_cache: HashMap::new(),

@@ -24,7 +24,7 @@ pub fn update(model: &mut Model, msg: Message) {
             model.highlighted_lines.clear();
             model.file_cache.clear();
             model.threads.clear();
-            model.comments.clear();
+            model.all_comments.clear();
             model.needs_redraw = true;
             // Note: caller should load review details from DB
         }
@@ -39,7 +39,7 @@ pub fn update(model: &mut Model, msg: Message) {
                 model.highlighted_lines.clear();
                 model.file_cache.clear();
                 model.threads.clear();
-                model.comments.clear();
+                model.all_comments.clear();
                 model.needs_redraw = true;
             }
             Screen::ReviewList => {
@@ -509,7 +509,6 @@ pub fn update(model: &mut Model, msg: Message) {
 fn jump_to_file(model: &mut Model, index: usize) {
     model.file_index = index;
     model.expanded_thread = None;
-    model.comments.clear();
 
     let layout = stream_layout(model);
     model.diff_scroll = file_scroll_offset(&layout, index);
@@ -557,8 +556,7 @@ fn stream_layout(model: &Model) -> crate::stream::StreamLayout {
         &files,
         &model.file_cache,
         &model.threads,
-        model.expanded_thread.as_deref(),
-        &model.comments,
+        &model.all_comments,
         model.diff_view_mode,
         model.diff_wrap,
         width,

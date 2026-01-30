@@ -254,6 +254,22 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     }
 }
 
+/// A hotkey hint: label in dim, key in bright
+struct HotkeyHint {
+    label: &'static str,
+    key: &'static str,
+}
+
+impl HotkeyHint {
+    const fn new(label: &'static str, key: &'static str) -> Self {
+        Self { label, key }
+    }
+
+    fn width(&self) -> usize {
+        self.label.len() + 1 + self.key.len()
+    }
+}
+
 fn draw_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     let theme = &model.theme;
     let y = area.y + area.height - 1;
@@ -278,22 +294,74 @@ fn draw_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     }
 
     buffer.fill_rect(footer_x, y, footer_width, 1, theme.background);
-    // Help text based on focus
-    let help = match model.focus {
-        Focus::FileSidebar => "j/k files  Enter/Space diff  s sidebar  h back  q quit",
-        Focus::DiffPane => {
-            "j/k scroll  n/p thread  v view  w wrap  o open  s sidebar  Esc back  q quit"
-        }
-        Focus::ThreadExpanded => "j/k scroll  r resolve  Esc collapse",
-        _ => "Space switch  Esc back  q quit",
+
+    let commands_hint = HotkeyHint::new("Commands", "Ctrl+P");
+
+    let hints: &[HotkeyHint] = match model.focus {
+        Focus::FileSidebar => &[
+            HotkeyHint::new("Navigate", "j/k"),
+            HotkeyHint::new("Open", "Enter"),
+            HotkeyHint::new("Sidebar", "s"),
+            HotkeyHint::new("Back", "h"),
+            HotkeyHint::new("Quit", "q"),
+        ],
+        Focus::DiffPane => &[
+            HotkeyHint::new("Scroll", "j/k"),
+            HotkeyHint::new("Thread", "n/p"),
+            HotkeyHint::new("View", "v"),
+            HotkeyHint::new("Wrap", "w"),
+            HotkeyHint::new("Open", "o"),
+            HotkeyHint::new("Sidebar", "s"),
+            HotkeyHint::new("Back", "Esc"),
+            HotkeyHint::new("Quit", "q"),
+        ],
+        Focus::ThreadExpanded => &[
+            HotkeyHint::new("Scroll", "j/k"),
+            HotkeyHint::new("Resolve", "r"),
+            HotkeyHint::new("Collapse", "Esc"),
+        ],
+        _ => &[
+            HotkeyHint::new("Switch", "Space"),
+            HotkeyHint::new("Back", "Esc"),
+            HotkeyHint::new("Quit", "q"),
+        ],
     };
 
+    let separator = "  ";
+    let sep_len = separator.len();
+
+    // Calculate total width: commands_hint + sep + each hint joined by sep
+    let hints_width: usize = hints.iter().map(|h| h.width()).sum::<usize>()
+        + hints.len().saturating_sub(1) * sep_len;
+    let total_width = commands_hint.width() + sep_len + hints_width;
+
     let padding: u32 = 2;
-    let text_width = help.len() as u32;
-    let x = if footer_width > text_width + padding {
-        footer_x + footer_width - text_width - padding
+    let x_start = if (total_width as u32) + padding <= footer_width {
+        footer_x + footer_width - total_width as u32 - padding
     } else {
         footer_x + padding.min(footer_width)
     };
-    buffer.draw_text(x, y, help, Style::fg(theme.muted));
+
+    let mut x = x_start;
+    let dim = Style::fg(theme.muted);
+    let bright = Style::fg(theme.foreground);
+
+    // Draw commands hint first
+    buffer.draw_text(x, y, commands_hint.label, dim);
+    x += commands_hint.label.len() as u32;
+    buffer.draw_text(x, y, " ", dim);
+    x += 1;
+    buffer.draw_text(x, y, commands_hint.key, bright);
+    x += commands_hint.key.len() as u32;
+
+    for hint in hints {
+        buffer.draw_text(x, y, separator, dim);
+        x += sep_len as u32;
+        buffer.draw_text(x, y, hint.label, dim);
+        x += hint.label.len() as u32;
+        buffer.draw_text(x, y, " ", dim);
+        x += 1;
+        buffer.draw_text(x, y, hint.key, bright);
+        x += hint.key.len() as u32;
+    }
 }

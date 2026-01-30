@@ -1,0 +1,19 @@
+thread focused:
+
+   file/one.txt
+    ◉ th-123
+      th-234
+   file/two.txt
+      th-345
+   file/three.txt
+      th-456
+
+file focused:
+
+ ◉ file/one.txt     ✓
+      th-123        ✓
+      th-234        ✓
+   file/two.txt     ✓
+      th-345        ✓
+   file/three.txt   ✓
+      th-456        ✓

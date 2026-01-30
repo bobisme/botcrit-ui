@@ -17,6 +17,8 @@ use crate::theme::Theme;
 pub struct ThreadAnchor {
     pub thread_id: String,
     pub display_line: usize,
+    /// Display line after which the comment block should render (end of range)
+    pub comment_after_line: usize,
     pub line_count: usize, // How many lines the thread spans
     pub status: String,
     pub comment_count: i64,
@@ -345,9 +347,18 @@ pub fn map_threads_to_diff(
                 .selection_end
                 .map_or(1, |end| (end - thread.selection_start + 1) as usize);
 
+            // Comment block goes after the last line of the range
+            let end_line = thread.selection_end.unwrap_or(thread.selection_start) as u32;
+            let comment_after_line = new_line_to_display
+                .get(&end_line)
+                .or_else(|| old_line_to_display.get(&end_line))
+                .copied()
+                .unwrap_or(display_line);
+
             anchors.push(ThreadAnchor {
                 thread_id: thread.thread_id.clone(),
                 display_line,
+                comment_after_line,
                 line_count,
                 status: thread.status.clone(),
                 comment_count: thread.comment_count,
@@ -734,8 +745,11 @@ pub fn render_diff_stream(
                 let anchors = map_threads_to_diff(diff, &file_threads);
                 let mut anchor_map: std::collections::HashMap<usize, &ThreadAnchor> =
                     std::collections::HashMap::new();
+                let mut comment_map: std::collections::HashMap<usize, &ThreadAnchor> =
+                    std::collections::HashMap::new();
                 for anchor in &anchors {
                     anchor_map.insert(anchor.display_line, anchor);
+                    comment_map.insert(anchor.comment_after_line, anchor);
                 }
 
                 match view_mode {
@@ -798,12 +812,13 @@ pub fn render_diff_stream(
                                 }
                             }
 
-                            if let Some(anchor) = anchor {
+                            // Emit comment block after the last line of the thread range
+                            if let Some(comment_anchor) = comment_map.get(&idx) {
                                 if let Some(thread) = file_threads
                                     .iter()
-                                    .find(|t| t.thread_id == anchor.thread_id)
+                                    .find(|t| t.thread_id == comment_anchor.thread_id)
                                 {
-                                    if let Some(comments) = all_comments.get(&anchor.thread_id) {
+                                    if let Some(comments) = all_comments.get(&comment_anchor.thread_id) {
                                         emit_comment_block(&mut cursor, area, thread, comments);
                                     }
                                 }
@@ -876,12 +891,13 @@ pub fn render_diff_stream(
                                 });
                             }
 
-                            if let Some(anchor) = anchor {
+                            // Emit comment block after the last line of the thread range
+                            if let Some(comment_anchor) = comment_map.get(&idx) {
                                 if let Some(thread) = file_threads
                                     .iter()
-                                    .find(|t| t.thread_id == anchor.thread_id)
+                                    .find(|t| t.thread_id == comment_anchor.thread_id)
                                 {
-                                    if let Some(comments) = all_comments.get(&anchor.thread_id) {
+                                    if let Some(comments) = all_comments.get(&comment_anchor.thread_id) {
                                         emit_comment_block(&mut cursor, area, thread, comments);
                                     }
                                 }
@@ -939,9 +955,11 @@ pub fn render_diff_stream(
                     }
 
                     if let DisplayItem::Line { line_num, .. } = &item {
-                        if let Some(thread) =
-                            file_threads.iter().find(|t| t.selection_start == *line_num)
-                        {
+                        // Emit comment block after the last line of the thread range
+                        if let Some(thread) = file_threads.iter().find(|t| {
+                            let end = t.selection_end.unwrap_or(t.selection_start);
+                            end == *line_num
+                        }) {
                             if let Some(comments) = all_comments.get(&thread.thread_id) {
                                 emit_comment_block(&mut cursor, area, thread, comments);
                             }

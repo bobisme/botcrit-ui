@@ -2,49 +2,12 @@
 
 use crate::command::{command_id_to_message, get_commands};
 use crate::message::Message;
-use crate::message::Message;
-use crate::model::{CommandSpec, DiffViewMode, EditorRequest, Focus, Model, ReviewFilter, Screen};
+use crate::model::{DiffViewMode, EditorRequest, Focus, Model, PaletteMode, ReviewFilter, Screen};
 use crate::stream::{
     active_file_index, compute_stream_layout, file_scroll_offset, thread_stream_offset,
 };
 use crate::{config, theme, Highlighter};
 
-fn get_commands() -> Vec<CommandSpec> {
-    vec![
-        CommandSpec {
-            name: "quit",
-            description: "Quit the application",
-            message: Message::Quit,
-        },
-        CommandSpec {
-            name: "theme: cycle",
-            description: "Cycle to the next theme",
-            message: Message::CycleTheme,
-        },
-        CommandSpec {
-            name: "diff: toggle view",
-            description: "Toggle between unified and side-by-side diff",
-            message: Message::ToggleDiffView,
-        },
-        CommandSpec {
-            name: "diff: toggle wrap",
-            description: "Toggle line wrapping in diffs",
-            message: Message::ToggleDiffWrap,
-        },
-        CommandSpec {
-            name: "sidebar: toggle",
-            description: "Show or hide the file sidebar",
-            message: Message::ToggleSidebar,
-        },
-        CommandSpec {
-            name: "editor: open file",
-            description: "Open the current file in an external editor",
-            message: Message::OpenFileInEditor,
-        },
-    ]
-}
-
-/// Update the model based on a message, returning an optional command
 pub fn update(model: &mut Model, msg: Message) {
     match msg {
         // === Navigation ===
@@ -276,6 +239,7 @@ pub fn update(model: &mut Model, msg: Message) {
                 Focus::DiffPane => Focus::FileSidebar,
                 Focus::ThreadExpanded => Focus::DiffPane,
                 Focus::CommandPalette => model.previous_focus.take().unwrap_or(Focus::DiffPane),
+                Focus::Commenting => Focus::DiffPane,
             };
         }
 
@@ -360,6 +324,7 @@ pub fn update(model: &mut Model, msg: Message) {
 
         // === Command Palette ===
         Message::ShowCommandPalette => {
+            model.command_palette_mode = PaletteMode::Commands;
             model.command_palette_commands = get_commands();
             model.command_palette_input.clear();
             model.command_palette_selection = 0;
@@ -368,65 +333,77 @@ pub fn update(model: &mut Model, msg: Message) {
             model.needs_redraw = true;
         }
         Message::HideCommandPalette => {
+            // Revert theme preview if we were in theme picker mode
+            if model.command_palette_mode == PaletteMode::Themes {
+                if let Some(original) = model.pre_palette_theme.take() {
+                    update(model, Message::ApplyTheme(original));
+                }
+            }
+            model.command_palette_mode = PaletteMode::Commands;
             model.focus = model.previous_focus.take().unwrap_or(Focus::DiffPane);
             model.needs_redraw = true;
         }
         Message::CommandPaletteNext => {
-            let count = model.command_palette_commands.len();
+            let count = match model.command_palette_mode {
+                PaletteMode::Commands => model.command_palette_commands.len(),
+                PaletteMode::Themes => filter_theme_names(&model.command_palette_input).len(),
+            };
             if count > 0 {
                 model.command_palette_selection = (model.command_palette_selection + 1) % count;
             }
+            preview_selected_theme(model);
             model.needs_redraw = true;
         }
         Message::CommandPalettePrev => {
-            let count = model.command_palette_commands.len();
+            let count = match model.command_palette_mode {
+                PaletteMode::Commands => model.command_palette_commands.len(),
+                PaletteMode::Themes => filter_theme_names(&model.command_palette_input).len(),
+            };
             if count > 0 {
                 model.command_palette_selection =
                     (model.command_palette_selection + count - 1) % count;
             }
+            preview_selected_theme(model);
             model.needs_redraw = true;
         }
         Message::CommandPaletteUpdateInput(input) => {
             model.command_palette_input.push_str(&input);
             model.command_palette_selection = 0;
-            let commands = get_commands();
-            model.command_palette_commands = commands
-                .into_iter()
-                .filter(|cmd| {
-                    let search_terms: Vec<&str> =
-                        model.command_palette_input.split_whitespace().collect();
-                    if search_terms.is_empty() {
-                        return true;
-                    }
-                    search_terms.iter().all(|term| cmd.name.contains(term))
-                })
-                .collect();
+            if model.command_palette_mode == PaletteMode::Commands {
+                model.command_palette_commands = filter_commands(&model.command_palette_input);
+            }
+            preview_selected_theme(model);
             model.needs_redraw = true;
         }
         Message::CommandPaletteInputBackspace => {
             model.command_palette_input.pop();
             model.command_palette_selection = 0;
-            let commands = get_commands();
-            model.command_palette_commands = commands
-                .into_iter()
-                .filter(|cmd| {
-                    let search_terms: Vec<&str> =
-                        model.command_palette_input.split_whitespace().collect();
-                    if search_terms.is_empty() {
-                        return true;
-                    }
-                    search_terms.iter().all(|term| cmd.name.contains(term))
-                })
-                .collect();
+            if model.command_palette_mode == PaletteMode::Commands {
+                model.command_palette_commands = filter_commands(&model.command_palette_input);
+            }
+            preview_selected_theme(model);
             model.needs_redraw = true;
         }
         Message::CommandPaletteExecute => {
-            let commands = model.command_palette_commands.clone();
-            if let Some(command) = commands.get(model.command_palette_selection) {
-                // First hide the palette, then dispatch the command
-                update(model, Message::HideCommandPalette);
-                let msg = command_id_to_message(command.id);
-                update(model, msg);
+            match model.command_palette_mode {
+                PaletteMode::Commands => {
+                    let commands = model.command_palette_commands.clone();
+                    if let Some(command) = commands.get(model.command_palette_selection) {
+                        update(model, Message::HideCommandPalette);
+                        let msg = command_id_to_message(command.id);
+                        update(model, msg);
+                    }
+                }
+                PaletteMode::Themes => {
+                    let theme_names = filter_theme_names(&model.command_palette_input);
+                    if let Some(name) = theme_names.get(model.command_palette_selection) {
+                        let name = name.to_string();
+                        // Clear saved theme so HideCommandPalette won't revert
+                        model.pre_palette_theme = None;
+                        update(model, Message::HideCommandPalette);
+                        update(model, Message::ApplyTheme(name));
+                    }
+                }
             }
         }
 
@@ -465,6 +442,59 @@ pub fn update(model: &mut Model, msg: Message) {
 
         Message::Quit => {
             model.should_quit = true;
+        }
+
+        // === Commenting ===
+        Message::EnterCommentMode => {
+            model.comment_input.clear();
+            model.comment_target_line = None;
+            model.focus = Focus::Commenting;
+            model.needs_redraw = true;
+        }
+        Message::CommentInput(text) => {
+            model.comment_input.push_str(&text);
+            model.needs_redraw = true;
+        }
+        Message::CommentInputBackspace => {
+            model.comment_input.pop();
+            model.needs_redraw = true;
+        }
+        Message::SaveComment => {
+            // TODO: persist comment via crit
+            model.focus = Focus::DiffPane;
+            model.needs_redraw = true;
+        }
+        Message::CancelComment => {
+            model.comment_input.clear();
+            model.comment_target_line = None;
+            model.focus = Focus::DiffPane;
+            model.needs_redraw = true;
+        }
+
+        // === Theme Selection ===
+        Message::ShowThemePicker => {
+            model.pre_palette_theme = model.config.theme.clone();
+            model.command_palette_mode = PaletteMode::Themes;
+            model.command_palette_input.clear();
+            model.command_palette_selection = 0;
+            model.previous_focus = Some(model.focus);
+            model.focus = Focus::CommandPalette;
+            model.needs_redraw = true;
+        }
+        Message::ApplyTheme(theme_name) => {
+            if let Some(loaded) = theme::load_built_in_theme(&theme_name) {
+                model.theme = loaded.theme;
+                if let Some(syntax_theme) = loaded.syntax_theme {
+                    model.highlighter = Highlighter::with_theme(&syntax_theme);
+                } else if theme_name.to_lowercase().contains("light") {
+                    model.highlighter = Highlighter::with_theme("base16-ocean.light");
+                } else {
+                    model.highlighter = Highlighter::with_theme("base16-ocean.dark");
+                }
+                model.config.theme = Some(theme_name);
+                let _ = config::save_ui_config(&model.config);
+                model.needs_redraw = true;
+            }
         }
 
         Message::Noop => {}
@@ -543,4 +573,53 @@ fn diff_content_width(model: &Model) -> u32 {
         crate::model::LayoutMode::Overlay | crate::model::LayoutMode::Single => outer_inner_width,
     };
     diff_pane_width.saturating_sub(2)
+}
+
+/// If the theme picker is active, apply the currently highlighted theme as a preview.
+fn preview_selected_theme(model: &mut Model) {
+    if model.command_palette_mode != PaletteMode::Themes {
+        return;
+    }
+    let theme_names = filter_theme_names(&model.command_palette_input);
+    if let Some(&name) = theme_names.get(model.command_palette_selection) {
+        if let Some(loaded) = theme::load_built_in_theme(name) {
+            model.theme = loaded.theme;
+            if let Some(syntax_theme) = loaded.syntax_theme {
+                model.highlighter = Highlighter::with_theme(&syntax_theme);
+            }
+        }
+    }
+}
+
+fn filter_theme_names(query: &str) -> Vec<&'static str> {
+    let names = theme::built_in_theme_names();
+    let terms: Vec<String> = query.split_whitespace().map(|s| s.to_lowercase()).collect();
+    if terms.is_empty() {
+        return names;
+    }
+    names
+        .into_iter()
+        .filter(|name| {
+            let name_lower = name.to_lowercase();
+            terms.iter().all(|term| name_lower.contains(term.as_str()))
+        })
+        .collect()
+}
+
+fn filter_commands(query: &str) -> Vec<crate::command::CommandSpec> {
+    let commands = get_commands();
+    let terms: Vec<String> = query.split_whitespace().map(|s| s.to_lowercase()).collect();
+    if terms.is_empty() {
+        return commands;
+    }
+    commands
+        .into_iter()
+        .filter(|cmd| {
+            let name_lower = cmd.name.to_lowercase();
+            let cat_lower = cmd.category.to_lowercase();
+            terms
+                .iter()
+                .all(|term| name_lower.contains(term.as_str()) || cat_lower.contains(term.as_str()))
+        })
+        .collect()
 }

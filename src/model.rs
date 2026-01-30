@@ -39,6 +39,15 @@ pub enum Focus {
     DiffPane,
     ThreadExpanded,
     CommandPalette,
+    Commenting,
+}
+
+/// What the command palette is showing
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PaletteMode {
+    #[default]
+    Commands,
+    Themes,
 }
 
 /// Responsive layout mode based on terminal width
@@ -152,6 +161,11 @@ pub struct Model {
     pub command_palette_input: String,
     pub command_palette_selection: usize,
     pub command_palette_commands: Vec<CommandSpec>,
+    pub command_palette_mode: PaletteMode,
+
+    // === Commenting State ===
+    pub comment_input: String,
+    pub comment_target_line: Option<u32>,
 
     // === Layout ===
     pub width: u16,
@@ -160,6 +174,8 @@ pub struct Model {
 
     // === Theme ===
     pub theme: Theme,
+    /// Theme name before opening the picker (for revert on Esc)
+    pub pre_palette_theme: Option<String>,
     pub config: UiConfig,
 
     // === Control ===
@@ -199,10 +215,14 @@ impl Model {
             command_palette_input: String::new(),
             command_palette_selection: 0,
             command_palette_commands: Vec::new(),
+            command_palette_mode: PaletteMode::default(),
+            comment_input: String::new(),
+            comment_target_line: None,
             width,
             height,
             layout_mode: LayoutMode::from_width(width),
             theme: Theme::default(),
+            pre_palette_theme: None,
             config,
             should_quit: false,
             needs_redraw: true,

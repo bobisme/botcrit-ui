@@ -6,6 +6,7 @@ use crate::message::Message;
 pub enum CommandId {
     Quit,
     CycleTheme,
+    SelectTheme,
     ToggleDiffView,
     ToggleDiffWrap,
     ToggleSidebar,
@@ -17,39 +18,71 @@ pub struct CommandSpec {
     pub name: &'static str,
     pub description: &'static str,
     pub id: CommandId,
+    pub category: &'static str,
+    pub shortcut: Option<&'static str>,
+    /// Whether this command represents the currently active state (shows bullet).
+    pub active: bool,
 }
 
 pub fn get_commands() -> Vec<CommandSpec> {
     vec![
+        // --- View ---
         CommandSpec {
-            name: "quit",
-            description: "Quit the application",
-            id: CommandId::Quit,
-        },
-        CommandSpec {
-            name: "theme: cycle",
-            description: "Cycle to the next theme",
-            id: CommandId::CycleTheme,
-        },
-        CommandSpec {
-            name: "diff: toggle view",
+            name: "Toggle diff view",
             description: "Toggle between unified and side-by-side diff",
             id: CommandId::ToggleDiffView,
+            category: "View",
+            shortcut: Some("v"),
+            active: false,
         },
         CommandSpec {
-            name: "diff: toggle wrap",
+            name: "Toggle line wrap",
             description: "Toggle line wrapping in diffs",
             id: CommandId::ToggleDiffWrap,
+            category: "View",
+            shortcut: Some("w"),
+            active: false,
         },
         CommandSpec {
-            name: "sidebar: toggle",
+            name: "Toggle sidebar",
             description: "Show or hide the file sidebar",
             id: CommandId::ToggleSidebar,
+            category: "View",
+            shortcut: Some("s"),
+            active: false,
         },
         CommandSpec {
-            name: "editor: open file",
+            name: "Cycle theme",
+            description: "Cycle to the next theme",
+            id: CommandId::CycleTheme,
+            category: "View",
+            shortcut: Some("T"),
+            active: false,
+        },
+        CommandSpec {
+            name: "Select theme",
+            description: "Choose a theme from the list",
+            id: CommandId::SelectTheme,
+            category: "View",
+            shortcut: None,
+            active: false,
+        },
+        // --- Session ---
+        CommandSpec {
+            name: "Open in editor",
             description: "Open the current file in an external editor",
             id: CommandId::OpenFileInEditor,
+            category: "Session",
+            shortcut: Some("o"),
+            active: false,
+        },
+        CommandSpec {
+            name: "Quit",
+            description: "Quit the application",
+            id: CommandId::Quit,
+            category: "Session",
+            shortcut: Some("q"),
+            active: false,
         },
     ]
 }
@@ -58,6 +91,7 @@ pub fn command_id_to_message(id: CommandId) -> Message {
     match id {
         CommandId::Quit => Message::Quit,
         CommandId::CycleTheme => Message::CycleTheme,
+        CommandId::SelectTheme => Message::ShowThemePicker,
         CommandId::ToggleDiffView => Message::ToggleDiffView,
         CommandId::ToggleDiffWrap => Message::ToggleDiffWrap,
         CommandId::ToggleSidebar => Message::ToggleSidebar,

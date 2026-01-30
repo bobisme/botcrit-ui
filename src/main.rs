@@ -16,11 +16,13 @@ use opentui::{
     RendererOptions,
 };
 
-use botcrit_ui::config::{load_ui_config, save_ui_config, UiConfig};
+use botcrit_ui::config::{load_ui_config, save_ui_config};
 use botcrit_ui::model::{DiffViewMode, EditorRequest};
 use botcrit_ui::stream::SIDE_BY_SIDE_MIN_WIDTH;
 use botcrit_ui::theme::{load_built_in_theme, load_theme_from_path};
-use botcrit_ui::{update, vcs, view, Db, Highlighter, LayoutMode, Message, Model, Screen, Theme};
+use botcrit_ui::{
+    update, vcs, view, Db, Focus, Highlighter, LayoutMode, Message, Model, Screen, Theme,
+};
 
 fn main() -> Result<()> {
     let args = parse_args()?;
@@ -102,7 +104,7 @@ fn main() -> Result<()> {
         model.highlighter = Highlighter::with_theme("base16-ocean.light");
     }
 
-    apply_default_diff_view(&mut model, &config);
+    apply_default_diff_view(&mut model);
 
     // Load initial data
     if let Some(db) = &db {
@@ -130,6 +132,8 @@ fn main() -> Result<()> {
 
     // Input parser
     let mut input = InputParser::new();
+    // Track pending standalone Escape (parser returns Incomplete for bare 0x1b)
+    let mut pending_esc = false;
 
     // Main loop
     loop {
@@ -163,74 +167,174 @@ fn main() -> Result<()> {
         let mut buf = [0u8; 32];
         if let Ok(n) = read_with_timeout(&mut buf, Duration::from_millis(100)) {
             if n > 0 {
-                let mut offset = 0usize;
-                while offset < n {
-                    match input.parse(&buf[offset..n]) {
-                        Ok((event, consumed)) => {
-                            offset = offset.saturating_add(consumed);
-                            let msg = map_event_to_message(&model, event);
-                            let resize = if let Message::Resize { width, height } = msg {
-                                Some((width, height))
-                            } else {
-                                None
-                            };
-                            update(&mut model, msg);
-
-                            if let Some((width, height)) = resize {
-                                renderer
-                                    .resize(width.into(), height.into())
-                                    .context("Failed to resize renderer")?;
-                                model.needs_redraw = true;
-                            }
-
-                            // Handle data loading after navigation
-                            if let Some(db) = &db {
-                                handle_data_loading(&mut model, db, repo_path.as_deref());
-                            } else {
-                                // Demo mode - simulate data loading
-                                handle_demo_data_loading(&mut model);
-                            }
-
-                            if let Some(request) = model.pending_editor_request.take() {
-                                let (prev_width, prev_height) = renderer.size();
-                                let prev_width = prev_width as u16;
-                                let prev_height = prev_height as u16;
-                                drop(renderer);
-                                raw_guard.take();
-                                wrap_guard.take();
-                                cursor_guard.take();
-
-                                let _ = open_file_in_editor(repo_path.as_deref(), request);
-
-                                raw_guard =
-                                    Some(enable_raw_mode().context("Failed to enable raw mode")?);
-                                let (width, height) =
-                                    terminal_size().unwrap_or((prev_width, prev_height));
-                                renderer = Renderer::new_with_options(
-                                    width.into(),
-                                    height.into(),
+                // If we had a pending escape and new data arrived, feed ESC + new data
+                // together so the parser can resolve the sequence.
+                if pending_esc {
+                    pending_esc = false;
+                    // Prepend 0x1b to the buffer
+                    let mut combined = Vec::with_capacity(1 + n);
+                    combined.push(0x1b);
+                    combined.extend_from_slice(&buf[..n]);
+                    let combined_len = combined.len();
+                    let mut offset = 0usize;
+                    while offset < combined_len {
+                        match input.parse(&combined[offset..combined_len]) {
+                            Ok((event, consumed)) => {
+                                offset = offset.saturating_add(consumed);
+                                process_event(
+                                    &event,
+                                    &mut model,
+                                    &mut renderer,
+                                    &mut raw_guard,
+                                    &mut wrap_guard,
+                                    &mut cursor_guard,
+                                    &db,
+                                    repo_path.as_deref(),
                                     options,
-                                )
-                                .context("Failed to initialize renderer")?;
-                                renderer.set_background(model.theme.background);
-                                wrap_guard = Some(
-                                    AutoWrapGuard::new().context("Failed to disable line wrap")?,
-                                );
-                                cursor_guard =
-                                    Some(CursorGuard::new().context("Failed to hide cursor")?);
-                                model.resize(width as u16, height as u16);
-                                model.needs_redraw = true;
-                                renderer.invalidate();
+                                )?;
+                            }
+                            Err(ParseError::Empty) | Err(ParseError::Incomplete) => {
+                                // Check if stuck on a bare escape again
+                                if offset < combined_len && combined[offset] == 0x1b
+                                    && offset + 1 == combined_len
+                                {
+                                    pending_esc = true;
+                                }
+                                break;
+                            }
+                            Err(_) => {
+                                offset = offset.saturating_add(1);
                             }
                         }
-                        Err(ParseError::Empty) | Err(ParseError::Incomplete) => break,
-                        Err(_) => {
-                            offset = offset.saturating_add(1);
+                    }
+                } else {
+                    let mut offset = 0usize;
+                    while offset < n {
+                        match input.parse(&buf[offset..n]) {
+                            Ok((event, consumed)) => {
+                                offset = offset.saturating_add(consumed);
+                                process_event(
+                                    &event,
+                                    &mut model,
+                                    &mut renderer,
+                                    &mut raw_guard,
+                                    &mut wrap_guard,
+                                    &mut cursor_guard,
+                                    &db,
+                                    repo_path.as_deref(),
+                                    options,
+                                )?;
+                            }
+                            Err(ParseError::Empty) | Err(ParseError::Incomplete) => {
+                                // If the remaining buffer is just 0x1b, mark pending
+                                if offset < n && buf[offset] == 0x1b && offset + 1 == n {
+                                    pending_esc = true;
+                                    offset += 1;
+                                }
+                                break;
+                            }
+                            Err(_) => {
+                                offset = offset.saturating_add(1);
+                            }
                         }
                     }
                 }
+            } else if pending_esc {
+                // No new data arrived — resolve pending escape as standalone Esc key
+                pending_esc = false;
+                let esc_event = Event::Key(opentui::KeyEvent::key(KeyCode::Esc));
+                process_event(
+                    &esc_event,
+                    &mut model,
+                    &mut renderer,
+                    &mut raw_guard,
+                    &mut wrap_guard,
+                    &mut cursor_guard,
+                    &db,
+                    repo_path.as_deref(),
+                    options,
+                )?;
             }
+        } else if pending_esc {
+            // Read error/timeout — resolve pending escape
+            pending_esc = false;
+            let esc_event = Event::Key(opentui::KeyEvent::key(KeyCode::Esc));
+            process_event(
+                &esc_event,
+                &mut model,
+                &mut renderer,
+                &mut raw_guard,
+                &mut wrap_guard,
+                &mut cursor_guard,
+                &db,
+                repo_path.as_deref(),
+                options,
+            )?;
         }
+    }
+
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn process_event(
+    event: &Event,
+    model: &mut Model,
+    renderer: &mut Renderer,
+    raw_guard: &mut Option<opentui::RawModeGuard>,
+    wrap_guard: &mut Option<AutoWrapGuard>,
+    cursor_guard: &mut Option<CursorGuard>,
+    db: &Option<Db>,
+    repo_path: Option<&Path>,
+    options: RendererOptions,
+) -> Result<()> {
+    let msg = map_event_to_message(model, event.clone());
+    let resize = if let Message::Resize { width, height } = &msg {
+        Some((*width, *height))
+    } else {
+        None
+    };
+    update(model, msg);
+
+    if let Some((width, height)) = resize {
+        renderer
+            .resize(width.into(), height.into())
+            .context("Failed to resize renderer")?;
+        model.needs_redraw = true;
+    }
+
+    // Handle data loading after navigation
+    if let Some(db) = db {
+        handle_data_loading(model, db, repo_path);
+    } else {
+        handle_demo_data_loading(model);
+    }
+
+    if let Some(request) = model.pending_editor_request.take() {
+        let (prev_width, prev_height) = renderer.size();
+        let prev_width = prev_width as u16;
+        let prev_height = prev_height as u16;
+        drop(std::mem::replace(
+            renderer,
+            Renderer::new_with_options(1, 1, options).unwrap(),
+        ));
+        raw_guard.take();
+        wrap_guard.take();
+        cursor_guard.take();
+
+        let _ = open_file_in_editor(repo_path, request);
+
+        *raw_guard = Some(enable_raw_mode().context("Failed to enable raw mode")?);
+        let (width, height) = terminal_size().unwrap_or((prev_width, prev_height));
+        *renderer =
+            Renderer::new_with_options(width.into(), height.into(), options)
+                .context("Failed to initialize renderer")?;
+        renderer.set_background(model.theme.background);
+        *wrap_guard = Some(AutoWrapGuard::new().context("Failed to disable line wrap")?);
+        *cursor_guard = Some(CursorGuard::new().context("Failed to hide cursor")?);
+        model.resize(width as u16, height as u16);
+        model.needs_redraw = true;
+        renderer.invalidate();
     }
 
     Ok(())
@@ -342,8 +446,8 @@ fn parse_args() -> Result<CliArgs> {
     Ok(CliArgs { db_path, theme })
 }
 
-fn apply_default_diff_view(model: &mut Model, config: &UiConfig) {
-    if let Some(value) = config.default_diff_view.as_deref() {
+fn apply_default_diff_view(model: &mut Model) {
+    if let Some(value) = model.config.default_diff_view.as_deref() {
         if let Some(mode) = parse_diff_view_mode(value) {
             model.diff_view_mode = mode;
         }
@@ -490,6 +594,7 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
             KeyCode::Char('w') => Message::ToggleDiffWrap,
             KeyCode::Char('o') => Message::OpenFileInEditor,
             KeyCode::Char('T') => Message::CycleTheme,
+            KeyCode::Char('c') => Message::EnterCommentMode,
             KeyCode::Char('u') => Message::ScrollHalfPageUp,
             KeyCode::Char('d') => Message::ScrollHalfPageDown,
             KeyCode::Char('b') => Message::PageUp,
@@ -522,6 +627,13 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
                     Message::Noop
                 }
             }
+            _ => Message::Noop,
+        },
+        Focus::Commenting => match key {
+            KeyCode::Esc => Message::CancelComment,
+            KeyCode::Enter => Message::SaveComment,
+            KeyCode::Char(c) => Message::CommentInput(c.to_string()),
+            KeyCode::Backspace => Message::CommentInputBackspace,
             _ => Message::Noop,
         },
         _ => Message::Noop,

@@ -1,0 +1,33 @@
+- no border
+- backgound outside the modal should be dimmed
+- esc closes the modal and returns to previous state
+- any other normal characters fill the search box and fuzzy-filter the list items
+- reference files:
+  ~/shots/2026-01-30_10:49:12.png
+  ~/shots/2026-01-30_10:49:30.png
+
+- vertical layout:
+  - 1 blank row
+  - row: title (left-aligned, bright, bold)    esc (right-aligned, dim)
+  - 1 blank row
+  - Search (preview text with word "Search", text is dim)
+  - 2 blank rows
+  - rows of selectable items: title (left-aligned) extra info (if needed, right-aligned, dim)
+  - 2 blank rows
+
+- horizontal layout
+  - 1 blank space
+  - start of highlighted area
+  - 1 blank space
+  - if the list shows the currently toggles item, put a bullet (●) otherwise a single blank space
+  - 1 blank space
+  - the contents of the list item as described in vertical layout
+  - 3 blank spaces
+  - end of highlighted area
+  - 1 blank space
+
+- list items _may_ belong to categories
+  - if they do, only show categories if the filter shows items in that category
+  - categories are not selectable
+  - categories _after_ the first shown should be preceded by a single blank row
+  - categories are bold and use the primary accent color

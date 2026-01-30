@@ -1,6 +1,8 @@
 //! Theme system for botcrit-ui
 //!
-//! Provides color tokens for consistent styling across the UI.
+//! Themes are defined by 7 seed colors. All other colors are derived
+//! automatically using lerp/blend_over. Individual derived colors can
+//! be overridden for fine-tuning.
 
 use std::path::Path;
 
@@ -80,99 +82,243 @@ impl Default for Theme {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Seed-based theme construction
+// ---------------------------------------------------------------------------
+
+/// The 7 seed colors that define a theme.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThemeSeeds {
+    pub background: String,
+    pub foreground: String,
+    pub primary: String,
+    pub muted: String,
+    pub success: String,
+    pub warning: String,
+    pub error: String,
+}
+
+/// Optional overrides for any derived color.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ThemeOverrides {
+    pub panel_bg: Option<String>,
+    pub selection_bg: Option<String>,
+    pub selection_fg: Option<String>,
+    pub border: Option<String>,
+    pub border_focused: Option<String>,
+    pub cursor: Option<String>,
+    // Diff
+    pub diff_added: Option<String>,
+    pub diff_removed: Option<String>,
+    pub diff_context: Option<String>,
+    pub diff_hunk_header: Option<String>,
+    pub diff_highlight_added: Option<String>,
+    pub diff_highlight_removed: Option<String>,
+    pub diff_added_bg: Option<String>,
+    pub diff_removed_bg: Option<String>,
+    pub diff_context_bg: Option<String>,
+    pub diff_line_number: Option<String>,
+    pub diff_added_line_number_bg: Option<String>,
+    pub diff_removed_line_number_bg: Option<String>,
+    // Syntax
+    pub syntax_keyword: Option<String>,
+    pub syntax_function: Option<String>,
+    pub syntax_type_name: Option<String>,
+    pub syntax_string: Option<String>,
+    pub syntax_number: Option<String>,
+    pub syntax_comment: Option<String>,
+    pub syntax_operator: Option<String>,
+    pub syntax_punctuation: Option<String>,
+    pub syntax_variable: Option<String>,
+    pub syntax_constant: Option<String>,
+    pub syntax_attribute: Option<String>,
+}
+
 impl Theme {
+    /// Build a complete theme from 7 seed colors, deriving everything else.
+    pub fn from_seeds(
+        name: String,
+        seeds: &ThemeSeeds,
+        overrides: Option<&ThemeOverrides>,
+    ) -> anyhow::Result<Self> {
+        let bg = parse_color(&seeds.background)?;
+        let fg = parse_color(&seeds.foreground)?;
+        let primary = parse_color(&seeds.primary)?;
+        let muted = parse_color(&seeds.muted)?;
+        let success = parse_color(&seeds.success)?;
+        let warning = parse_color(&seeds.warning)?;
+        let error = parse_color(&seeds.error)?;
+
+        let is_dark = bg.luminance() < 0.5;
+
+        // --- Derive UI chrome ---
+        let mut panel_bg = bg.lerp(fg, 0.05);
+        let mut selection_bg = primary.with_alpha(0.25).blend_over(bg);
+        let mut selection_fg = fg;
+        let mut border = bg.lerp(fg, 0.15);
+        let mut border_focused = primary;
+        let mut cursor = fg;
+
+        // --- Derive diff colors ---
+        let mut diff = DiffTheme {
+            added: success,
+            removed: error,
+            context: fg.lerp(muted, 0.15),
+            hunk_header: muted,
+            highlight_added: success.lerp(primary, 0.3),
+            highlight_removed: error.lerp(fg, 0.15),
+            added_bg: success.with_alpha(0.08).blend_over(bg),
+            removed_bg: error.with_alpha(0.08).blend_over(bg),
+            context_bg: bg,
+            line_number: muted,
+            added_line_number_bg: success.with_alpha(0.05).blend_over(bg),
+            removed_line_number_bg: error.with_alpha(0.05).blend_over(bg),
+        };
+
+        // --- Syntax defaults based on lightness ---
+        let mut syntax = if is_dark {
+            SyntaxColors::tokyo_night()
+        } else {
+            SyntaxColors::light()
+        };
+
+        // --- Apply overrides ---
+        if let Some(ov) = overrides {
+            apply_override(&mut panel_bg, &ov.panel_bg)?;
+            apply_override(&mut selection_bg, &ov.selection_bg)?;
+            apply_override(&mut selection_fg, &ov.selection_fg)?;
+            apply_override(&mut border, &ov.border)?;
+            apply_override(&mut border_focused, &ov.border_focused)?;
+            apply_override(&mut cursor, &ov.cursor)?;
+
+            apply_override(&mut diff.added, &ov.diff_added)?;
+            apply_override(&mut diff.removed, &ov.diff_removed)?;
+            apply_override(&mut diff.context, &ov.diff_context)?;
+            apply_override(&mut diff.hunk_header, &ov.diff_hunk_header)?;
+            apply_override(&mut diff.highlight_added, &ov.diff_highlight_added)?;
+            apply_override(&mut diff.highlight_removed, &ov.diff_highlight_removed)?;
+            apply_override(&mut diff.added_bg, &ov.diff_added_bg)?;
+            apply_override(&mut diff.removed_bg, &ov.diff_removed_bg)?;
+            apply_override(&mut diff.context_bg, &ov.diff_context_bg)?;
+            apply_override(&mut diff.line_number, &ov.diff_line_number)?;
+            apply_override(&mut diff.added_line_number_bg, &ov.diff_added_line_number_bg)?;
+            apply_override(&mut diff.removed_line_number_bg, &ov.diff_removed_line_number_bg)?;
+
+            apply_override(&mut syntax.keyword, &ov.syntax_keyword)?;
+            apply_override(&mut syntax.function, &ov.syntax_function)?;
+            apply_override(&mut syntax.type_name, &ov.syntax_type_name)?;
+            apply_override(&mut syntax.string, &ov.syntax_string)?;
+            apply_override(&mut syntax.number, &ov.syntax_number)?;
+            apply_override(&mut syntax.comment, &ov.syntax_comment)?;
+            apply_override(&mut syntax.operator, &ov.syntax_operator)?;
+            apply_override(&mut syntax.punctuation, &ov.syntax_punctuation)?;
+            apply_override(&mut syntax.variable, &ov.syntax_variable)?;
+            apply_override(&mut syntax.constant, &ov.syntax_constant)?;
+            apply_override(&mut syntax.attribute, &ov.syntax_attribute)?;
+        }
+
+        Ok(Self {
+            name,
+            background: bg,
+            foreground: fg,
+            border,
+            border_focused,
+            panel_bg,
+            selection_bg,
+            selection_fg,
+            cursor,
+            primary,
+            success,
+            warning,
+            error,
+            muted,
+            diff,
+            syntax,
+        })
+    }
+
     /// Default dark theme (Tokyo Night inspired)
     #[must_use]
     pub fn dark() -> Self {
-        Self {
-            name: "dark".to_string(),
-
-            background: Rgba::from_hex("#1a1b26").unwrap_or(Rgba::BLACK),
-            foreground: Rgba::from_hex("#c0caf5").unwrap_or(Rgba::WHITE),
-
-            border: Rgba::from_hex("#3b4261").unwrap_or(Rgba::WHITE),
-            border_focused: Rgba::from_hex("#7aa2f7").unwrap_or(Rgba::WHITE),
-            panel_bg: Rgba::from_hex("#24283b").unwrap_or(Rgba::BLACK),
-
-            selection_bg: Rgba::from_hex("#33467c").unwrap_or(Rgba::WHITE),
-            selection_fg: Rgba::from_hex("#c0caf5").unwrap_or(Rgba::WHITE),
-            cursor: Rgba::from_hex("#c0caf5").unwrap_or(Rgba::WHITE),
-
-            primary: Rgba::from_hex("#7aa2f7").unwrap_or(Rgba::BLUE),
-            success: Rgba::from_hex("#9ece6a").unwrap_or(Rgba::GREEN),
-            warning: Rgba::from_hex("#e0af68").unwrap_or(Rgba::WHITE),
-            error: Rgba::from_hex("#f7768e").unwrap_or(Rgba::RED),
-            muted: Rgba::from_hex("#565f89").unwrap_or(Rgba::WHITE),
-
-            diff: DiffTheme {
-                added: Rgba::from_hex("#9ece6a").unwrap_or(Rgba::GREEN),
-                removed: Rgba::from_hex("#f7768e").unwrap_or(Rgba::RED),
-                context: Rgba::from_hex("#a9b1d6").unwrap_or(Rgba::WHITE),
-                hunk_header: Rgba::from_hex("#565f89").unwrap_or(Rgba::WHITE),
-
-                highlight_added: Rgba::from_hex("#73daca").unwrap_or(Rgba::GREEN),
-                highlight_removed: Rgba::from_hex("#ff7a93").unwrap_or(Rgba::RED),
-
-                added_bg: Rgba::from_hex("#1a2f1a").unwrap_or(Rgba::BLACK),
-                removed_bg: Rgba::from_hex("#2f1a1a").unwrap_or(Rgba::BLACK),
-                context_bg: Rgba::from_hex("#1a1b26").unwrap_or(Rgba::BLACK),
-
-                line_number: Rgba::from_hex("#565f89").unwrap_or(Rgba::WHITE),
-                added_line_number_bg: Rgba::from_hex("#152515").unwrap_or(Rgba::BLACK),
-                removed_line_number_bg: Rgba::from_hex("#251515").unwrap_or(Rgba::BLACK),
+        Self::from_seeds(
+            "dark".to_string(),
+            &ThemeSeeds {
+                background: "#1a1b26".into(),
+                foreground: "#c0caf5".into(),
+                primary: "#7aa2f7".into(),
+                muted: "#565f89".into(),
+                success: "#9ece6a".into(),
+                warning: "#e0af68".into(),
+                error: "#f7768e".into(),
             },
-
-            syntax: SyntaxColors::tokyo_night(),
-        }
+            Some(&ThemeOverrides {
+                syntax_keyword: Some("#bb9af7".into()),
+                syntax_function: Some("#7aa2f7".into()),
+                syntax_type_name: Some("#2ac3de".into()),
+                syntax_string: Some("#9ece6a".into()),
+                syntax_number: Some("#ff9e64".into()),
+                syntax_comment: Some("#565f89".into()),
+                syntax_operator: Some("#89ddff".into()),
+                syntax_punctuation: Some("#a9b1d6".into()),
+                syntax_variable: Some("#c0caf5".into()),
+                syntax_constant: Some("#ff9e64".into()),
+                syntax_attribute: Some("#bb9af7".into()),
+                ..Default::default()
+            }),
+        )
+        .expect("built-in dark theme seeds are valid")
     }
 
     /// Light theme variant
     #[must_use]
     pub fn light() -> Self {
-        Self {
-            name: "light".to_string(),
-
-            background: Rgba::from_hex("#d5d6db").unwrap_or(Rgba::WHITE),
-            foreground: Rgba::from_hex("#343b58").unwrap_or(Rgba::BLACK),
-
-            border: Rgba::from_hex("#9699a3").unwrap_or(Rgba::BLACK),
-            border_focused: Rgba::from_hex("#34548a").unwrap_or(Rgba::BLACK),
-            panel_bg: Rgba::from_hex("#cbccd1").unwrap_or(Rgba::WHITE),
-
-            selection_bg: Rgba::from_hex("#99a7df").unwrap_or(Rgba::BLACK),
-            selection_fg: Rgba::from_hex("#343b58").unwrap_or(Rgba::BLACK),
-            cursor: Rgba::from_hex("#343b58").unwrap_or(Rgba::BLACK),
-
-            primary: Rgba::from_hex("#34548a").unwrap_or(Rgba::BLUE),
-            success: Rgba::from_hex("#485e30").unwrap_or(Rgba::GREEN),
-            warning: Rgba::from_hex("#8f5e15").unwrap_or(Rgba::WHITE),
-            error: Rgba::from_hex("#8c4351").unwrap_or(Rgba::RED),
-            muted: Rgba::from_hex("#6a6f87").unwrap_or(Rgba::BLACK),
-
-            diff: DiffTheme {
-                added: Rgba::from_hex("#485e30").unwrap_or(Rgba::GREEN),
-                removed: Rgba::from_hex("#8c4351").unwrap_or(Rgba::RED),
-                context: Rgba::from_hex("#343b58").unwrap_or(Rgba::BLACK),
-                hunk_header: Rgba::from_hex("#6a6f87").unwrap_or(Rgba::BLACK),
-
-                highlight_added: Rgba::from_hex("#33635c").unwrap_or(Rgba::GREEN),
-                highlight_removed: Rgba::from_hex("#a8323e").unwrap_or(Rgba::RED),
-
-                added_bg: Rgba::from_hex("#c5dcc5").unwrap_or(Rgba::WHITE),
-                removed_bg: Rgba::from_hex("#dcc5c5").unwrap_or(Rgba::WHITE),
-                context_bg: Rgba::from_hex("#d5d6db").unwrap_or(Rgba::WHITE),
-
-                line_number: Rgba::from_hex("#6a6f87").unwrap_or(Rgba::BLACK),
-                added_line_number_bg: Rgba::from_hex("#b5ccb5").unwrap_or(Rgba::WHITE),
-                removed_line_number_bg: Rgba::from_hex("#ccb5b5").unwrap_or(Rgba::WHITE),
+        Self::from_seeds(
+            "light".to_string(),
+            &ThemeSeeds {
+                background: "#d5d6db".into(),
+                foreground: "#343b58".into(),
+                primary: "#34548a".into(),
+                muted: "#6a6f87".into(),
+                success: "#485e30".into(),
+                warning: "#8f5e15".into(),
+                error: "#8c4351".into(),
             },
-
-            syntax: SyntaxColors::light(),
-        }
+            Some(&ThemeOverrides {
+                syntax_keyword: Some("#5c21a5".into()),
+                syntax_function: Some("#0550ae".into()),
+                syntax_type_name: Some("#0969da".into()),
+                syntax_string: Some("#0a3069".into()),
+                syntax_number: Some("#953800".into()),
+                syntax_comment: Some("#6e7781".into()),
+                syntax_operator: Some("#0550ae".into()),
+                syntax_punctuation: Some("#24292f".into()),
+                syntax_variable: Some("#24292f".into()),
+                syntax_constant: Some("#953800".into()),
+                syntax_attribute: Some("#5c21a5".into()),
+                ..Default::default()
+            }),
+        )
+        .expect("built-in light theme seeds are valid")
     }
 }
 
-/// JSON-serializable theme format for loading from files
+// ---------------------------------------------------------------------------
+// JSON theme file formats
+// ---------------------------------------------------------------------------
+
+/// Seed-based theme file format (new).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThemeSeedFile {
+    pub name: String,
+    #[serde(rename = "syntaxTheme")]
+    pub syntax_theme: Option<String>,
+    pub seeds: ThemeSeeds,
+    #[serde(default)]
+    pub overrides: Option<ThemeOverrides>,
+}
+
+/// Legacy JSON theme format with all colors explicit.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThemeFile {
     pub name: String,
@@ -237,17 +383,17 @@ impl TryFrom<ThemeFile> for Theme {
         } else {
             SyntaxColors::tokyo_night()
         };
-        apply_syntax_override(&mut syntax.keyword, &c.syntax_keyword)?;
-        apply_syntax_override(&mut syntax.function, &c.syntax_function)?;
-        apply_syntax_override(&mut syntax.type_name, &c.syntax_type_name)?;
-        apply_syntax_override(&mut syntax.string, &c.syntax_string)?;
-        apply_syntax_override(&mut syntax.number, &c.syntax_number)?;
-        apply_syntax_override(&mut syntax.comment, &c.syntax_comment)?;
-        apply_syntax_override(&mut syntax.operator, &c.syntax_operator)?;
-        apply_syntax_override(&mut syntax.punctuation, &c.syntax_punctuation)?;
-        apply_syntax_override(&mut syntax.variable, &c.syntax_variable)?;
-        apply_syntax_override(&mut syntax.constant, &c.syntax_constant)?;
-        apply_syntax_override(&mut syntax.attribute, &c.syntax_attribute)?;
+        apply_override(&mut syntax.keyword, &c.syntax_keyword)?;
+        apply_override(&mut syntax.function, &c.syntax_function)?;
+        apply_override(&mut syntax.type_name, &c.syntax_type_name)?;
+        apply_override(&mut syntax.string, &c.syntax_string)?;
+        apply_override(&mut syntax.number, &c.syntax_number)?;
+        apply_override(&mut syntax.comment, &c.syntax_comment)?;
+        apply_override(&mut syntax.operator, &c.syntax_operator)?;
+        apply_override(&mut syntax.punctuation, &c.syntax_punctuation)?;
+        apply_override(&mut syntax.variable, &c.syntax_variable)?;
+        apply_override(&mut syntax.constant, &c.syntax_constant)?;
+        apply_override(&mut syntax.attribute, &c.syntax_attribute)?;
         Ok(Self {
             name: file.name,
             background: parse_color(&c.background)?,
@@ -282,16 +428,24 @@ impl TryFrom<ThemeFile> for Theme {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 fn parse_color(hex: &str) -> anyhow::Result<Rgba> {
     Rgba::from_hex(hex).ok_or_else(|| anyhow::anyhow!("Invalid hex color: {hex}"))
 }
 
-fn apply_syntax_override(target: &mut Rgba, source: &Option<String>) -> anyhow::Result<()> {
+fn apply_override(target: &mut Rgba, source: &Option<String>) -> anyhow::Result<()> {
     if let Some(hex) = source {
         *target = parse_color(hex)?;
     }
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Loading
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
 pub struct ThemeLoadResult {
@@ -308,6 +462,20 @@ const BUILTIN_THEMES: &[(&str, &str)] = &[
         "default-light",
         include_str!("../../themes/default-light.json"),
     ),
+    (
+        "catppuccin",
+        include_str!("../../themes/catppuccin.json"),
+    ),
+    ("dracula", include_str!("../../themes/dracula.json")),
+    ("gruvbox", include_str!("../../themes/gruvbox.json")),
+    ("nord", include_str!("../../themes/nord.json")),
+    (
+        "solarized",
+        include_str!("../../themes/solarized.json"),
+    ),
+    ("monokai", include_str!("../../themes/monokai.json")),
+    ("ayu", include_str!("../../themes/ayu.json")),
+    ("vesper", include_str!("../../themes/vesper.json")),
 ];
 
 pub fn load_theme_from_path(path: &Path) -> anyhow::Result<ThemeLoadResult> {
@@ -316,13 +484,30 @@ pub fn load_theme_from_path(path: &Path) -> anyhow::Result<ThemeLoadResult> {
 }
 
 pub fn load_theme_from_str(json: &str) -> anyhow::Result<ThemeLoadResult> {
-    let theme_file: ThemeFile = serde_json::from_str(json)?;
-    let syntax_theme = theme_file.syntax_theme.clone();
-    let theme = Theme::try_from(theme_file)?;
-    Ok(ThemeLoadResult {
-        theme,
-        syntax_theme,
-    })
+    // Detect format: "seeds" key → new seed format, "colors" key → legacy
+    let value: serde_json::Value = serde_json::from_str(json)?;
+
+    if value.get("seeds").is_some() {
+        let seed_file: ThemeSeedFile = serde_json::from_value(value)?;
+        let syntax_theme = seed_file.syntax_theme.clone();
+        let theme = Theme::from_seeds(
+            seed_file.name,
+            &seed_file.seeds,
+            seed_file.overrides.as_ref(),
+        )?;
+        Ok(ThemeLoadResult {
+            theme,
+            syntax_theme,
+        })
+    } else {
+        let theme_file: ThemeFile = serde_json::from_value(value)?;
+        let syntax_theme = theme_file.syntax_theme.clone();
+        let theme = Theme::try_from(theme_file)?;
+        Ok(ThemeLoadResult {
+            theme,
+            syntax_theme,
+        })
+    }
 }
 
 pub fn load_built_in_theme(name: &str) -> Option<ThemeLoadResult> {

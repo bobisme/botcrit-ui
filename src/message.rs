@@ -92,6 +92,17 @@ pub enum Message {
     CommandPaletteInputBackspace,
     CommandPaletteExecute,
 
+    // === Commenting ===
+    EnterCommentMode,
+    CommentInput(String),
+    CommentInputBackspace,
+    SaveComment,
+    CancelComment,
+
+    // === Theme Selection ===
+    ShowThemePicker,
+    ApplyTheme(String),
+
     // === System ===
     /// Terminal resize event
     Resize {

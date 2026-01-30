@@ -1,70 +1,336 @@
-//! Command palette rendering.
+//! Command palette modal rendering.
+//!
+//! Implements the modal overlay design from notes/modal-design.txt:
+//! - Dimmed background via alpha-blended overlay
+//! - No border
+//! - Title (bold left) + "esc" (dim right) header row
+//! - Search field with placeholder
+//! - Categorized, selectable list items with bullet indicator
+//!
+//! Supports two modes via PaletteMode:
+//! - Commands: shows categorized command list
+//! - Themes: shows flat theme name list with current theme highlighted
+
 use opentui::{OptimizedBuffer, Style};
 
 use crate::{
-    model::{Focus, Model},
-    view::components::{draw_block, draw_text_truncated, Rect},
+    command::CommandSpec,
+    model::{Focus, Model, PaletteMode},
+    theme,
+    view::components::{draw_text_truncated, Rect},
 };
+
+/// Left padding inside the modal (space before highlight area).
+const OUTER_PAD: u32 = 1;
+/// Padding inside the highlight area before the bullet.
+const INNER_PAD: u32 = 1;
+/// Width of the bullet column (● or space).
+const BULLET_W: u32 = 1;
+/// Space between bullet and text.
+const BULLET_GAP: u32 = 1;
+/// Trailing padding inside highlight area.
+const TRAIL_PAD: u32 = 3;
+
+/// Total left offset from modal edge to content text.
+/// = OUTER_PAD + INNER_PAD + BULLET_W + BULLET_GAP
+const TEXT_INDENT: u32 = OUTER_PAD + INNER_PAD + BULLET_W + BULLET_GAP;
 
 pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
     if model.focus != Focus::CommandPalette {
         return;
     }
 
-    let area = Rect::from_size(model.width, model.height);
-    let palette_height = (model.command_palette_commands.len() + 2).min(10) as u32;
-    let palette_width = 60u32.min(area.width.saturating_sub(4));
-    let palette_area = Rect::new(
-        (area.width - palette_width) / 2,
-        area.height / 4,
-        palette_width,
-        palette_height,
-    );
+    let screen = Rect::from_size(model.width, model.height);
 
-    draw_block(buffer, palette_area, "Command Palette", true, &model.theme);
+    // --- Dim background by darkening both fg and bg of every cell ---
+    dim_background(buffer, screen);
 
-    let input_area = Rect::new(
-        palette_area.x + 2,
-        palette_area.y + 1,
-        palette_area.width - 4,
-        1,
-    );
-    let input_text = format!("> {}", model.command_palette_input);
-    draw_text_truncated(
-        buffer,
-        input_area.x,
-        input_area.y,
-        &input_text,
-        input_area.width,
-        Style::fg(model.theme.foreground),
-    );
+    match model.command_palette_mode {
+        PaletteMode::Commands => render_commands(model, buffer, screen),
+        PaletteMode::Themes => render_themes(model, buffer, screen),
+    }
+}
 
-    let list_area = Rect::new(
-        palette_area.x + 2,
-        palette_area.y + 2,
-        palette_area.width - 4,
-        palette_area.height - 3,
-    );
+fn render_commands(model: &Model, buffer: &mut OptimizedBuffer, screen: Rect) {
+    // --- Compute modal geometry ---
+    let modal_width = 60u32.min(screen.width.saturating_sub(4));
 
-    for (i, command) in model.command_palette_commands.iter().enumerate() {
-        if i as u32 >= list_area.height {
+    // Build the list of renderable rows (categories + items) to know total height
+    let rows = build_rows(&model.command_palette_commands);
+    let list_height = rows.len() as u32;
+    // Vertical: 1 blank + title + 1 blank + search + 2 blank + rows + 2 blank
+    let modal_height = (1 + 1 + 1 + 1 + 2 + list_height + 2).min(screen.height.saturating_sub(2));
+    let modal_x = (screen.width.saturating_sub(modal_width)) / 2;
+    let modal_y = screen.height / 4;
+
+    // Fill modal background
+    buffer.fill_rect(modal_x, modal_y, modal_width, modal_height, model.theme.panel_bg);
+
+    let text_x = modal_x + TEXT_INDENT;
+    let text_width = modal_width.saturating_sub(TEXT_INDENT + OUTER_PAD);
+    let esc_label = "esc";
+    let esc_right = modal_x + modal_width - OUTER_PAD - TRAIL_PAD;
+
+    let mut y = modal_y;
+
+    // --- 1 blank row ---
+    y += 1;
+
+    // --- Title row: "Commands" (bold left) + "esc" (dim right) ---
+    buffer.draw_text(text_x, y, "Commands", Style::fg(model.theme.foreground).with_bold());
+    let esc_x = esc_right.saturating_sub(esc_label.len() as u32);
+    buffer.draw_text(esc_x, y, esc_label, Style::fg(model.theme.muted));
+    y += 1;
+
+    // --- 1 blank row ---
+    y += 1;
+
+    // --- Search field ---
+    render_search_field(model, buffer, text_x, y, text_width);
+    y += 1;
+
+    // --- 2 blank rows ---
+    y += 2;
+
+    // --- List items ---
+    let list_max = modal_y + modal_height - 2; // leave 2 rows at bottom
+    for row in &rows {
+        if y >= list_max {
             break;
         }
-        let y = list_area.y + i as u32;
-        let selected = i == model.command_palette_selection;
-        let (bg, fg) = if selected {
-            (model.theme.selection_bg, model.theme.selection_fg)
-        } else {
-            (model.theme.background, model.theme.foreground)
-        };
-        buffer.fill_rect(list_area.x, y, list_area.width, 1, bg);
+        match row {
+            Row::Category(name) => {
+                buffer.draw_text(text_x, y, name, Style::fg(model.theme.primary).with_bold());
+            }
+            Row::Separator => {
+                // blank row between categories
+            }
+            Row::Item(cmd, idx) => {
+                let selected = *idx == model.command_palette_selection;
+                render_item_row(buffer, modal_x, y, modal_width, cmd, selected, model);
+            }
+        }
+        y += 1;
+    }
+}
+
+fn render_themes(model: &Model, buffer: &mut OptimizedBuffer, screen: Rect) {
+    let modal_width = 60u32.min(screen.width.saturating_sub(4));
+
+    let theme_names = filtered_theme_names(&model.command_palette_input);
+    let list_height = theme_names.len() as u32;
+    // Vertical: 1 blank + title + 1 blank + search + 2 blank + rows + 2 blank
+    let modal_height = (1 + 1 + 1 + 1 + 2 + list_height + 2).min(screen.height.saturating_sub(2));
+    let modal_x = (screen.width.saturating_sub(modal_width)) / 2;
+    let modal_y = screen.height / 4;
+
+    buffer.fill_rect(modal_x, modal_y, modal_width, modal_height, model.theme.panel_bg);
+
+    let text_x = modal_x + TEXT_INDENT;
+    let text_width = modal_width.saturating_sub(TEXT_INDENT + OUTER_PAD);
+    let esc_label = "esc";
+    let esc_right = modal_x + modal_width - OUTER_PAD - TRAIL_PAD;
+
+    let mut y = modal_y;
+
+    // --- 1 blank row ---
+    y += 1;
+
+    // --- Title row ---
+    buffer.draw_text(text_x, y, "Themes", Style::fg(model.theme.foreground).with_bold());
+    let esc_x = esc_right.saturating_sub(esc_label.len() as u32);
+    buffer.draw_text(esc_x, y, esc_label, Style::fg(model.theme.muted));
+    y += 1;
+
+    // --- 1 blank row ---
+    y += 1;
+
+    // --- Search field ---
+    render_search_field(model, buffer, text_x, y, text_width);
+    y += 1;
+
+    // --- 2 blank rows ---
+    y += 2;
+
+    // --- Theme list ---
+    let list_max = modal_y + modal_height - 2;
+    for (idx, name) in theme_names.iter().enumerate() {
+        if y >= list_max {
+            break;
+        }
+        let selected = idx == model.command_palette_selection;
+        let is_current = *name == model.theme.name;
+        render_theme_row(buffer, modal_x, y, modal_width, name, selected, is_current, model);
+        y += 1;
+    }
+}
+
+fn render_search_field(
+    model: &Model,
+    buffer: &mut OptimizedBuffer,
+    text_x: u32,
+    y: u32,
+    text_width: u32,
+) {
+    if model.command_palette_input.is_empty() {
+        buffer.draw_text(text_x, y, "Search", Style::fg(model.theme.muted));
+    } else {
+        let input_text = format!("{}\u{2588}", model.command_palette_input);
         draw_text_truncated(
             buffer,
-            list_area.x,
+            text_x,
             y,
-            command.name,
-            list_area.width,
-            Style::fg(fg),
+            &input_text,
+            text_width,
+            Style::fg(model.theme.foreground),
         );
     }
+}
+
+/// Dim the entire screen by scaling both fg and bg colors of every cell.
+fn dim_background(buffer: &mut OptimizedBuffer, screen: Rect) {
+    let scale = 0.35_f32;
+    for row in screen.y..screen.y + screen.height {
+        for col in screen.x..screen.x + screen.width {
+            if let Some(cell) = buffer.get_mut(col, row) {
+                cell.fg = opentui::Rgba::new(
+                    cell.fg.r * scale,
+                    cell.fg.g * scale,
+                    cell.fg.b * scale,
+                    cell.fg.a,
+                );
+                cell.bg = opentui::Rgba::new(
+                    cell.bg.r * scale,
+                    cell.bg.g * scale,
+                    cell.bg.b * scale,
+                    cell.bg.a,
+                );
+            }
+        }
+    }
+}
+
+/// Render a single command item row with the horizontal layout spec:
+/// `OUTER_PAD | <highlight> INNER_PAD bullet BULLET_GAP name ... shortcut TRAIL_PAD </highlight> | OUTER_PAD`
+fn render_item_row(
+    buffer: &mut OptimizedBuffer,
+    modal_x: u32,
+    y: u32,
+    modal_width: u32,
+    cmd: &CommandSpec,
+    selected: bool,
+    model: &Model,
+) {
+    let highlight_x = modal_x + OUTER_PAD;
+    let highlight_width = modal_width - (OUTER_PAD * 2);
+
+    let (bg, fg) = if selected {
+        (model.theme.selection_bg, model.theme.selection_fg)
+    } else {
+        (model.theme.panel_bg, model.theme.foreground)
+    };
+    buffer.fill_rect(highlight_x, y, highlight_width, 1, bg);
+
+    // Bullet
+    let bullet_x = highlight_x + INNER_PAD;
+    let bullet = if cmd.active { "●" } else { " " };
+    buffer.draw_text(bullet_x, y, bullet, Style::fg(fg));
+
+    // Content area: name left, shortcut right
+    let name_x = bullet_x + BULLET_W + BULLET_GAP;
+    let content_end = highlight_x + highlight_width - TRAIL_PAD;
+    let content_width = content_end.saturating_sub(name_x);
+
+    if let Some(shortcut) = cmd.shortcut {
+        let shortcut_len = shortcut.len() as u32;
+        if shortcut_len < content_width {
+            let shortcut_x = content_end - shortcut_len;
+            buffer.draw_text(shortcut_x, y, shortcut, Style::fg(model.theme.muted));
+
+            let name_max = content_width.saturating_sub(shortcut_len + 1);
+            draw_text_truncated(buffer, name_x, y, cmd.name, name_max, Style::fg(fg));
+        } else {
+            draw_text_truncated(buffer, name_x, y, cmd.name, content_width, Style::fg(fg));
+        }
+    } else {
+        draw_text_truncated(buffer, name_x, y, cmd.name, content_width, Style::fg(fg));
+    }
+}
+
+/// Render a single theme item row.
+/// Uses bullet (●) if this is the currently active theme.
+fn render_theme_row(
+    buffer: &mut OptimizedBuffer,
+    modal_x: u32,
+    y: u32,
+    modal_width: u32,
+    name: &str,
+    selected: bool,
+    is_current: bool,
+    model: &Model,
+) {
+    let highlight_x = modal_x + OUTER_PAD;
+    let highlight_width = modal_width - (OUTER_PAD * 2);
+
+    let (bg, fg) = if selected {
+        (model.theme.selection_bg, model.theme.selection_fg)
+    } else {
+        (model.theme.panel_bg, model.theme.foreground)
+    };
+    buffer.fill_rect(highlight_x, y, highlight_width, 1, bg);
+
+    // Bullet: show ● for current theme
+    let bullet_x = highlight_x + INNER_PAD;
+    let bullet = if is_current { "●" } else { " " };
+    buffer.draw_text(bullet_x, y, bullet, Style::fg(fg));
+
+    // Theme name
+    let name_x = bullet_x + BULLET_W + BULLET_GAP;
+    let content_end = highlight_x + highlight_width - TRAIL_PAD;
+    let content_width = content_end.saturating_sub(name_x);
+    draw_text_truncated(buffer, name_x, y, name, content_width, Style::fg(fg));
+}
+
+/// Row types for the command list.
+enum Row<'a> {
+    Category(&'static str),
+    Separator,
+    Item(&'a CommandSpec, usize),
+}
+
+/// Build a flat list of rows from categorized commands.
+fn build_rows(commands: &[CommandSpec]) -> Vec<Row<'_>> {
+    let mut rows = Vec::new();
+    let mut current_category: Option<&str> = None;
+    let mut selectable_index: usize = 0;
+
+    for cmd in commands {
+        if current_category != Some(cmd.category) {
+            if current_category.is_some() {
+                rows.push(Row::Separator);
+            }
+            rows.push(Row::Category(cmd.category));
+            current_category = Some(cmd.category);
+        }
+        rows.push(Row::Item(cmd, selectable_index));
+        selectable_index += 1;
+    }
+
+    rows
+}
+
+/// Filter theme names by search query (case-insensitive).
+fn filtered_theme_names(query: &str) -> Vec<&'static str> {
+    let names = theme::built_in_theme_names();
+    let terms: Vec<String> = query.split_whitespace().map(|s| s.to_lowercase()).collect();
+    if terms.is_empty() {
+        return names;
+    }
+    names
+        .into_iter()
+        .filter(|name| {
+            let name_lower = name.to_lowercase();
+            terms.iter().all(|term| name_lower.contains(term.as_str()))
+        })
+        .collect()
 }

@@ -831,8 +831,52 @@ pub fn render_diff_stream(
                     }
                     crate::model::DiffViewMode::SideBySide => {
                         let sbs_lines = build_side_by_side_lines(diff);
+
+                        // Build SBS-specific anchor/comment maps keyed by SBS index
+                        // (unified display indices don't match SBS iteration indices)
+                        let mut sbs_anchor_map: std::collections::HashMap<usize, &ThreadAnchor> =
+                            std::collections::HashMap::new();
+                        let mut sbs_comment_map: std::collections::HashMap<usize, &ThreadAnchor> =
+                            std::collections::HashMap::new();
+                        for anchor in &anchors {
+                            if let Some(thread) = file_threads
+                                .iter()
+                                .find(|t| t.thread_id == anchor.thread_id)
+                            {
+                                let start = thread.selection_start as u32;
+                                let end = thread
+                                    .selection_end
+                                    .unwrap_or(thread.selection_start)
+                                    as u32;
+                                for (si, sl) in sbs_lines.iter().enumerate() {
+                                    let has_start = sl
+                                        .right
+                                        .as_ref()
+                                        .map_or(false, |l| l.line_num == start)
+                                        || sl
+                                            .left
+                                            .as_ref()
+                                            .map_or(false, |l| l.line_num == start);
+                                    if has_start {
+                                        sbs_anchor_map.insert(si, anchor);
+                                    }
+                                    let has_end = sl
+                                        .right
+                                        .as_ref()
+                                        .map_or(false, |l| l.line_num == end)
+                                        || sl
+                                            .left
+                                            .as_ref()
+                                            .map_or(false, |l| l.line_num == end);
+                                    if has_end {
+                                        sbs_comment_map.insert(si, anchor);
+                                    }
+                                }
+                            }
+                        }
+
                         for (idx, sbs_line) in sbs_lines.iter().enumerate() {
-                            let anchor = anchor_map.get(&idx).copied();
+                            let anchor = sbs_anchor_map.get(&idx).copied();
                             if wrap && !sbs_line.is_header {
                                 let thread_col_width: u32 = 2;
                                 let divider_width: u32 = 1;
@@ -892,7 +936,7 @@ pub fn render_diff_stream(
                             }
 
                             // Emit comment block after the last line of the thread range
-                            if let Some(comment_anchor) = comment_map.get(&idx) {
+                            if let Some(comment_anchor) = sbs_comment_map.get(&idx) {
                                 if let Some(thread) = file_threads
                                     .iter()
                                     .find(|t| t.thread_id == comment_anchor.thread_id)

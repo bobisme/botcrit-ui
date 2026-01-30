@@ -162,8 +162,8 @@ impl Theme {
 
         // --- Derive diff colors ---
         let mut diff = DiffTheme {
-            added: success.lerp(fg, 0.15),
-            removed: error.lerp(fg, 0.15),
+            added: success.lerp(fg, 0.3),
+            removed: error.lerp(fg, 0.3),
             context: fg,
             hunk_header: muted,
             highlight_added: success.lerp(primary, 0.3),

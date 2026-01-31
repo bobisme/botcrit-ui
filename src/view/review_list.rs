@@ -241,7 +241,7 @@ fn draw_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     let sep_len = separator.len();
 
     let hints: &[(&str, &str)] = &[
-        ("Commands", "Ctrl+P"),
+        ("Commands", "ctrl+p"),
         ("Navigate", "j/k"),
         ("Select", "Enter"),
         ("Open Only", "o"),

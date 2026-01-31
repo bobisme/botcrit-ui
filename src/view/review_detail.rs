@@ -307,10 +307,6 @@ fn draw_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     let theme = &model.theme;
     let y = area.y + area.height.saturating_sub(2);
 
-    // Bottom margin row below the help bar
-    let bottom_y = area.y + area.height.saturating_sub(1);
-    buffer.fill_rect(area.x, bottom_y, area.width, 1, theme.background);
-
     let mut footer_x = area.x;
     let mut footer_width = area.width;
     if model.sidebar_visible {
@@ -330,9 +326,13 @@ fn draw_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         return;
     }
 
+    // Bottom margin row below the help bar (only covers diff pane, not sidebar)
+    let bottom_y = area.y + area.height.saturating_sub(1);
+    buffer.fill_rect(footer_x, bottom_y, footer_width, 1, theme.background);
+
     buffer.fill_rect(footer_x, y, footer_width, 1, theme.background);
 
-    let commands_hint = HotkeyHint::new("Commands", "Ctrl+P");
+    let commands_hint = HotkeyHint::new("Commands", "ctrl+p");
 
     let hints: &[HotkeyHint] = match model.focus {
         Focus::FileSidebar => &[

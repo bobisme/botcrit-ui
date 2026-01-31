@@ -316,6 +316,38 @@ impl Model {
             .collect()
     }
 
+    /// Build a flat list of sidebar items: files with their threads as children
+    #[must_use]
+    pub fn sidebar_items(&self) -> Vec<SidebarItem> {
+        let files = self.files_with_threads();
+        let mut items = Vec::new();
+
+        for (file_idx, file) in files.iter().enumerate() {
+            items.push(SidebarItem::File {
+                entry: file.clone(),
+                file_idx,
+            });
+            // Add threads belonging to this file, sorted by line number
+            let mut file_threads: Vec<&ThreadSummary> = self
+                .threads
+                .iter()
+                .filter(|t| t.file_path == file.path)
+                .collect();
+            file_threads.sort_by_key(|t| t.selection_start);
+
+            for thread in file_threads {
+                items.push(SidebarItem::Thread {
+                    thread_id: thread.thread_id.clone(),
+                    status: thread.status.clone(),
+                    comment_count: thread.comment_count,
+                    file_idx,
+                });
+            }
+        }
+
+        items
+    }
+
     /// Handle terminal resize
     pub fn resize(&mut self, width: u16, height: u16) {
         self.width = width;
@@ -358,4 +390,21 @@ pub struct FileEntry {
     pub path: String,
     pub open_threads: usize,
     pub resolved_threads: usize,
+}
+
+/// An item in the sidebar tree (file or thread)
+#[derive(Debug, Clone)]
+pub enum SidebarItem {
+    File {
+        entry: FileEntry,
+        /// Index into files_with_threads() for selection matching
+        file_idx: usize,
+    },
+    Thread {
+        thread_id: String,
+        status: String,
+        comment_count: i64,
+        /// Parent file index for selection matching
+        file_idx: usize,
+    },
 }

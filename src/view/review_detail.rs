@@ -4,7 +4,7 @@ use opentui::{OptimizedBuffer, Style};
 
 use super::components::{draw_text_truncated, truncate_path, Rect};
 use super::diff::{diff_change_counts, render_diff_stream, render_pinned_header_block};
-use crate::model::{Focus, LayoutMode, Model};
+use crate::model::{Focus, LayoutMode, Model, SidebarItem};
 use crate::stream::block_height;
 
 /// Render the review detail screen
@@ -55,7 +55,7 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     let theme = &model.theme;
     let inner = area;
     buffer.fill_rect(inner.x, inner.y, inner.width, inner.height, theme.panel_bg);
-    let files = model.files_with_threads();
+    let items = model.sidebar_items();
     let focused = matches!(model.focus, Focus::FileSidebar);
 
     let left_pad: u32 = 2;
@@ -106,83 +106,116 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         y += 2;
     }
 
-    if files.is_empty() {
+    if items.is_empty() {
         if y < bottom {
             buffer.draw_text(text_x, y, "No files", Style::fg(theme.muted));
         }
         return;
     }
 
-    for (i, file) in files.iter().enumerate() {
+    for item in &items {
         if y >= bottom {
             break;
         }
 
-        let row_y = y;
-        let selected = i == model.file_index;
+        match item {
+            SidebarItem::File { entry, file_idx } => {
+                let selected = *file_idx == model.file_index;
+                let row_bg = if selected && focused {
+                    theme.selection_bg
+                } else {
+                    theme.panel_bg
+                };
+                if selected && focused {
+                    buffer.fill_rect(inner.x, y, inner.width, 1, row_bg);
+                }
+                let (prefix, style) = if selected {
+                    ("◉ ", Style::fg(theme.primary).with_bg(row_bg))
+                } else {
+                    ("  ", Style::fg(theme.foreground).with_bg(row_bg))
+                };
 
-        // Selection indicator and background
-        let row_bg = if selected && focused {
-            theme.selection_bg
-        } else {
-            theme.panel_bg
-        };
-        if selected && focused {
-            buffer.fill_rect(inner.x, y, inner.width, 1, row_bg);
+                let prefix_x = inner.x + left_pad;
+                buffer.draw_text(prefix_x, y, prefix, style);
+
+                // Thread count indicator
+                let thread_indicator = if entry.open_threads > 0 {
+                    format!("{}", entry.open_threads)
+                } else if entry.resolved_threads > 0 {
+                    "✓".to_string()
+                } else {
+                    " ".to_string()
+                };
+
+                let indicator_color = if entry.open_threads > 0 {
+                    theme.warning
+                } else {
+                    theme.success
+                };
+
+                let indicator_len = thread_indicator.chars().count() as u32;
+                let prefix_width: u32 = 2;
+                let filename_width = inner
+                    .width
+                    .saturating_sub(prefix_width + indicator_len + left_pad + right_pad);
+
+                let filename = truncate_path(&entry.path, filename_width as usize);
+                draw_text_truncated(
+                    buffer,
+                    prefix_x + prefix_width,
+                    y,
+                    &filename,
+                    filename_width,
+                    style,
+                );
+
+                let indicator_x = inner
+                    .x
+                    .saturating_add(inner.width)
+                    .saturating_sub(right_pad + indicator_len);
+                buffer.draw_text(
+                    indicator_x,
+                    y,
+                    &thread_indicator,
+                    Style::fg(indicator_color).with_bg(row_bg),
+                );
+            }
+            SidebarItem::Thread {
+                thread_id,
+                status,
+                comment_count,
+                ..
+            } => {
+                let indent: u32 = 4;
+                let thread_x = inner.x + left_pad + indent;
+                let thread_width = inner.width.saturating_sub(left_pad + indent + right_pad);
+
+                let status_icon = if status == "open" { "○" } else { "✓" };
+                let status_color = if status == "open" {
+                    theme.warning
+                } else {
+                    theme.success
+                };
+
+                buffer.draw_text(thread_x, y, status_icon, Style::fg(status_color));
+
+                let id_x = thread_x + 2;
+                let id_width = thread_width.saturating_sub(2);
+                let label = if *comment_count > 0 {
+                    format!("{} ({})", thread_id, comment_count)
+                } else {
+                    thread_id.clone()
+                };
+                draw_text_truncated(
+                    buffer,
+                    id_x,
+                    y,
+                    &label,
+                    id_width,
+                    Style::fg(theme.muted),
+                );
+            }
         }
-        let (prefix, style) = if selected {
-            ("◉ ", Style::fg(theme.primary).with_bg(row_bg))
-        } else {
-            ("  ", Style::fg(theme.foreground).with_bg(row_bg))
-        };
-
-        let prefix_x = inner.x + left_pad;
-        buffer.draw_text(prefix_x, row_y, prefix, style);
-
-        // Thread count indicator
-        let thread_indicator = if file.open_threads > 0 {
-            format!("{}", file.open_threads)
-        } else if file.resolved_threads > 0 {
-            "✓".to_string()
-        } else {
-            " ".to_string()
-        };
-
-        let indicator_color = if file.open_threads > 0 {
-            theme.warning
-        } else {
-            theme.success
-        };
-
-        // Calculate available width for filename
-        let indicator_len = thread_indicator.chars().count() as u32;
-        let prefix_width: u32 = 2;
-        let filename_width = inner
-            .width
-            .saturating_sub(prefix_width + indicator_len + left_pad + right_pad);
-
-        // Draw filename (truncated)
-        let filename = truncate_path(&file.path, filename_width as usize);
-        draw_text_truncated(
-            buffer,
-            prefix_x + prefix_width,
-            row_y,
-            &filename,
-            filename_width,
-            style,
-        );
-
-        // Draw thread indicator at the end
-        let indicator_x = inner
-            .x
-            .saturating_add(inner.width)
-            .saturating_sub(right_pad + indicator_len);
-        buffer.draw_text(
-            indicator_x,
-            row_y,
-            &thread_indicator,
-            Style::fg(indicator_color).with_bg(row_bg),
-        );
 
         y += 1;
     }

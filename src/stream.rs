@@ -87,13 +87,48 @@ pub fn compute_stream_layout(
                 .filter(|t| t.file_path == file.path)
                 .collect();
             let diff_lines = if let Some(diff) = &entry.diff {
-                diff_line_count_for_view(diff, view_mode, wrap, content_width)
-                    + all_threads_extra_lines(
-                        diff,
-                        &file_threads,
-                        all_comments,
-                        content_width,
-                    )
+                let anchors = crate::view::map_threads_to_diff(diff, &file_threads);
+                let anchored_ids: std::collections::HashSet<&str> =
+                    anchors.iter().map(|a| a.thread_id.as_str()).collect();
+                let anchored_threads: Vec<&ThreadSummary> = file_threads
+                    .iter()
+                    .filter(|t| anchored_ids.contains(t.thread_id.as_str()))
+                    .copied()
+                    .collect();
+                let orphaned_threads: Vec<&ThreadSummary> = file_threads
+                    .iter()
+                    .filter(|t| !anchored_ids.contains(t.thread_id.as_str()))
+                    .copied()
+                    .collect();
+
+                let mut count = diff_line_count_for_view(diff, view_mode, wrap, content_width)
+                    + threads_comment_height(&anchored_threads, all_comments, content_width);
+
+                if !orphaned_threads.is_empty() {
+                    if let Some(content) = &entry.file_content {
+                        let hunk_ranges: Vec<(i64, i64)> = diff
+                            .hunks
+                            .iter()
+                            .map(|h| {
+                                (
+                                    h.new_start as i64,
+                                    (h.new_start + h.new_count.saturating_sub(1)) as i64,
+                                )
+                            })
+                            .collect();
+                        count += orphaned_context_display_count(
+                            content.lines.as_slice(),
+                            &orphaned_threads,
+                            &hunk_ranges,
+                            wrap,
+                            content_width,
+                        );
+                    }
+                    count +=
+                        threads_comment_height(&orphaned_threads, all_comments, content_width);
+                }
+
+                count
             } else if let Some(content) = &entry.file_content {
                 context_display_count(
                     content.lines.as_slice(),
@@ -137,46 +172,6 @@ pub fn active_file_index(layout: &StreamLayout, scroll: usize) -> usize {
 
 pub fn file_scroll_offset(layout: &StreamLayout, index: usize) -> usize {
     layout.file_offsets.get(index).copied().unwrap_or(0)
-}
-
-pub fn thread_stream_offset(
-    layout: &StreamLayout,
-    files: &[FileEntry],
-    file_cache: &HashMap<String, FileCacheEntry>,
-    threads: &[ThreadSummary],
-    thread_id: &str,
-    view_mode: DiffViewMode,
-    wrap: bool,
-    content_width: u32,
-) -> Option<usize> {
-    let thread = threads.iter().find(|t| t.thread_id == thread_id)?;
-    let file_index = files.iter().position(|f| f.path == thread.file_path)?;
-    let file_offset = layout.file_offsets.get(file_index).copied()?;
-    let content_start = file_offset + block_height(1);
-
-    let entry = file_cache.get(&thread.file_path)?;
-    if let Some(diff) = &entry.diff {
-        let display_row = diff_display_row_for_line(
-            diff,
-            thread.selection_start as u32,
-            view_mode,
-            wrap,
-            content_width,
-        )?;
-        Some(content_start + display_row)
-    } else if let Some(content) = &entry.file_content {
-        let display_row = context_line_index(
-            content.lines.as_slice(),
-            threads,
-            &thread.file_path,
-            thread.selection_start,
-            wrap,
-            content_width,
-        )?;
-        Some(content_start + display_row)
-    } else {
-        None
-    }
 }
 
 fn diff_line_count_for_view(
@@ -304,24 +299,6 @@ fn side_by_side_line_count_wrapped(
     count
 }
 
-fn all_threads_extra_lines(
-    diff: &ParsedDiff,
-    file_threads: &[&ThreadSummary],
-    all_comments: &HashMap<String, Vec<Comment>>,
-    content_width: u32,
-) -> usize {
-    let mut total = 0;
-    for thread in file_threads {
-        let display_line = find_display_line(diff, thread.selection_start as u32);
-        if display_line.is_none() {
-            continue;
-        }
-        if let Some(comments) = all_comments.get(&thread.thread_id) {
-            total += comment_block_height(comments, content_width);
-        }
-    }
-    total
-}
 
 pub(crate) fn find_display_line(diff: &ParsedDiff, line: u32) -> Option<usize> {
     let mut old_line_to_display: std::collections::HashMap<u32, usize> =
@@ -347,202 +324,6 @@ pub(crate) fn find_display_line(diff: &ParsedDiff, line: u32) -> Option<usize> {
         .get(&line)
         .or_else(|| old_line_to_display.get(&line))
         .copied()
-}
-
-fn diff_display_row_for_line(
-    diff: &ParsedDiff,
-    line: u32,
-    view_mode: DiffViewMode,
-    wrap: bool,
-    content_width: u32,
-) -> Option<usize> {
-    match view_mode {
-        DiffViewMode::Unified => {
-            if !wrap {
-                return find_display_line(diff, line);
-            }
-            let max_width = unified_wrap_width(content_width);
-            // Prefer new_line match (added side, where ▽ marker renders),
-            // fall back to old_line match (removed side).
-            let mut new_match = None;
-            let mut old_match = None;
-            let mut display_row = 0usize;
-            for hunk in &diff.hunks {
-                display_row += 1;
-                for diff_line in &hunk.lines {
-                    if new_match.is_none() && diff_line.new_line == Some(line) {
-                        new_match = Some(display_row);
-                    }
-                    if old_match.is_none() && diff_line.old_line == Some(line) {
-                        old_match = Some(display_row);
-                    }
-                    if new_match.is_some() {
-                        return new_match;
-                    }
-                    display_row += wrap_line_count(&diff_line.content, max_width);
-                }
-            }
-            new_match.or(old_match)
-        }
-        DiffViewMode::SideBySide => {
-            let mut display_row = 0usize;
-            let (left_width, right_width) = if wrap {
-                side_by_side_wrap_widths(content_width)
-            } else {
-                (0, 0)
-            };
-            for hunk in &diff.hunks {
-                display_row += 1;
-                let mut i = 0;
-                let lines = &hunk.lines;
-                while i < lines.len() {
-                    match lines[i].kind {
-                        crate::diff::DiffLineKind::Context => {
-                            let diff_line = &lines[i];
-                            if diff_line.new_line == Some(line) || diff_line.old_line == Some(line)
-                            {
-                                return Some(display_row);
-                            }
-                            display_row += if wrap {
-                                wrap_line_count(&diff_line.content, left_width)
-                            } else {
-                                1
-                            };
-                            i += 1;
-                        }
-                        crate::diff::DiffLineKind::Removed => {
-                            let mut removals = Vec::new();
-                            while i < lines.len()
-                                && lines[i].kind == crate::diff::DiffLineKind::Removed
-                            {
-                                removals.push(&lines[i]);
-                                i += 1;
-                            }
-                            let mut additions = Vec::new();
-                            while i < lines.len()
-                                && lines[i].kind == crate::diff::DiffLineKind::Added
-                            {
-                                additions.push(&lines[i]);
-                                i += 1;
-                            }
-                            let max_len = removals.len().max(additions.len());
-                            for idx in 0..max_len {
-                                let left = removals.get(idx);
-                                let right = additions.get(idx);
-                                let left_match = left
-                                    .and_then(|diff_line| diff_line.old_line)
-                                    .map(|ln| ln == line)
-                                    .unwrap_or(false);
-                                let right_match = right
-                                    .and_then(|diff_line| diff_line.new_line)
-                                    .map(|ln| ln == line)
-                                    .unwrap_or(false);
-                                if left_match || right_match {
-                                    return Some(display_row);
-                                }
-                                let left_rows = if wrap {
-                                    left.map(|diff_line| {
-                                        wrap_line_count(&diff_line.content, left_width)
-                                    })
-                                    .unwrap_or(1)
-                                } else {
-                                    1
-                                };
-                                let right_rows = if wrap {
-                                    right
-                                        .map(|diff_line| {
-                                            wrap_line_count(&diff_line.content, right_width)
-                                        })
-                                        .unwrap_or(1)
-                                } else {
-                                    1
-                                };
-                                display_row += left_rows.max(right_rows);
-                            }
-                        }
-                        crate::diff::DiffLineKind::Added => {
-                            let diff_line = &lines[i];
-                            if diff_line.new_line == Some(line) {
-                                return Some(display_row);
-                            }
-                            display_row += if wrap {
-                                wrap_line_count(&diff_line.content, right_width)
-                            } else {
-                                1
-                            };
-                            i += 1;
-                        }
-                    }
-                }
-            }
-            None
-        }
-    }
-}
-
-fn context_line_index(
-    lines: &[String],
-    threads: &[ThreadSummary],
-    file_path: &str,
-    line_num: i64,
-    wrap: bool,
-    content_width: u32,
-) -> Option<usize> {
-    let mut ranges = Vec::new();
-    let total_lines = lines.len();
-    for thread in threads.iter().filter(|t| t.file_path == file_path) {
-        let thread_end = thread.selection_end.unwrap_or(thread.selection_start);
-        let start = (thread.selection_start - 5).max(1);
-        let end = (thread_end + 5).min(total_lines as i64);
-        ranges.push((start, end));
-    }
-
-    if ranges.is_empty() {
-        return None;
-    }
-
-    ranges.sort_by_key(|r| r.0);
-    let mut merged: Vec<(i64, i64)> = Vec::new();
-    for (start, end) in ranges {
-        if let Some(last) = merged.last_mut() {
-            if start <= last.1 + 1 {
-                last.1 = last.1.max(end);
-            } else {
-                merged.push((start, end));
-            }
-        } else {
-            merged.push((start, end));
-        }
-    }
-
-    let mut index = 0usize;
-    let mut prev_end: Option<i64> = None;
-    for (start, end) in merged {
-        if let Some(pe) = prev_end {
-            if start > pe + 1 {
-                index += 1; // separator line
-            }
-        }
-
-        let max_width = context_wrap_width(content_width);
-        for line in start..=end {
-            if line_num == line {
-                return Some(index);
-            }
-            if let Some(text) = lines.get((line - 1) as usize) {
-                if wrap {
-                    index += wrap_line_count(text, max_width);
-                } else {
-                    index += 1;
-                }
-            } else {
-                index += 1;
-            }
-        }
-        prev_end = Some(end);
-    }
-
-    None
 }
 
 fn comment_block_height(comments: &[Comment], content_width: u32) -> usize {
@@ -619,6 +400,112 @@ fn context_display_count(
     }
 
     count
+}
+
+/// Count display lines for orphaned thread context (already-filtered threads).
+/// `exclude_ranges` are (start, end) pairs of new-file lines already shown in the diff.
+fn orphaned_context_display_count(
+    lines: &[String],
+    orphaned_threads: &[&ThreadSummary],
+    exclude_ranges: &[(i64, i64)],
+    wrap: bool,
+    content_width: u32,
+) -> usize {
+    let total_lines = lines.len();
+    let mut ranges: Vec<(i64, i64)> = orphaned_threads
+        .iter()
+        .map(|t| {
+            let thread_end = t.selection_end.unwrap_or(t.selection_start);
+            let start = (t.selection_start - 5).max(1);
+            let end = (thread_end + 5).min(total_lines as i64);
+            (start, end)
+        })
+        .collect();
+
+    if ranges.is_empty() {
+        return 0;
+    }
+
+    ranges.sort_by_key(|r| r.0);
+    let mut merged: Vec<(i64, i64)> = Vec::new();
+    for (start, end) in ranges {
+        if let Some(last) = merged.last_mut() {
+            if start <= last.1 + 1 {
+                last.1 = last.1.max(end);
+            } else {
+                merged.push((start, end));
+            }
+        } else {
+            merged.push((start, end));
+        }
+    }
+
+    // Clip against diff hunk ranges
+    if !exclude_ranges.is_empty() {
+        let mut clipped: Vec<(i64, i64)> = Vec::new();
+        for (rs, re) in &merged {
+            let mut remaining = vec![(*rs, *re)];
+            for &(ex_start, ex_end) in exclude_ranges {
+                let mut next = Vec::new();
+                for (s, e) in remaining {
+                    if e < ex_start || s > ex_end {
+                        next.push((s, e));
+                    } else {
+                        if s < ex_start {
+                            next.push((s, ex_start - 1));
+                        }
+                        if e > ex_end {
+                            next.push((ex_end + 1, e));
+                        }
+                    }
+                }
+                remaining = next;
+            }
+            clipped.extend(remaining);
+        }
+        clipped.sort_by_key(|r| r.0);
+        merged = clipped;
+    }
+
+    let mut count = 0usize;
+    let mut prev_end: Option<i64> = None;
+    for (start, end) in merged {
+        if let Some(pe) = prev_end {
+            if start > pe + 1 {
+                count += 1; // separator line
+            }
+        }
+        let max_width = context_wrap_width(content_width);
+        for line in start..=end {
+            if let Some(text) = lines.get((line - 1) as usize) {
+                if wrap {
+                    count += wrap_line_count(text, max_width);
+                } else {
+                    count += 1;
+                }
+            } else {
+                count += 1;
+            }
+        }
+        prev_end = Some(end);
+    }
+
+    count
+}
+
+/// Count comment block heights for a set of threads.
+fn threads_comment_height(
+    threads: &[&ThreadSummary],
+    all_comments: &HashMap<String, Vec<Comment>>,
+    content_width: u32,
+) -> usize {
+    let mut total = 0;
+    for thread in threads {
+        if let Some(comments) = all_comments.get(&thread.thread_id) {
+            total += comment_block_height(comments, content_width);
+        }
+    }
+    total
 }
 
 fn all_context_extra_lines(

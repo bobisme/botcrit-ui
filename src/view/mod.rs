@@ -6,7 +6,7 @@ mod diff;
 mod review_detail;
 mod review_list;
 
-pub use diff::{diff_line_count, render_diff, render_file_context};
+pub use diff::{diff_line_count, map_threads_to_diff, render_diff, render_file_context};
 
 use opentui::OptimizedBuffer;
 

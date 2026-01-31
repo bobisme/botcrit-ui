@@ -1,6 +1,7 @@
 //! Application state model
 
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 
 use crate::command::CommandSpec;
 use crate::config::UiConfig;
@@ -20,6 +21,9 @@ pub struct FileCacheEntry {
     pub diff: Option<ParsedDiff>,
     pub file_content: Option<FileContent>,
     pub highlighted_lines: Vec<Vec<HighlightSpan>>,
+    /// Syntax highlights indexed by file line number (for orphaned thread context).
+    /// Only populated when both `diff` and `file_content` are present.
+    pub file_highlighted_lines: Vec<Vec<HighlightSpan>>,
 }
 
 /// Current screen/view
@@ -142,6 +146,10 @@ pub struct Model {
     pub list_scroll: usize,
     /// Selected file index in sidebar
     pub file_index: usize,
+    /// Selected index in the flat sidebar tree
+    pub sidebar_index: usize,
+    /// Files whose thread children are collapsed
+    pub collapsed_files: HashSet<String>,
     /// Scroll offset in diff pane
     pub diff_scroll: usize,
     /// Currently expanded thread ID
@@ -178,6 +186,10 @@ pub struct Model {
     pub pre_palette_theme: Option<String>,
     pub config: UiConfig,
 
+    // === Render-computed data ===
+    /// Thread positions captured during rendering (thread_id → stream_row)
+    pub thread_positions: RefCell<HashMap<String, usize>>,
+
     // === Control ===
     pub should_quit: bool,
     /// Flag indicating the view needs a full redraw
@@ -205,6 +217,8 @@ impl Model {
             list_index: 0,
             list_scroll: 0,
             file_index: 0,
+            sidebar_index: 0,
+            collapsed_files: HashSet::new(),
             diff_scroll: 0,
             expanded_thread: None,
             filter: ReviewFilter::default(),
@@ -224,6 +238,7 @@ impl Model {
             theme: Theme::default(),
             pre_palette_theme: None,
             config,
+            thread_positions: RefCell::new(HashMap::new()),
             should_quit: false,
             needs_redraw: true,
         }
@@ -281,39 +296,10 @@ impl Model {
             .collect()
     }
 
-    /// Get threads that are visible in the current diff (have anchors in diff hunks)
+    /// Get threads that are visible in the current diff (all threads for the file)
     #[must_use]
     pub fn visible_threads_for_current_file(&self) -> Vec<&ThreadSummary> {
-        let all_threads = self.threads_for_current_file();
-
-        // If no diff, return all threads (fallback view shows all)
-        let Some(diff) = &self.current_diff else {
-            return all_threads;
-        };
-
-        // Build sets of line numbers present in the diff
-        let mut old_lines: std::collections::HashSet<u32> = std::collections::HashSet::new();
-        let mut new_lines: std::collections::HashSet<u32> = std::collections::HashSet::new();
-
-        for hunk in &diff.hunks {
-            for line in &hunk.lines {
-                if let Some(ln) = line.old_line {
-                    old_lines.insert(ln);
-                }
-                if let Some(ln) = line.new_line {
-                    new_lines.insert(ln);
-                }
-            }
-        }
-
-        // Filter to threads whose start line is in the diff
-        all_threads
-            .into_iter()
-            .filter(|t| {
-                let start = t.selection_start as u32;
-                new_lines.contains(&start) || old_lines.contains(&start)
-            })
-            .collect()
+        self.threads_for_current_file()
     }
 
     /// Build a flat list of sidebar items: files with their threads as children
@@ -323,25 +309,29 @@ impl Model {
         let mut items = Vec::new();
 
         for (file_idx, file) in files.iter().enumerate() {
+            let collapsed = self.collapsed_files.contains(&file.path);
             items.push(SidebarItem::File {
                 entry: file.clone(),
                 file_idx,
+                collapsed,
             });
-            // Add threads belonging to this file, sorted by line number
-            let mut file_threads: Vec<&ThreadSummary> = self
-                .threads
-                .iter()
-                .filter(|t| t.file_path == file.path)
-                .collect();
-            file_threads.sort_by_key(|t| t.selection_start);
+            if !collapsed {
+                // Add threads belonging to this file, sorted by line number
+                let mut file_threads: Vec<&ThreadSummary> = self
+                    .threads
+                    .iter()
+                    .filter(|t| t.file_path == file.path)
+                    .collect();
+                file_threads.sort_by_key(|t| t.selection_start);
 
-            for thread in file_threads {
-                items.push(SidebarItem::Thread {
-                    thread_id: thread.thread_id.clone(),
-                    status: thread.status.clone(),
-                    comment_count: thread.comment_count,
-                    file_idx,
-                });
+                for thread in file_threads {
+                    items.push(SidebarItem::Thread {
+                        thread_id: thread.thread_id.clone(),
+                        status: thread.status.clone(),
+                        comment_count: thread.comment_count,
+                        file_idx,
+                    });
+                }
             }
         }
 
@@ -399,6 +389,8 @@ pub enum SidebarItem {
         entry: FileEntry,
         /// Index into files_with_threads() for selection matching
         file_idx: usize,
+        /// Whether this file's threads are collapsed
+        collapsed: bool,
     },
     Thread {
         thread_id: String,

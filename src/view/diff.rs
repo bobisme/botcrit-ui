@@ -149,11 +149,7 @@ fn draw_block_text_line(
 ) {
     let content_x = block_inner_x(area);
     let content_width = block_inner_width(area) as usize;
-    let display_text = if text.len() > content_width {
-        &text[..content_width]
-    } else {
-        text
-    };
+    let display_text = truncate_chars(text, content_width);
     draw_block_base_line(buffer, area, y, bg, theme);
     buffer.draw_text(content_x, y, display_text, style.with_bg(bg));
 }
@@ -174,7 +170,7 @@ fn draw_block_line_with_right(
     let content_x = block_inner_x(area);
     let content_width = block_inner_width(area) as usize;
     let right_text = right.unwrap_or("");
-    let right_len = right_text.len();
+    let right_len = right_text.chars().count();
     let left_max = if right_len > 0 {
         content_width.saturating_sub(right_len + 1)
     } else {
@@ -183,10 +179,8 @@ fn draw_block_line_with_right(
 
     let left_text = if left_max == 0 {
         ""
-    } else if left.len() > left_max {
-        &left[..left_max]
     } else {
-        left
+        truncate_chars(left, left_max)
     };
 
     buffer.draw_text(content_x, y, left_text, left_style.with_bg(bg));
@@ -211,7 +205,7 @@ fn draw_plain_line_with_right(
     let content_x = area.x;
     let content_width = area.width as usize;
     let right_text = right.unwrap_or("");
-    let right_len = right_text.len();
+    let right_len = right_text.chars().count();
     let left_max = if right_len > 0 {
         content_width.saturating_sub(right_len + 1)
     } else {
@@ -220,10 +214,8 @@ fn draw_plain_line_with_right(
 
     let left_text = if left_max == 0 {
         ""
-    } else if left.len() > left_max {
-        &left[..left_max]
     } else {
-        left
+        truncate_chars(left, left_max)
     };
 
     buffer.draw_text(content_x, y, left_text, left_style.with_bg(bg));
@@ -277,10 +269,8 @@ fn draw_file_header_line(
     };
     let left_text = if left_max == 0 {
         ""
-    } else if file_path.len() > left_max {
-        &file_path[..left_max]
     } else {
-        file_path
+        truncate_chars(file_path, left_max)
     };
 
     buffer.draw_text(
@@ -335,12 +325,12 @@ pub fn map_threads_to_diff(
     }
 
     // Map each thread to its display position
-    // Try new line first (most common for comments on new code), then old line
+    // Only anchor on new-file line numbers — old-line fallback causes false
+    // anchoring when a thread's line number coincidentally matches a removed line
+    // in a different commit.
     for thread in threads {
         let start_line = thread.selection_start as u32;
-        let display_line = new_line_to_display
-            .get(&start_line)
-            .or_else(|| old_line_to_display.get(&start_line));
+        let display_line = new_line_to_display.get(&start_line);
 
         if let Some(&display_line) = display_line {
             let line_count = thread
@@ -351,7 +341,6 @@ pub fn map_threads_to_diff(
             let end_line = thread.selection_end.unwrap_or(thread.selection_start) as u32;
             let comment_after_line = new_line_to_display
                 .get(&end_line)
-                .or_else(|| old_line_to_display.get(&end_line))
                 .copied()
                 .unwrap_or(display_line);
 
@@ -555,11 +544,7 @@ fn render_comment_bubble(
             buffer.fill_rect(area.x, y, area.width, 1, theme.background);
             buffer.fill_rect(block.x, y, block.width, 1, theme.panel_bg);
             draw_comment_bar(buffer, block.x, y, theme.panel_bg, theme);
-            let display_text = if text.len() > content_width {
-                &text[..content_width]
-            } else {
-                text.as_str()
-            };
+            let display_text = truncate_chars(text, content_width);
             buffer.draw_text(padded.x, y, display_text, style.with_bg(theme.panel_bg));
             content_idx += 1;
         } else if row < BLOCK_MARGIN + BLOCK_PADDING + content_lines.len() + BLOCK_PADDING {
@@ -687,7 +672,9 @@ pub fn render_diff_stream(
     theme: &Theme,
     view_mode: crate::model::DiffViewMode,
     wrap: bool,
+    thread_positions: &std::cell::RefCell<std::collections::HashMap<String, usize>>,
 ) {
+    thread_positions.borrow_mut().clear();
     let mut cursor = StreamCursor {
         buffer,
         area,
@@ -698,10 +685,6 @@ pub fn render_diff_stream(
     };
 
     for file in files {
-        if cursor.remaining_rows() == 0 {
-            break;
-        }
-
         // File header block
         for _ in 0..BLOCK_MARGIN {
             cursor.emit(|buf, y, _| {
@@ -731,10 +714,6 @@ pub fn render_diff_stream(
             });
         }
 
-        if cursor.remaining_rows() == 0 {
-            break;
-        }
-
         let file_threads: Vec<&ThreadSummary> = threads
             .iter()
             .filter(|t| t.file_path == file.path)
@@ -743,6 +722,14 @@ pub fn render_diff_stream(
         if let Some(entry) = file_cache.get(&file.path) {
             if let Some(diff) = &entry.diff {
                 let anchors = map_threads_to_diff(diff, &file_threads);
+                let anchored_ids: std::collections::HashSet<&str> = anchors
+                    .iter()
+                    .map(|a| a.thread_id.as_str())
+                    .collect();
+                let orphaned_threads: Vec<&&ThreadSummary> = file_threads
+                    .iter()
+                    .filter(|t| !anchored_ids.contains(t.thread_id.as_str()))
+                    .collect();
                 let mut anchor_map: std::collections::HashMap<usize, &ThreadAnchor> =
                     std::collections::HashMap::new();
                 let mut comment_map: std::collections::HashMap<usize, &ThreadAnchor> =
@@ -814,6 +801,8 @@ pub fn render_diff_stream(
 
                             // Emit comment block after the last line of the thread range
                             if let Some(comment_anchor) = comment_map.get(&idx) {
+                                // Record position at comment block (not at ▽ anchor)
+                                thread_positions.borrow_mut().insert(comment_anchor.thread_id.clone(), cursor.stream_row);
                                 if let Some(thread) = file_threads
                                     .iter()
                                     .find(|t| t.thread_id == comment_anchor.thread_id)
@@ -824,9 +813,6 @@ pub fn render_diff_stream(
                                 }
                             }
 
-                            if cursor.remaining_rows() == 0 {
-                                break;
-                            }
                         }
                     }
                     crate::model::DiffViewMode::SideBySide => {
@@ -937,6 +923,8 @@ pub fn render_diff_stream(
 
                             // Emit comment block after the last line of the thread range
                             if let Some(comment_anchor) = sbs_comment_map.get(&idx) {
+                                // Record position at comment block (not at ▽ anchor)
+                                thread_positions.borrow_mut().insert(comment_anchor.thread_id.clone(), cursor.stream_row);
                                 if let Some(thread) = file_threads
                                     .iter()
                                     .find(|t| t.thread_id == comment_anchor.thread_id)
@@ -947,14 +935,179 @@ pub fn render_diff_stream(
                                 }
                             }
 
-                            if cursor.remaining_rows() == 0 {
-                                break;
+                        }
+                    }
+                }
+
+                // Emit orphaned threads (lines outside diff hunks) with context
+                if !orphaned_threads.is_empty() {
+                    if let Some(content) = &entry.file_content {
+                        let orphaned_deref: Vec<&ThreadSummary> =
+                            orphaned_threads.iter().map(|t| **t).collect();
+                        // Exclude lines already shown in diff hunks
+                        let hunk_ranges: Vec<(i64, i64)> = diff
+                            .hunks
+                            .iter()
+                            .map(|h| {
+                                (
+                                    h.new_start as i64,
+                                    (h.new_start + h.new_count.saturating_sub(1)) as i64,
+                                )
+                            })
+                            .collect();
+                        let display_items = build_context_items(
+                            content.lines.as_slice(),
+                            &orphaned_deref,
+                            &hunk_ranges,
+                        );
+                        let hl = entry.file_highlighted_lines.as_slice();
+
+                        // Track the last displayed line number so we can emit
+                        // comment blocks after context even when the thread's
+                        // end line was clipped by a diff hunk.
+                        let mut emitted_threads: std::collections::HashSet<&str> =
+                            std::collections::HashSet::new();
+                        let mut last_line_num: Option<i64> = None;
+
+                        for item in &display_items {
+                            // Before rendering the next item, check if we've
+                            // passed a thread's end line and should emit its
+                            // comment block.
+                            if let DisplayItem::Line { line_num, .. } = item {
+                                if let Some(prev) = last_line_num {
+                                    // Emit comments for threads whose end line
+                                    // falls between prev and current line_num
+                                    // (meaning the end line was clipped).
+                                    for thread in &orphaned_deref {
+                                        let end = thread
+                                            .selection_end
+                                            .unwrap_or(thread.selection_start);
+                                        if !emitted_threads
+                                            .contains(thread.thread_id.as_str())
+                                            && end > prev
+                                            && end < *line_num
+                                        {
+                                            emitted_threads
+                                                .insert(&thread.thread_id);
+                                            thread_positions.borrow_mut().insert(
+                                                thread.thread_id.clone(),
+                                                cursor.stream_row,
+                                            );
+                                            if let Some(comments) =
+                                                all_comments.get(&thread.thread_id)
+                                            {
+                                                emit_comment_block(
+                                                    &mut cursor,
+                                                    area,
+                                                    thread,
+                                                    comments,
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            match item {
+                                DisplayItem::Separator(_) => {
+                                    cursor.emit(|buf, y, theme| {
+                                        render_context_item_block(
+                                            buf, area, y, item, theme, hl,
+                                        );
+                                    });
+                                }
+                                DisplayItem::Line { line_num, content: line_content } => {
+                                    if wrap {
+                                        let line_index =
+                                            (*line_num).saturating_sub(1) as usize;
+                                        let highlight = hl.get(line_index);
+                                        let line_num_width: u32 = 6;
+                                        let cw = diff_content_width(area)
+                                            .saturating_sub(line_num_width)
+                                            as usize;
+                                        let wrapped =
+                                            wrap_content(highlight, line_content, cw);
+                                        let rows = wrapped.len().max(1);
+                                        cursor.emit_rows(rows, |buf, y, theme, row| {
+                                            render_context_line_wrapped_row(
+                                                buf, area, y, *line_num, theme, &wrapped,
+                                                row,
+                                            );
+                                        });
+                                    } else {
+                                        cursor.emit(|buf, y, theme| {
+                                            render_context_item_block(
+                                                buf, area, y, item, theme, hl,
+                                            );
+                                        });
+                                    }
+
+                                    // Emit comment block if this is the exact
+                                    // end line of a thread.
+                                    let end_match = orphaned_deref.iter().find(|t| {
+                                        let end = t.selection_end.unwrap_or(t.selection_start);
+                                        end == *line_num
+                                            && !emitted_threads
+                                                .contains(t.thread_id.as_str())
+                                    });
+                                    if let Some(thread) = end_match {
+                                        emitted_threads.insert(&thread.thread_id);
+                                        thread_positions.borrow_mut().insert(
+                                            thread.thread_id.clone(),
+                                            cursor.stream_row,
+                                        );
+                                        if let Some(comments) =
+                                            all_comments.get(&thread.thread_id)
+                                        {
+                                            emit_comment_block(
+                                                &mut cursor, area, thread, comments,
+                                            );
+                                        }
+                                    }
+                                    last_line_num = Some(*line_num);
+                                }
+                            }
+                        }
+
+                        // Emit comments for any threads not yet emitted
+                        // (their end line was beyond all displayed lines).
+                        let mut remaining: Vec<&&ThreadSummary> = orphaned_deref
+                            .iter()
+                            .filter(|t| {
+                                !emitted_threads.contains(t.thread_id.as_str())
+                            })
+                            .collect();
+                        remaining.sort_by_key(|t| t.selection_start);
+                        for thread in remaining {
+                            thread_positions.borrow_mut().insert(
+                                thread.thread_id.clone(),
+                                cursor.stream_row,
+                            );
+                            if let Some(comments) =
+                                all_comments.get(&thread.thread_id)
+                            {
+                                emit_comment_block(
+                                    &mut cursor, area, thread, comments,
+                                );
+                            }
+                        }
+                    } else {
+                        // Fallback: no file content, render simple comment blocks
+                        let mut orphaned_sorted = orphaned_threads.clone();
+                        orphaned_sorted.sort_by_key(|t| t.selection_start);
+                        for thread in &orphaned_sorted {
+                            thread_positions.borrow_mut().insert(
+                                thread.thread_id.clone(),
+                                cursor.stream_row,
+                            );
+                            if let Some(comments) = all_comments.get(&thread.thread_id) {
+                                emit_comment_block(&mut cursor, area, thread, comments);
                             }
                         }
                     }
                 }
             } else if let Some(content) = &entry.file_content {
-                let display_items = build_context_items(content.lines.as_slice(), &file_threads);
+                let display_items = build_context_items(content.lines.as_slice(), &file_threads, &[]);
                 for item in display_items {
                     match &item {
                         DisplayItem::Separator(_) => {
@@ -1004,15 +1157,14 @@ pub fn render_diff_stream(
                             let end = t.selection_end.unwrap_or(t.selection_start);
                             end == *line_num
                         }) {
+                            // Record position at comment block (not at start of tagged range)
+                            thread_positions.borrow_mut().insert(thread.thread_id.clone(), cursor.stream_row);
                             if let Some(comments) = all_comments.get(&thread.thread_id) {
                                 emit_comment_block(&mut cursor, area, thread, comments);
                             }
                         }
                     }
 
-                    if cursor.remaining_rows() == 0 {
-                        break;
-                    }
                 }
             } else {
                 cursor.emit(|buf, y, theme| {
@@ -1513,8 +1665,12 @@ fn emit_comment_block(
     }
 }
 
-fn build_context_items(lines: &[String], threads: &[&ThreadSummary]) -> Vec<DisplayItem> {
-    let ranges = calculate_context_ranges(threads, lines.len());
+fn build_context_items(
+    lines: &[String],
+    threads: &[&ThreadSummary],
+    exclude_ranges: &[(i64, i64)],
+) -> Vec<DisplayItem> {
+    let ranges = calculate_context_ranges(threads, lines.len(), exclude_ranges);
     if ranges.is_empty() {
         return vec![DisplayItem::Separator(0)];
     }
@@ -1662,6 +1818,11 @@ fn split_at_char(text: &str, max_chars: usize) -> (&str, &str) {
     (text, "")
 }
 
+/// Truncate a string to at most `max_chars` characters, respecting UTF-8 char boundaries.
+fn truncate_chars(text: &str, max_chars: usize) -> &str {
+    split_at_char(text, max_chars).0
+}
+
 fn wrap_highlight_spans(spans: &[HighlightSpan], max_width: usize) -> Vec<Vec<HighlightSpan>> {
     if max_width == 0 {
         return Vec::new();
@@ -1764,11 +1925,7 @@ fn draw_highlighted_text(
 
     if let Some(spans) = spans {
         if spans.is_empty() {
-            let content = if fallback_text.len() > max_chars {
-                &fallback_text[..max_chars]
-            } else {
-                fallback_text
-            };
+            let content = truncate_chars(fallback_text, max_chars);
             buffer.draw_text(x, y, content, Style::fg(fallback_fg).with_bg(bg));
             return;
         }
@@ -1780,23 +1937,21 @@ fn draw_highlighted_text(
                 break;
             }
             let remaining = max_chars - chars_drawn;
-            let text = if span.text.len() > remaining {
-                &span.text[..remaining]
+            let span_char_count = span.text.chars().count();
+            let text = if span_char_count > remaining {
+                truncate_chars(&span.text, remaining)
             } else {
                 &span.text
             };
             if !text.is_empty() {
+                let drawn = text.chars().count();
                 buffer.draw_text(col, y, text, Style::fg(span.fg).with_bg(bg));
-                col += text.len() as u32;
-                chars_drawn += text.len();
+                col += drawn as u32;
+                chars_drawn += drawn;
             }
         }
     } else {
-        let content = if fallback_text.len() > max_chars {
-            &fallback_text[..max_chars]
-        } else {
-            fallback_text
-        };
+        let content = truncate_chars(fallback_text, max_chars);
         buffer.draw_text(x, y, content, Style::fg(fallback_fg).with_bg(bg));
     }
 }
@@ -2254,10 +2409,13 @@ struct LineRange {
     end: i64,   // 1-indexed, inclusive
 }
 
-/// Calculate context ranges around threads, merging overlapping ranges
+/// Calculate context ranges around threads, merging overlapping ranges.
+/// `exclude_ranges` are line ranges already shown in the diff; context lines
+/// that fall inside them are trimmed so the same code doesn't appear twice.
 fn calculate_context_ranges(
     threads: &[&crate::db::ThreadSummary],
     total_lines: usize,
+    exclude_ranges: &[(i64, i64)],
 ) -> Vec<LineRange> {
     if threads.is_empty() {
         return Vec::new();
@@ -2293,7 +2451,43 @@ fn calculate_context_ranges(
         }
     }
 
-    merged
+    // Clip merged ranges against exclusion zones (diff hunk new-line ranges)
+    if !exclude_ranges.is_empty() {
+        let mut clipped: Vec<LineRange> = Vec::new();
+        for range in merged {
+            let mut remaining = vec![range];
+            for &(ex_start, ex_end) in exclude_ranges {
+                let mut next = Vec::new();
+                for r in remaining {
+                    // If no overlap, keep as-is
+                    if r.end < ex_start || r.start > ex_end {
+                        next.push(r);
+                    } else {
+                        // Portion before the exclusion
+                        if r.start < ex_start {
+                            next.push(LineRange {
+                                start: r.start,
+                                end: ex_start - 1,
+                            });
+                        }
+                        // Portion after the exclusion
+                        if r.end > ex_end {
+                            next.push(LineRange {
+                                start: ex_end + 1,
+                                end: r.end,
+                            });
+                        }
+                    }
+                }
+                remaining = next;
+            }
+            clipped.extend(remaining);
+        }
+        clipped.sort_by_key(|r| r.start);
+        clipped
+    } else {
+        merged
+    }
 }
 
 /// Render file content with thread anchors (for files without diffs)
@@ -2317,7 +2511,7 @@ pub fn render_file_context(
     }
 
     // Calculate context ranges around threads
-    let ranges = calculate_context_ranges(threads, lines.len());
+    let ranges = calculate_context_ranges(threads, lines.len(), &[]);
 
     if ranges.is_empty() {
         buffer.draw_text(

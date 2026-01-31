@@ -575,17 +575,18 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
         Focus::FileSidebar => match key {
             KeyCode::Char('q') => Message::Quit,
             KeyCode::Esc | KeyCode::Char('h') => Message::Back,
-            KeyCode::Tab | KeyCode::Char(' ') => Message::ToggleFocus,
+            KeyCode::Tab => Message::ToggleFocus,
             KeyCode::Char('j') | KeyCode::Down => Message::NextFile,
             KeyCode::Char('k') | KeyCode::Up => Message::PrevFile,
-            KeyCode::Enter | KeyCode::Char('l') => Message::ToggleFocus, // Move to diff pane
+            KeyCode::Enter => Message::SidebarSelect,
+            KeyCode::Char('l') => Message::ToggleFocus, // Move to diff pane
             KeyCode::Char('s') => Message::ToggleSidebar,
             _ => Message::Noop,
         },
         Focus::DiffPane => match key {
             KeyCode::Char('q') => Message::Quit,
             KeyCode::Esc => Message::Back,
-            KeyCode::Tab | KeyCode::Char(' ') => Message::ToggleFocus,
+            KeyCode::Tab => Message::ToggleFocus,
             KeyCode::Char('j') | KeyCode::Down => Message::ScrollDown,
             KeyCode::Char('k') | KeyCode::Up => Message::ScrollUp,
             KeyCode::Char('n') => Message::NextThread,
@@ -691,8 +692,35 @@ fn handle_data_loading(model: &mut Model, db: &Db, repo_path: Option<&std::path:
 
                 let diff = vcs::get_file_diff(repo, &file.path, from, to);
                 let mut file_content = None;
+                let mut file_highlighted_lines = Vec::new();
                 let highlighted_lines = if let Some(parsed) = &diff {
-                    compute_diff_highlights(parsed, &file.path, &model.highlighter)
+                    let diff_highlights =
+                        compute_diff_highlights(parsed, &file.path, &model.highlighter);
+
+                    // Check if any threads for this file will be orphaned
+                    let file_threads: Vec<&botcrit_ui::db::ThreadSummary> = model
+                        .threads
+                        .iter()
+                        .filter(|t| t.file_path == file.path)
+                        .collect();
+                    let anchors =
+                        botcrit_ui::view::map_threads_to_diff(parsed, &file_threads);
+                    let anchored_ids: std::collections::HashSet<&str> =
+                        anchors.iter().map(|a| a.thread_id.as_str()).collect();
+                    let has_orphaned = file_threads
+                        .iter()
+                        .any(|t| !anchored_ids.contains(t.thread_id.as_str()));
+
+                    if has_orphaned {
+                        let commit = to.unwrap_or(from);
+                        if let Some(lines) = vcs::get_file_content(repo, &file.path, commit) {
+                            file_highlighted_lines =
+                                compute_file_highlights(&lines, &file.path, &model.highlighter);
+                            file_content = Some(botcrit_ui::model::FileContent { lines });
+                        }
+                    }
+
+                    diff_highlights
                 } else {
                     let commit = to.unwrap_or(from);
                     if let Some(lines) = vcs::get_file_content(repo, &file.path, commit) {
@@ -711,6 +739,7 @@ fn handle_data_loading(model: &mut Model, db: &Db, repo_path: Option<&std::path:
                         diff,
                         file_content,
                         highlighted_lines,
+                        file_highlighted_lines,
                     },
                 );
             }
@@ -768,6 +797,7 @@ fn handle_demo_data_loading(model: &mut Model) {
                     diff,
                     file_content: None,
                     highlighted_lines,
+                    file_highlighted_lines: Vec::new(),
                 },
             );
         }

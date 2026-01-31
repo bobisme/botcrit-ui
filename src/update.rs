@@ -3,9 +3,7 @@
 use crate::command::{command_id_to_message, get_commands};
 use crate::message::Message;
 use crate::model::{DiffViewMode, EditorRequest, Focus, Model, PaletteMode, ReviewFilter, Screen};
-use crate::stream::{
-    active_file_index, compute_stream_layout, file_scroll_offset, thread_stream_offset,
-};
+use crate::stream::{active_file_index, compute_stream_layout, file_scroll_offset};
 use crate::{config, theme, Highlighter};
 
 pub fn update(model: &mut Model, msg: Message) {
@@ -16,6 +14,8 @@ pub fn update(model: &mut Model, msg: Message) {
             model.screen = Screen::ReviewDetail;
             model.focus = Focus::FileSidebar;
             model.file_index = 0;
+            model.sidebar_index = 0;
+            model.collapsed_files.clear();
             model.diff_scroll = 0;
             model.expanded_thread = None;
             model.current_review = None; // Clear to trigger reload
@@ -109,17 +109,17 @@ pub fn update(model: &mut Model, msg: Message) {
 
         // === File Sidebar ===
         Message::NextFile => {
-            let file_count = model.files_with_threads().len();
-            if file_count > 0 && model.file_index < file_count - 1 {
-                let target = model.file_index + 1;
-                jump_to_file(model, target);
+            let items = model.sidebar_items();
+            if !items.is_empty() && model.sidebar_index < items.len() - 1 {
+                model.sidebar_index += 1;
+                sync_file_index_from_sidebar(model);
             }
         }
 
         Message::PrevFile => {
-            if model.file_index > 0 {
-                let target = model.file_index - 1;
-                jump_to_file(model, target);
+            if model.sidebar_index > 0 {
+                model.sidebar_index -= 1;
+                sync_file_index_from_sidebar(model);
             }
         }
 
@@ -127,6 +127,36 @@ pub fn update(model: &mut Model, msg: Message) {
             let file_count = model.files_with_threads().len();
             if idx < file_count {
                 jump_to_file(model, idx);
+            }
+        }
+
+        Message::SidebarSelect => {
+            let items = model.sidebar_items();
+            if let Some(item) = items.get(model.sidebar_index) {
+                match item {
+                    crate::model::SidebarItem::File { entry, file_idx, collapsed } => {
+                        // Toggle collapse state
+                        if *collapsed {
+                            model.collapsed_files.remove(&entry.path);
+                        } else {
+                            model.collapsed_files.insert(entry.path.clone());
+                        }
+                        // Clamp sidebar_index to new tree size
+                        let new_len = model.sidebar_items().len();
+                        if new_len > 0 && model.sidebar_index >= new_len {
+                            model.sidebar_index = new_len - 1;
+                        }
+                        // Also select this file
+                        let target = *file_idx;
+                        jump_to_file(model, target);
+                    }
+                    crate::model::SidebarItem::Thread { .. } => {
+                        // Sync already centers on thread via sync_file_index_from_sidebar;
+                        // Enter additionally switches focus to the diff pane
+                        sync_file_index_from_sidebar(model);
+                        model.focus = Focus::DiffPane;
+                    }
+                }
             }
         }
 
@@ -506,6 +536,36 @@ pub fn update(model: &mut Model, msg: Message) {
     }
 }
 
+fn sync_file_index_from_sidebar(model: &mut Model) {
+    let items = model.sidebar_items();
+    if let Some(item) = items.get(model.sidebar_index) {
+        match item {
+            crate::model::SidebarItem::File { file_idx, .. } => {
+                if *file_idx != model.file_index {
+                    jump_to_file(model, *file_idx);
+                } else {
+                    model.expanded_thread = None;
+                    model.needs_redraw = true;
+                }
+            }
+            crate::model::SidebarItem::Thread {
+                file_idx,
+                thread_id,
+                ..
+            } => {
+                let target = *file_idx;
+                let tid = thread_id.clone();
+                if target != model.file_index {
+                    jump_to_file(model, target);
+                }
+                model.expanded_thread = Some(tid);
+                center_on_thread(model);
+                model.needs_redraw = true;
+            }
+        }
+    }
+}
+
 fn jump_to_file(model: &mut Model, index: usize) {
     model.file_index = index;
     model.expanded_thread = None;
@@ -530,22 +590,31 @@ fn center_on_thread(model: &mut Model) {
     let Some(thread_id) = model.expanded_thread.clone() else {
         return;
     };
-    let layout = stream_layout(model);
-    let files = model.files_with_threads();
-    let width = diff_content_width(model);
-    if let Some(stream_row) = thread_stream_offset(
-        &layout,
-        &files,
-        &model.file_cache,
-        &model.threads,
-        &thread_id,
-        model.diff_view_mode,
-        model.diff_wrap,
-        width,
-    ) {
+    // Use positions captured during the last render pass
+    let positions = model.thread_positions.borrow();
+    if let Some(&stream_row) = positions.get(&thread_id) {
+        drop(positions);
         let view_height = model.height.saturating_sub(2) as usize;
         let center = view_height / 2;
         model.diff_scroll = stream_row.saturating_sub(center);
+    } else {
+        drop(positions);
+        // Thread not anchored in the diff (line outside hunk range).
+        // Scroll to the end of the file's section as a fallback.
+        let layout = stream_layout(model);
+        let files = model.files_with_threads();
+        if let Some(thread) = model.threads.iter().find(|t| t.thread_id == thread_id) {
+            if let Some(file_index) = files.iter().position(|f| f.path == thread.file_path) {
+                let file_end = layout
+                    .file_offsets
+                    .get(file_index + 1)
+                    .copied()
+                    .unwrap_or(layout.total_lines);
+                let view_height = model.height.saturating_sub(2) as usize;
+                let center = view_height / 2;
+                model.diff_scroll = file_end.saturating_sub(center);
+            }
+        }
     }
 }
 

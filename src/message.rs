@@ -24,12 +24,14 @@ pub enum Message {
     ListBottom,
 
     // === File Sidebar ===
-    /// Select next file
+    /// Move down in sidebar tree
     NextFile,
-    /// Select previous file
+    /// Move up in sidebar tree
     PrevFile,
     /// Select file by index
     SelectFile(usize),
+    /// Activate current sidebar item (Enter)
+    SidebarSelect,
 
     // === Diff/Content Pane ===
     /// Scroll content up

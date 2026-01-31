@@ -113,14 +113,20 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         return;
     }
 
-    for item in &items {
+    for (item_idx, item) in items.iter().enumerate() {
         if y >= bottom {
             break;
         }
 
+        let is_cursor = item_idx == model.sidebar_index;
+
         match item {
-            SidebarItem::File { entry, file_idx } => {
-                let selected = *file_idx == model.file_index;
+            SidebarItem::File {
+                entry,
+                file_idx,
+                collapsed,
+            } => {
+                let selected = is_cursor;
                 let row_bg = if selected && focused {
                     theme.selection_bg
                 } else {
@@ -129,10 +135,11 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
                 if selected && focused {
                     buffer.fill_rect(inner.x, y, inner.width, 1, row_bg);
                 }
-                let (prefix, style) = if selected {
-                    ("◉ ", Style::fg(theme.primary).with_bg(row_bg))
+                let collapse_indicator = if *collapsed { "▸ " } else { "▾ " };
+                let (prefix, style) = if *file_idx == model.file_index {
+                    (collapse_indicator, Style::fg(theme.primary).with_bg(row_bg))
                 } else {
-                    ("  ", Style::fg(theme.foreground).with_bg(row_bg))
+                    (collapse_indicator, Style::fg(theme.foreground).with_bg(row_bg))
                 };
 
                 let prefix_x = inner.x + left_pad;
@@ -186,33 +193,46 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
                 comment_count,
                 ..
             } => {
+                let row_bg = if is_cursor && focused {
+                    theme.selection_bg
+                } else {
+                    theme.panel_bg
+                };
+                if is_cursor && focused {
+                    buffer.fill_rect(inner.x, y, inner.width, 1, row_bg);
+                }
+
                 let indent: u32 = 4;
                 let thread_x = inner.x + left_pad + indent;
-                let thread_width = inner.width.saturating_sub(left_pad + indent + right_pad);
 
-                let status_icon = if status == "open" { "○" } else { "✓" };
-                let status_color = if status == "open" {
+                // Right-aligned comment count indicator
+                let count_text = format!("{}", comment_count);
+                let count_len = count_text.chars().count() as u32;
+                let count_color = if status == "open" {
                     theme.warning
                 } else {
-                    theme.success
+                    theme.muted
                 };
 
-                buffer.draw_text(thread_x, y, status_icon, Style::fg(status_color));
+                let indicator_x = inner
+                    .x
+                    .saturating_add(inner.width)
+                    .saturating_sub(right_pad + count_len);
 
-                let id_x = thread_x + 2;
-                let id_width = thread_width.saturating_sub(2);
-                let label = if *comment_count > 0 {
-                    format!("{} ({})", thread_id, comment_count)
+                let id_width = indicator_x.saturating_sub(thread_x + 1);
+
+                let text_style = if is_cursor {
+                    Style::fg(theme.foreground).with_bg(row_bg)
                 } else {
-                    thread_id.clone()
+                    Style::fg(theme.muted).with_bg(row_bg)
                 };
-                draw_text_truncated(
-                    buffer,
-                    id_x,
+                draw_text_truncated(buffer, thread_x, y, thread_id, id_width, text_style);
+
+                buffer.draw_text(
+                    indicator_x,
                     y,
-                    &label,
-                    id_width,
-                    Style::fg(theme.muted),
+                    &count_text,
+                    Style::fg(count_color).with_bg(row_bg),
                 );
             }
         }
@@ -230,6 +250,7 @@ fn short_hash(hash: &str) -> &str {
 fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     let theme = &model.theme;
     let inner = area;
+
     let content_area = Rect::new(
         inner.x,
         inner.y,
@@ -269,6 +290,7 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         theme,
         model.diff_view_mode,
         model.diff_wrap,
+        &model.thread_positions,
     );
 
     let pinned_height = block_height(1) as u32;
@@ -358,7 +380,6 @@ fn draw_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
             HotkeyHint::new("Collapse", "Esc"),
         ],
         _ => &[
-            HotkeyHint::new("Switch", "Space"),
             HotkeyHint::new("Back", "Esc"),
             HotkeyHint::new("Quit", "q"),
         ],

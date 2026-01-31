@@ -201,7 +201,7 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         inner.x,
         inner.y,
         inner.width,
-        inner.height.saturating_sub(2),
+        inner.height.saturating_sub(3),
     );
 
     let files = model.files_with_threads();
@@ -248,8 +248,8 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     render_pinned_header_block(buffer, pinned_area, file_title, theme, counts);
 
     // Bottom margin between content and footer
-    if inner.height >= 2 {
-        let margin_y = inner.y + inner.height - 2;
+    if inner.height >= 3 {
+        let margin_y = inner.y + inner.height - 3;
         buffer.fill_rect(inner.x, margin_y, inner.width, 1, theme.background);
     }
 }
@@ -272,7 +272,11 @@ impl HotkeyHint {
 
 fn draw_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     let theme = &model.theme;
-    let y = area.y + area.height - 1;
+    let y = area.y + area.height.saturating_sub(2);
+
+    // Bottom margin row below the help bar
+    let bottom_y = area.y + area.height.saturating_sub(1);
+    buffer.fill_rect(area.x, bottom_y, area.width, 1, theme.background);
 
     let mut footer_x = area.x;
     let mut footer_width = area.width;

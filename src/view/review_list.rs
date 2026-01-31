@@ -23,7 +23,7 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
         area.x,
         area.y + 1,
         safe_width,
-        area.height.saturating_sub(2),
+        area.height.saturating_sub(3),
     );
     buffer.fill_rect(
         inner.x,
@@ -227,7 +227,11 @@ fn draw_segment(
 
 fn draw_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     let theme = &model.theme;
-    let y = area.y + area.height - 1;
+    let y = area.y + area.height.saturating_sub(2);
+
+    // Bottom margin row below the help bar
+    let bottom_y = area.y + area.height.saturating_sub(1);
+    buffer.fill_rect(area.x, bottom_y, area.width, 1, theme.background);
 
     buffer.fill_rect(area.x, y, area.width, 1, theme.background);
 

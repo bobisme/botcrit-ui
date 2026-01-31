@@ -132,6 +132,18 @@ bv --robot-priority
 bv --robot-next
 ```
 
+Compact triage for deciding what to work on (reduces ~7KB to ~2KB):
+
+```bash
+bv --robot-triage 2>/dev/null | jq '{
+  top_picks: [.triage.quick_ref.top_picks[] | {id, title, unblocks}],
+  quick_wins: [.triage.quick_wins[] | {id, title, reason}],
+  blockers: [.triage.blockers_to_clear[] | {id, blocked_by, unblocks: .unblocks_ids}],
+  ranked: [.triage.recommendations[] | {id, title, type, p: .priority, score: (.score * 100 | round), action, blocked_by}],
+  health: {open: .triage.project_health.counts.open, blocked: .triage.project_health.counts.blocked, velocity_7d: .triage.project_health.velocity.closed_last_7_days}
+}'
+```
+
 ## Spawned Agent Template (Peer)
 
 ```text

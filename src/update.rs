@@ -167,8 +167,8 @@ pub fn update(model: &mut Model, msg: Message) {
         }
 
         Message::ScrollDown => {
-            // TODO: clamp to content height
             model.diff_scroll += 1;
+            clamp_diff_scroll(model);
             update_active_file_from_scroll(model);
         }
 
@@ -183,6 +183,7 @@ pub fn update(model: &mut Model, msg: Message) {
             let page = model.height.saturating_sub(2) as usize;
             let half = page.max(1) / 2;
             model.diff_scroll += half.max(1);
+            clamp_diff_scroll(model);
             update_active_file_from_scroll(model);
         }
 
@@ -193,6 +194,7 @@ pub fn update(model: &mut Model, msg: Message) {
 
         Message::ScrollTenDown => {
             model.diff_scroll += 10;
+            clamp_diff_scroll(model);
             update_active_file_from_scroll(model);
         }
 
@@ -204,8 +206,8 @@ pub fn update(model: &mut Model, msg: Message) {
 
         Message::PageDown => {
             let page = model.height.saturating_sub(2) as usize;
-            // TODO: clamp to content height
             model.diff_scroll += page;
+            clamp_diff_scroll(model);
             update_active_file_from_scroll(model);
         }
 
@@ -630,6 +632,15 @@ fn stream_layout(model: &Model) -> crate::stream::StreamLayout {
         model.diff_wrap,
         width,
     )
+}
+
+fn clamp_diff_scroll(model: &mut Model) {
+    let layout = stream_layout(model);
+    let visible = model.height.saturating_sub(2) as usize;
+    let max_scroll = layout.total_lines.saturating_sub(visible);
+    if model.diff_scroll > max_scroll {
+        model.diff_scroll = max_scroll;
+    }
 }
 
 fn diff_content_width(model: &Model) -> u32 {

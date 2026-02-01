@@ -329,6 +329,10 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         let margin_y = inner.y + inner.height - 3;
         buffer.fill_rect(inner.x, margin_y, inner.width, 1, theme.background);
     }
+
+    if model.focus == Focus::FileSidebar {
+        dim_rect(buffer, inner, 0.7);
+    }
 }
 
 /// A hotkey hint: label in dim, key in bright
@@ -440,5 +444,26 @@ fn draw_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         x += 1;
         buffer.draw_text(x, y, hint.key, bright);
         x += hint.key.len() as u32;
+    }
+}
+
+fn dim_rect(buffer: &mut OptimizedBuffer, area: Rect, scale: f32) {
+    for row in area.y..area.y + area.height {
+        for col in area.x..area.x + area.width {
+            if let Some(cell) = buffer.get_mut(col, row) {
+                cell.fg = opentui::Rgba::new(
+                    cell.fg.r * scale,
+                    cell.fg.g * scale,
+                    cell.fg.b * scale,
+                    cell.fg.a,
+                );
+                cell.bg = opentui::Rgba::new(
+                    cell.bg.r * scale,
+                    cell.bg.g * scale,
+                    cell.bg.b * scale,
+                    cell.bg.a,
+                );
+            }
+        }
     }
 }

@@ -30,6 +30,8 @@ pub enum Message {
     PrevFile,
     /// Select file by index
     SelectFile(usize),
+    /// Select sidebar item by row index (mouse click)
+    ClickSidebarItem(usize),
     /// Activate current sidebar item (Enter)
     SidebarSelect,
 

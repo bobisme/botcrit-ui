@@ -139,7 +139,33 @@ pub fn update(model: &mut Model, msg: Message) {
         Message::SelectFile(idx) => {
             let file_count = model.files_with_threads().len();
             if idx < file_count {
+                model.focus = Focus::FileSidebar;
+                if let Some(pos) = model
+                    .sidebar_items()
+                    .iter()
+                    .position(|item| matches!(item, crate::model::SidebarItem::File { file_idx, .. } if *file_idx == idx))
+                {
+                    model.sidebar_index = pos;
+                }
                 jump_to_file(model, idx);
+            }
+        }
+
+        Message::ClickSidebarItem(idx) => {
+            let items = model.sidebar_items();
+            if let Some(item) = items.get(idx) {
+                model.sidebar_index = idx;
+                match item {
+                    crate::model::SidebarItem::File { file_idx, .. } => {
+                        model.focus = Focus::FileSidebar;
+                        jump_to_file(model, *file_idx);
+                    }
+                    crate::model::SidebarItem::Thread { .. } => {
+                        sync_file_index_from_sidebar(model);
+                        model.focus = Focus::DiffPane;
+                        model.needs_redraw = true;
+                    }
+                }
             }
         }
 

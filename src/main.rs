@@ -531,7 +531,7 @@ fn map_event_to_message(model: &Model, event: Event) -> Message {
         },
         Event::Mouse(mouse) => match model.screen {
             Screen::ReviewList => map_review_list_mouse(model, mouse),
-            Screen::ReviewDetail => Message::Noop,
+            Screen::ReviewDetail => map_review_detail_mouse(model, mouse),
         },
         Event::Paste(_) => Message::Noop,
         Event::FocusGained | Event::FocusLost => Message::Noop,
@@ -593,6 +593,65 @@ fn map_review_list_mouse(model: &Model, mouse: opentui::MouseEvent) -> Message {
     let reviews = model.filtered_reviews();
     if let Some(review) = reviews.get(index) {
         return Message::SelectReview(review.review_id.clone());
+    }
+
+    Message::Noop
+}
+
+fn map_review_detail_mouse(model: &Model, mouse: opentui::MouseEvent) -> Message {
+    if model.focus == Focus::CommandPalette || model.focus == Focus::Commenting {
+        return Message::Noop;
+    }
+
+    if mouse.button != MouseButton::Left {
+        return Message::Noop;
+    }
+
+    if !matches!(mouse.kind, MouseEventKind::Press | MouseEventKind::Release) {
+        return Message::Noop;
+    }
+
+    let (sidebar_x, sidebar_y, sidebar_width, sidebar_height) = match model.layout_mode {
+        LayoutMode::Full | LayoutMode::Compact | LayoutMode::Overlay => {
+            if !model.sidebar_visible {
+                return Message::Noop;
+            }
+            (
+                0u32,
+                0u32,
+                model.layout_mode.sidebar_width() as u32,
+                model.height as u32,
+            )
+        }
+        LayoutMode::Single => {
+            if !model.sidebar_visible || !matches!(model.focus, Focus::FileSidebar) {
+                return Message::Noop;
+            }
+            (0u32, 0u32, model.width as u32, model.height as u32)
+        }
+    };
+
+    if mouse.x < sidebar_x
+        || mouse.x >= sidebar_x.saturating_add(sidebar_width)
+        || mouse.y < sidebar_y
+        || mouse.y >= sidebar_y.saturating_add(sidebar_height)
+    {
+        return Message::Noop;
+    }
+
+    let mut list_start = sidebar_y + 1;
+    if model.current_review.is_some() {
+        list_start = list_start.saturating_add(5);
+    }
+    let bottom = sidebar_y + sidebar_height.saturating_sub(1);
+    if list_start >= bottom || mouse.y < list_start || mouse.y >= bottom {
+        return Message::Noop;
+    }
+
+    let row = (mouse.y - list_start) as usize;
+    let items = model.sidebar_items();
+    if items.get(row).is_some() {
+        return Message::ClickSidebarItem(row);
     }
 
     Message::Noop

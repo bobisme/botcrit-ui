@@ -9,7 +9,20 @@ use crate::{config, theme, Highlighter};
 pub fn update(model: &mut Model, msg: Message) {
     match msg {
         // === Navigation ===
-        Message::SelectReview(_id) => {
+        Message::SelectReview(id) => {
+            if let Some(index) = model
+                .filtered_reviews()
+                .iter()
+                .position(|review| review.review_id == id)
+            {
+                model.list_index = index;
+                let visible = model.list_visible_height().max(1);
+                if model.list_index < model.list_scroll {
+                    model.list_scroll = model.list_index;
+                } else if model.list_index >= model.list_scroll + visible {
+                    model.list_scroll = model.list_index.saturating_sub(visible.saturating_sub(1));
+                }
+            }
             // Switch to review detail screen
             model.screen = Screen::ReviewDetail;
             model.focus = Focus::FileSidebar;
@@ -134,7 +147,11 @@ pub fn update(model: &mut Model, msg: Message) {
             let items = model.sidebar_items();
             if let Some(item) = items.get(model.sidebar_index) {
                 match item {
-                    crate::model::SidebarItem::File { entry, file_idx, collapsed } => {
+                    crate::model::SidebarItem::File {
+                        entry,
+                        file_idx,
+                        collapsed,
+                    } => {
                         // Toggle collapse state
                         if *collapsed {
                             model.collapsed_files.remove(&entry.path);
@@ -328,37 +345,6 @@ pub fn update(model: &mut Model, msg: Message) {
             update_active_file_from_scroll(model);
         }
 
-        Message::CycleTheme => {
-            let theme_names = theme::built_in_theme_names();
-            if theme_names.is_empty() {
-                return;
-            }
-            let current_pos = theme_names
-                .iter()
-                .position(|&name| name == model.theme.name);
-            let next_pos = match current_pos {
-                Some(pos) => (pos + 1) % theme_names.len(),
-                None => 0,
-            };
-            let next_theme_name = theme_names[next_pos];
-
-            if let Some(loaded) = theme::load_built_in_theme(next_theme_name) {
-                model.theme = loaded.theme;
-                if let Some(theme_name) = loaded.syntax_theme {
-                    model.highlighter = Highlighter::with_theme(&theme_name);
-                } else if model.theme.name.to_lowercase().contains("light") {
-                    model.highlighter = Highlighter::with_theme("base16-ocean.light");
-                } else {
-                    model.highlighter = Highlighter::with_theme("base16-ocean.dark");
-                }
-                model.config.theme = Some(next_theme_name.to_string());
-                if config::save_ui_config(&model.config).is_ok() {
-                    // Saved successfully
-                }
-                model.needs_redraw = true;
-            }
-        }
-
         // === Command Palette ===
         Message::ShowCommandPalette => {
             model.command_palette_mode = PaletteMode::Commands;
@@ -513,7 +499,11 @@ pub fn update(model: &mut Model, msg: Message) {
             model.pre_palette_theme = model.config.theme.clone();
             model.command_palette_mode = PaletteMode::Themes;
             model.command_palette_input.clear();
-            model.command_palette_selection = 0;
+            let theme_names = filter_theme_names(&model.command_palette_input);
+            model.command_palette_selection = theme_names
+                .iter()
+                .position(|&name| name == model.theme.name)
+                .unwrap_or(0);
             model.previous_focus = Some(model.focus);
             model.focus = Focus::CommandPalette;
             model.needs_redraw = true;

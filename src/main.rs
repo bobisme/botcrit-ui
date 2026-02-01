@@ -10,7 +10,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use opentui::input::ParseError;
+use opentui::input::{MouseButton, MouseEventKind, ParseError};
 use opentui::{
     enable_raw_mode, terminal_size, Event, InputParser, KeyCode, KeyModifiers, Renderer,
     RendererOptions,
@@ -121,7 +121,7 @@ fn main() -> Result<()> {
     let options = RendererOptions {
         use_alt_screen: true,
         hide_cursor: true,
-        enable_mouse: false,
+        enable_mouse: true,
         query_capabilities: false,
     };
     let mut renderer = Renderer::new_with_options(width.into(), height.into(), options)
@@ -163,6 +163,12 @@ fn main() -> Result<()> {
             break;
         }
 
+        if let Some(db) = &db {
+            handle_data_loading(&mut model, db, repo_path.as_deref());
+        } else {
+            handle_demo_data_loading(&mut model);
+        }
+
         // Poll for input (with timeout for potential refresh)
         let mut buf = [0u8; 32];
         if let Ok(n) = read_with_timeout(&mut buf, Duration::from_millis(100)) {
@@ -195,7 +201,8 @@ fn main() -> Result<()> {
                             }
                             Err(ParseError::Empty) | Err(ParseError::Incomplete) => {
                                 // Check if stuck on a bare escape again
-                                if offset < combined_len && combined[offset] == 0x1b
+                                if offset < combined_len
+                                    && combined[offset] == 0x1b
                                     && offset + 1 == combined_len
                                 {
                                     pending_esc = true;
@@ -284,7 +291,7 @@ fn process_event(
     raw_guard: &mut Option<opentui::RawModeGuard>,
     wrap_guard: &mut Option<AutoWrapGuard>,
     cursor_guard: &mut Option<CursorGuard>,
-    db: &Option<Db>,
+    _db: &Option<Db>,
     repo_path: Option<&Path>,
     options: RendererOptions,
 ) -> Result<()> {
@@ -303,13 +310,6 @@ fn process_event(
         model.needs_redraw = true;
     }
 
-    // Handle data loading after navigation
-    if let Some(db) = db {
-        handle_data_loading(model, db, repo_path);
-    } else {
-        handle_demo_data_loading(model);
-    }
-
     if let Some(request) = model.pending_editor_request.take() {
         let (prev_width, prev_height) = renderer.size();
         let prev_width = prev_width as u16;
@@ -326,9 +326,8 @@ fn process_event(
 
         *raw_guard = Some(enable_raw_mode().context("Failed to enable raw mode")?);
         let (width, height) = terminal_size().unwrap_or((prev_width, prev_height));
-        *renderer =
-            Renderer::new_with_options(width.into(), height.into(), options)
-                .context("Failed to initialize renderer")?;
+        *renderer = Renderer::new_with_options(width.into(), height.into(), options)
+            .context("Failed to initialize renderer")?;
         renderer.set_background(model.theme.background);
         *wrap_guard = Some(AutoWrapGuard::new().context("Failed to disable line wrap")?);
         *cursor_guard = Some(CursorGuard::new().context("Failed to hide cursor")?);
@@ -530,7 +529,10 @@ fn map_event_to_message(model: &Model, event: Event) -> Message {
             width: resize.width,
             height: resize.height,
         },
-        Event::Mouse(_) => Message::Noop,
+        Event::Mouse(mouse) => match model.screen {
+            Screen::ReviewList => map_review_list_mouse(model, mouse),
+            Screen::ReviewDetail => Message::Noop,
+        },
         Event::Paste(_) => Message::Noop,
         Event::FocusGained | Event::FocusLost => Message::Noop,
     }
@@ -558,6 +560,42 @@ fn map_review_list_key(key: KeyCode, model: &Model) -> Message {
         KeyCode::Char('a') => Message::FilterAll,
         _ => Message::Noop,
     }
+}
+
+fn map_review_list_mouse(model: &Model, mouse: opentui::MouseEvent) -> Message {
+    if model.focus == Focus::CommandPalette {
+        return Message::Noop;
+    }
+
+    if mouse.button != MouseButton::Left {
+        return Message::Noop;
+    }
+
+    if !matches!(mouse.kind, MouseEventKind::Press | MouseEventKind::Release) {
+        return Message::Noop;
+    }
+
+    let header_height = 1u32;
+    let footer_height = 2u32;
+    let height = u32::from(model.height);
+    if height <= header_height + footer_height {
+        return Message::Noop;
+    }
+
+    let list_start = header_height;
+    let list_end = height.saturating_sub(footer_height);
+    if mouse.y < list_start || mouse.y >= list_end {
+        return Message::Noop;
+    }
+
+    let row = (mouse.y - list_start) as usize;
+    let index = model.list_scroll + row;
+    let reviews = model.filtered_reviews();
+    if let Some(review) = reviews.get(index) {
+        return Message::SelectReview(review.review_id.clone());
+    }
+
+    Message::Noop
 }
 
 fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -> Message {
@@ -594,7 +632,6 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
             KeyCode::Char('v') => Message::ToggleDiffView, // Toggle unified/side-by-side
             KeyCode::Char('w') => Message::ToggleDiffWrap,
             KeyCode::Char('o') => Message::OpenFileInEditor,
-            KeyCode::Char('T') => Message::CycleTheme,
             KeyCode::Char('c') => Message::EnterCommentMode,
             KeyCode::Char('u') => Message::ScrollHalfPageUp,
             KeyCode::Char('d') => Message::ScrollHalfPageDown,
@@ -670,7 +707,9 @@ fn handle_data_loading(model: &mut Model, db: &Db, repo_path: Option<&std::path:
                 if !model.all_comments.contains_key(&thread.thread_id) {
                     if let Ok(comments) = db.list_comments(&thread.thread_id) {
                         if !comments.is_empty() {
-                            model.all_comments.insert(thread.thread_id.clone(), comments);
+                            model
+                                .all_comments
+                                .insert(thread.thread_id.clone(), comments);
                         }
                     }
                 }
@@ -703,8 +742,7 @@ fn handle_data_loading(model: &mut Model, db: &Db, repo_path: Option<&std::path:
                         .iter()
                         .filter(|t| t.file_path == file.path)
                         .collect();
-                    let anchors =
-                        botcrit_ui::view::map_threads_to_diff(parsed, &file_threads);
+                    let anchors = botcrit_ui::view::map_threads_to_diff(parsed, &file_threads);
                     let anchored_ids: std::collections::HashSet<&str> =
                         anchors.iter().map(|a| a.thread_id.as_str()).collect();
                     let has_orphaned = file_threads

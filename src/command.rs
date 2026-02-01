@@ -5,7 +5,6 @@ use crate::message::Message;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandId {
     Quit,
-    CycleTheme,
     SelectTheme,
     ToggleDiffView,
     ToggleDiffWrap,
@@ -52,14 +51,6 @@ pub fn get_commands() -> Vec<CommandSpec> {
             active: false,
         },
         CommandSpec {
-            name: "Cycle theme",
-            description: "Cycle to the next theme",
-            id: CommandId::CycleTheme,
-            category: "View",
-            shortcut: Some("T"),
-            active: false,
-        },
-        CommandSpec {
             name: "Select theme",
             description: "Choose a theme from the list",
             id: CommandId::SelectTheme,
@@ -90,7 +81,6 @@ pub fn get_commands() -> Vec<CommandSpec> {
 pub fn command_id_to_message(id: CommandId) -> Message {
     match id {
         CommandId::Quit => Message::Quit,
-        CommandId::CycleTheme => Message::CycleTheme,
         CommandId::SelectTheme => Message::ShowThemePicker,
         CommandId::ToggleDiffView => Message::ToggleDiffView,
         CommandId::ToggleDiffWrap => Message::ToggleDiffWrap,

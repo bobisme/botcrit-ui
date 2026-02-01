@@ -13,6 +13,12 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
 
     let inner = Rect::new(area.x, area.y, area.width, area.height);
 
+    if model.current_review.is_none() {
+        draw_loading_splash(model, buffer, inner);
+        draw_help_bar(model, buffer, area);
+        return;
+    }
+
     // Layout based on mode
     match model.layout_mode {
         LayoutMode::Full | LayoutMode::Compact => {
@@ -49,6 +55,19 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
 
     // Help bar at bottom
     draw_help_bar(model, buffer, area);
+}
+
+fn draw_loading_splash(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
+    let theme = &model.theme;
+    buffer.fill_rect(area.x, area.y, area.width, area.height, theme.background);
+
+    let title = "Loading review...";
+    let title_width = title.len() as u32;
+    let x = area
+        .x
+        .saturating_add(area.width.saturating_sub(title_width) / 2);
+    let y = area.y.saturating_add(area.height / 2);
+    buffer.draw_text(x, y, title, Style::fg(theme.foreground).with_bold());
 }
 
 fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
@@ -139,7 +158,10 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
                 let (prefix, style) = if *file_idx == model.file_index {
                     (collapse_indicator, Style::fg(theme.primary).with_bg(row_bg))
                 } else {
-                    (collapse_indicator, Style::fg(theme.foreground).with_bg(row_bg))
+                    (
+                        collapse_indicator,
+                        Style::fg(theme.foreground).with_bg(row_bg),
+                    )
                 };
 
                 let prefix_x = inner.x + left_pad;
@@ -379,18 +401,15 @@ fn draw_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
             HotkeyHint::new("Resolve", "r"),
             HotkeyHint::new("Collapse", "Esc"),
         ],
-        _ => &[
-            HotkeyHint::new("Back", "Esc"),
-            HotkeyHint::new("Quit", "q"),
-        ],
+        _ => &[HotkeyHint::new("Back", "Esc"), HotkeyHint::new("Quit", "q")],
     };
 
     let separator = "  ";
     let sep_len = separator.len();
 
     // Calculate total width: commands_hint + sep + each hint joined by sep
-    let hints_width: usize = hints.iter().map(|h| h.width()).sum::<usize>()
-        + hints.len().saturating_sub(1) * sep_len;
+    let hints_width: usize =
+        hints.iter().map(|h| h.width()).sum::<usize>() + hints.len().saturating_sub(1) * sep_len;
     let total_width = commands_hint.width() + sep_len + hints_width;
 
     let padding: u32 = 2;

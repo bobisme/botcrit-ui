@@ -567,6 +567,14 @@ fn map_review_list_mouse(model: &Model, mouse: opentui::MouseEvent) -> Message {
         return Message::Noop;
     }
 
+    if mouse.is_scroll() {
+        return match mouse.kind {
+            MouseEventKind::ScrollUp => Message::ListUp,
+            MouseEventKind::ScrollDown => Message::ListDown,
+            _ => Message::Noop,
+        };
+    }
+
     if mouse.button != MouseButton::Left {
         return Message::Noop;
     }
@@ -601,6 +609,14 @@ fn map_review_list_mouse(model: &Model, mouse: opentui::MouseEvent) -> Message {
 fn map_review_detail_mouse(model: &Model, mouse: opentui::MouseEvent) -> Message {
     if model.focus == Focus::CommandPalette || model.focus == Focus::Commenting {
         return Message::Noop;
+    }
+
+    if mouse.is_scroll() {
+        return match mouse.kind {
+            MouseEventKind::ScrollUp => Message::ScrollUp,
+            MouseEventKind::ScrollDown => Message::ScrollDown,
+            _ => Message::Noop,
+        };
     }
 
     if mouse.button != MouseButton::Left {

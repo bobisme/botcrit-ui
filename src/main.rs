@@ -18,7 +18,7 @@ use opentui::{
 
 use botcrit_ui::config::{load_ui_config, save_ui_config};
 use botcrit_ui::model::{DiffViewMode, EditorRequest};
-use botcrit_ui::stream::SIDE_BY_SIDE_MIN_WIDTH;
+use botcrit_ui::stream::{compute_stream_layout, file_scroll_offset, SIDE_BY_SIDE_MIN_WIDTH};
 use botcrit_ui::theme::{load_built_in_theme, load_theme_from_path};
 use botcrit_ui::{
     update, vcs, view, Db, Focus, Highlighter, LayoutMode, Message, Model, Screen, Theme,
@@ -109,12 +109,50 @@ fn main() -> Result<()> {
 
     apply_default_diff_view(&mut model);
 
+    // Store pending CLI navigation targets
+    model.pending_review = args.review;
+    model.pending_file = args.file;
+    model.pending_thread = args.thread;
+
     // Load initial data
     if let Some(db) = &db {
         model.reviews = db.list_reviews(None).unwrap_or_default();
     } else {
         // Demo data for testing without a database
         load_demo_data(&mut model);
+    }
+
+    // Apply --review: jump directly to a review if specified
+    if let Some(review_id) = model.pending_review.take() {
+        if let Some(index) = model
+            .reviews
+            .iter()
+            .position(|r| r.review_id == review_id)
+        {
+            model.list_index = index;
+            model.screen = Screen::ReviewDetail;
+            model.focus = Focus::DiffPane;
+            model.file_index = 0;
+            model.sidebar_index = 0;
+            model.sidebar_scroll = 0;
+            model.diff_scroll = 0;
+            model.expanded_thread = None;
+            model.current_review = None; // trigger lazy load
+            model.current_diff = None;
+            model.current_file_content = None;
+            model.highlighted_lines.clear();
+            model.file_cache.clear();
+            model.threads.clear();
+            model.all_comments.clear();
+        } else {
+            // Review not found — clear pending file/thread and stay on review list
+            model.pending_file = None;
+            model.pending_thread = None;
+        }
+    } else {
+        // No --review, ignore --file and --thread
+        model.pending_file = None;
+        model.pending_thread = None;
     }
 
     // Enter raw mode for input handling
@@ -383,6 +421,9 @@ struct CliArgs {
     db_path: Option<PathBuf>,
     theme: Option<String>,
     repo_path: Option<PathBuf>,
+    review: Option<String>,
+    file: Option<String>,
+    thread: Option<String>,
 }
 
 fn parse_args() -> Result<CliArgs> {
@@ -390,6 +431,9 @@ fn parse_args() -> Result<CliArgs> {
     let mut db_path: Option<PathBuf> = None;
     let mut theme: Option<String> = None;
     let mut repo_path: Option<PathBuf> = None;
+    let mut review: Option<String> = None;
+    let mut file: Option<String> = None;
+    let mut thread: Option<String> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -401,6 +445,9 @@ fn parse_args() -> Result<CliArgs> {
                 println!("  --theme <name|path>   Load theme by name or JSON path");
                 println!("  --db <path>      Path to .crit/index.db");
                 println!("  --path <path>    Path to repo root (uses <path>/.crit/index.db)");
+                println!("  --review <id>    Open directly to a review (skip review list)");
+                println!("  --file <path>    Navigate to a specific file (requires --review)");
+                println!("  --thread <id>    Expand a specific thread (requires --review)");
                 println!();
                 println!("Environment:");
                 println!("  BOTCRIT_UI_THEME  Theme name or JSON path");
@@ -431,6 +478,27 @@ fn parse_args() -> Result<CliArgs> {
                     anyhow::bail!("--path requires a path");
                 }
                 repo_path = Some(PathBuf::from(&args[i]));
+            }
+            "--review" => {
+                i += 1;
+                if i >= args.len() {
+                    anyhow::bail!("--review requires a review ID");
+                }
+                review = Some(args[i].clone());
+            }
+            "--file" => {
+                i += 1;
+                if i >= args.len() {
+                    anyhow::bail!("--file requires a file path");
+                }
+                file = Some(args[i].clone());
+            }
+            "--thread" => {
+                i += 1;
+                if i >= args.len() {
+                    anyhow::bail!("--thread requires a thread ID");
+                }
+                thread = Some(args[i].clone());
             }
             arg if arg.starts_with('-') => {
                 anyhow::bail!("Unknown option: {arg}");
@@ -466,6 +534,9 @@ fn parse_args() -> Result<CliArgs> {
         db_path,
         theme,
         repo_path,
+        review,
+        file,
+        thread,
     })
 }
 
@@ -937,10 +1008,75 @@ fn handle_data_loading(model: &mut Model, db: &Db, repo_path: Option<&std::path:
             }
 
             model.sync_active_file_cache();
+
+            // Apply pending CLI navigation targets now that data is loaded
+            apply_pending_navigation(model);
         }
     }
 
     ensure_default_expanded_thread(model);
+}
+
+fn apply_pending_navigation(model: &mut Model) {
+    if model.pending_thread.is_none() && model.pending_file.is_none() {
+        return;
+    }
+
+    // --thread implies the file it belongs to, so check it first
+    if let Some(thread_id) = model.pending_thread.take() {
+        if let Some(thread) = model.threads.iter().find(|t| t.thread_id == thread_id) {
+            let thread_file = thread.file_path.clone();
+            let files = model.files_with_threads();
+            if let Some(idx) = files.iter().position(|f| f.path == thread_file) {
+                model.file_index = idx;
+                model.diff_scroll = file_scroll_offset(&nav_stream_layout(model), idx);
+                model.sync_active_file_cache();
+            }
+            model.expanded_thread = Some(thread_id);
+            // Clear pending_file since --thread takes precedence
+            model.pending_file = None;
+            model.needs_redraw = true;
+            return;
+        }
+        // Thread not found — fall through to --file if set
+    }
+
+    if let Some(file_path) = model.pending_file.take() {
+        let files = model.files_with_threads();
+        if let Some(idx) = files.iter().position(|f| f.path == file_path) {
+            model.file_index = idx;
+            model.diff_scroll = file_scroll_offset(&nav_stream_layout(model), idx);
+            model.sync_active_file_cache();
+            model.needs_redraw = true;
+        }
+    }
+}
+
+/// Compute stream layout for navigation purposes (mirrors update.rs::stream_layout).
+fn nav_stream_layout(model: &Model) -> botcrit_ui::stream::StreamLayout {
+    const DIFF_MARGIN: u32 = 2;
+    let total_width = model.width as u32;
+    let pane_width = match model.layout_mode {
+        LayoutMode::Full | LayoutMode::Compact | LayoutMode::Overlay => {
+            if model.sidebar_visible {
+                total_width.saturating_sub(model.layout_mode.sidebar_width() as u32)
+            } else {
+                total_width
+            }
+        }
+        LayoutMode::Single => total_width,
+    };
+    let width = pane_width.saturating_sub(DIFF_MARGIN * 2);
+    let files = model.files_with_threads();
+    compute_stream_layout(
+        &files,
+        &model.file_cache,
+        &model.threads,
+        &model.all_comments,
+        model.diff_view_mode,
+        model.diff_wrap,
+        width,
+    )
 }
 
 fn handle_demo_data_loading(model: &mut Model) {

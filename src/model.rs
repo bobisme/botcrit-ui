@@ -201,6 +201,11 @@ pub struct Model {
     // === Input state ===
     pub last_list_scroll: Option<(Instant, i8)>,
     pub last_sidebar_scroll: Option<(Instant, i8)>,
+
+    // === Pending CLI navigation targets ===
+    pub pending_review: Option<String>,
+    pub pending_file: Option<String>,
+    pub pending_thread: Option<String>,
 }
 
 impl Model {
@@ -251,6 +256,9 @@ impl Model {
             needs_redraw: true,
             last_list_scroll: None,
             last_sidebar_scroll: None,
+            pending_review: None,
+            pending_file: None,
+            pending_thread: None,
         }
     }
 

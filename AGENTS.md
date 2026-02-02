@@ -44,6 +44,25 @@ botty list                             # show all running agents
 
 If a real screenshot is needed, use Ghostty + `grim` to capture the window.
 
+### CLI Deep-Link Flags
+
+Use `--review`, `--file`, and `--thread` to skip the main menu and open directly to a specific location. Useful for spawning focused test instances:
+
+```bash
+# Open directly to a review
+botty spawn --name crit-ui -- /home/bob/src/botcrit-ui/target/release/crit-ui --path /home/bob/src/botty --review cr-qmr8
+
+# Open to a specific file within a review
+crit-ui --path /home/bob/src/botty --review cr-qmr8 --file src/attach.rs
+
+# Open with a specific thread expanded (also selects its file)
+crit-ui --path /home/bob/src/botty --review cr-qmr8 --thread th-lkxz
+```
+
+- `--file` and `--thread` require `--review`; without it they are silently ignored.
+- If the review/file/thread ID doesn't exist, falls back gracefully (review list, or first file).
+- `--thread` takes precedence over `--file` (it implies the file).
+
 ## BotBus Coordination
 
 ```bash

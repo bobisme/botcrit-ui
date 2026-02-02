@@ -16,6 +16,7 @@ pub const SIDE_BY_SIDE_MIN_WIDTH: u32 = 100;
 
 /// Horizontal padding for diff lines (must match DIFF_H_PAD in diff.rs).
 const DIFF_H_PAD: u32 = 2;
+const ORPHANED_CONTEXT_LEFT_PAD: u32 = 2;
 
 pub struct StreamLayout {
     pub file_offsets: Vec<usize>,
@@ -45,12 +46,18 @@ fn context_wrap_width(pane_width: u32) -> usize {
     diff_inner_width(pane_width).saturating_sub(line_num_width) as usize
 }
 
+fn orphaned_context_wrap_width(pane_width: u32) -> usize {
+    let line_num_width: u32 = 6;
+    diff_inner_width(pane_width)
+        .saturating_sub(ORPHANED_CONTEXT_LEFT_PAD)
+        .saturating_sub(line_num_width) as usize
+}
+
 fn side_by_side_wrap_widths(pane_width: u32) -> (usize, usize) {
     let thread_col_width: u32 = 2;
     let divider_width: u32 = 1;
     let line_num_width: u32 = 6;
-    let available =
-        diff_inner_width(pane_width).saturating_sub(thread_col_width + divider_width);
+    let available = diff_inner_width(pane_width).saturating_sub(thread_col_width + divider_width);
     let half_width = available / 2;
     let left = half_width.saturating_sub(line_num_width) as usize;
     let right = half_width.saturating_sub(line_num_width) as usize;
@@ -124,8 +131,7 @@ pub fn compute_stream_layout(
                             content_width,
                         );
                     }
-                    count +=
-                        threads_comment_height(&orphaned_threads, all_comments, content_width);
+                    count += threads_comment_height(&orphaned_threads, all_comments, content_width);
                 }
 
                 count
@@ -298,7 +304,6 @@ fn side_by_side_line_count_wrapped(
     }
     count
 }
-
 
 pub(crate) fn find_display_line(diff: &ParsedDiff, line: u32) -> Option<usize> {
     let mut old_line_to_display: std::collections::HashMap<u32, usize> =

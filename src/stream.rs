@@ -55,7 +55,7 @@ fn orphaned_context_wrap_width(pane_width: u32) -> usize {
 
 fn side_by_side_wrap_widths(pane_width: u32) -> (usize, usize) {
     let thread_col_width: u32 = 2;
-    let divider_width: u32 = 1;
+    let divider_width: u32 = 0;
     let line_num_width: u32 = 6;
     let available = diff_inner_width(pane_width).saturating_sub(thread_col_width + divider_width);
     let half_width = available / 2;

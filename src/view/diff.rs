@@ -1424,7 +1424,7 @@ fn render_side_by_side_line_block(
         buffer.fill_rect(thread_x, y, thread_col_width, 1, base_bg);
     }
 
-    let divider_width: u32 = 1;
+    let divider_width: u32 = 0;
     let line_num_width: u32 = 6;
     let available = diff_content_width(area).saturating_sub(thread_col_width + divider_width);
     let half_width = available / 2;
@@ -1498,7 +1498,7 @@ fn render_side_by_side_line_wrapped_row(
         buffer.fill_rect(thread_x, y, thread_col_width, 1, base_bg);
     }
 
-    let divider_width: u32 = 1;
+    let divider_width: u32 = 0;
     let line_num_width: u32 = 6;
     let available = diff_content_width(area).saturating_sub(thread_col_width + divider_width);
     let half_width = available / 2;

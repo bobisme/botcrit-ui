@@ -34,17 +34,8 @@ fn thread_marker_from_status(
     status: &str,
     theme: &Theme,
 ) -> (&'static str, Rgba) {
-    if is_expanded {
-        if status == "resolved" {
-            ("▽", theme.success)
-        } else {
-            ("▼", theme.warning)
-        }
-    } else if status == "resolved" {
-        ("▷", theme.success)
-    } else {
-        ("▶", theme.warning)
-    }
+    let _ = (is_expanded, status);
+    (" ", theme.muted)
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -119,6 +110,11 @@ const COMMENT_H_PAD: u32 = 2;
 
 fn draw_comment_bar(buffer: &mut OptimizedBuffer, x: u32, y: u32, bg: Rgba, theme: &Theme) {
     buffer.fill_rect(x, y, 1, 1, bg);
+    buffer.draw_text(x, y, "┃", Style::fg(theme.background).with_bg(bg));
+}
+
+fn draw_thread_range_bar(buffer: &mut OptimizedBuffer, x: u32, y: u32, bg: Rgba, theme: &Theme) {
+    buffer.fill_rect(x, y, 2, 1, bg);
     buffer.draw_text(x, y, "┃", Style::fg(theme.background).with_bg(bg));
 }
 
@@ -361,6 +357,28 @@ pub fn map_threads_to_diff(diff: &ParsedDiff, threads: &[&ThreadSummary]) -> Vec
     anchors
 }
 
+fn build_thread_ranges(threads: &[&ThreadSummary]) -> Vec<(i64, i64)> {
+    threads
+        .iter()
+        .map(|thread| {
+            let end = thread.selection_end.unwrap_or(thread.selection_start);
+            (
+                thread.selection_start.min(end),
+                thread.selection_start.max(end),
+            )
+        })
+        .collect()
+}
+
+fn line_in_thread_ranges(line: Option<i64>, ranges: &[(i64, i64)]) -> bool {
+    let Some(line) = line else {
+        return false;
+    };
+    ranges
+        .iter()
+        .any(|(start, end)| line >= *start && line <= *end)
+}
+
 /// Render a parsed diff with thread anchors into the buffer
 pub fn render_diff_with_threads(
     buffer: &mut OptimizedBuffer,
@@ -518,7 +536,13 @@ fn render_comment_bubble(
         content_lines.extend(wrapped);
     }
 
-    let total_rows = block_height(content_lines.len());
+    let top_margin = 0usize;
+    let bottom_margin = BLOCK_MARGIN;
+    let total_rows = content_lines
+        .len()
+        .saturating_add(BLOCK_PADDING * 2)
+        .saturating_add(top_margin)
+        .saturating_add(bottom_margin);
     let max_rows = area.height as usize;
     let mut rows_used = 0;
 
@@ -528,13 +552,13 @@ fn render_comment_bubble(
             break;
         }
         let y = area.y + rows_used as u32;
-        if row < BLOCK_MARGIN {
+        if row < top_margin {
             buffer.fill_rect(area.x, y, area.width, 1, theme.background);
-        } else if row < BLOCK_MARGIN + BLOCK_PADDING {
+        } else if row < top_margin + BLOCK_PADDING {
             buffer.fill_rect(area.x, y, area.width, 1, theme.background);
             buffer.fill_rect(block.x, y, block.width, 1, theme.panel_bg);
             draw_comment_bar(buffer, block.x, y, theme.panel_bg, theme);
-        } else if row < BLOCK_MARGIN + BLOCK_PADDING + content_lines.len() {
+        } else if row < top_margin + BLOCK_PADDING + content_lines.len() {
             let text = &content_lines[content_idx];
             let style = if text.starts_with('@') {
                 Style::fg(theme.primary)
@@ -547,7 +571,7 @@ fn render_comment_bubble(
             let display_text = truncate_chars(text, content_width);
             buffer.draw_text(padded.x, y, display_text, style.with_bg(theme.panel_bg));
             content_idx += 1;
-        } else if row < BLOCK_MARGIN + BLOCK_PADDING + content_lines.len() + BLOCK_PADDING {
+        } else if row < top_margin + BLOCK_PADDING + content_lines.len() + BLOCK_PADDING {
             buffer.fill_rect(area.x, y, area.width, 1, theme.background);
             buffer.fill_rect(block.x, y, block.width, 1, theme.panel_bg);
             draw_comment_bar(buffer, block.x, y, theme.panel_bg, theme);
@@ -725,6 +749,7 @@ pub fn render_diff_stream(
             .iter()
             .filter(|t| t.file_path == file.path)
             .collect();
+        let thread_ranges = build_thread_ranges(&file_threads);
 
         if let Some(entry) = file_cache.get(&file.path) {
             if let Some(diff) = &entry.diff {
@@ -808,6 +833,13 @@ pub fn render_diff_stream(
                                 }
                                 section_idx = section_idx.saturating_add(1);
                             }
+                            let show_thread_bar = match display_line {
+                                DisplayLine::Diff(line) => line_in_thread_ranges(
+                                    line.new_line.map(|n| n as i64),
+                                    &thread_ranges,
+                                ),
+                                DisplayLine::HunkHeader(_) => false,
+                            };
                             let anchor = anchor_map.get(&idx).copied();
                             if let Some(anchor) = anchor {
                                 thread_positions
@@ -825,6 +857,7 @@ pub fn render_diff_stream(
                                             display_line,
                                             theme,
                                             anchor,
+                                            show_thread_bar,
                                             entry.highlighted_lines.get(idx),
                                         );
                                     });
@@ -844,7 +877,15 @@ pub fn render_diff_stream(
                                         let rows = wrapped.len().max(1);
                                         cursor.emit_rows(rows, |buf, y, theme, row| {
                                             render_unified_diff_line_wrapped_row(
-                                                buf, area, y, line, theme, anchor, &wrapped, row,
+                                                buf,
+                                                area,
+                                                y,
+                                                line,
+                                                theme,
+                                                anchor,
+                                                show_thread_bar,
+                                                &wrapped,
+                                                row,
                                             );
                                         });
                                     } else {
@@ -856,6 +897,7 @@ pub fn render_diff_stream(
                                                 display_line,
                                                 theme,
                                                 anchor,
+                                                show_thread_bar,
                                                 entry.highlighted_lines.get(idx),
                                             );
                                         });
@@ -956,6 +998,14 @@ pub fn render_diff_stream(
                                 }
                                 section_idx = section_idx.saturating_add(1);
                             }
+                            let show_thread_bar = if sbs_line.is_header {
+                                false
+                            } else {
+                                line_in_thread_ranges(
+                                    sbs_line.right.as_ref().map(|line| line.line_num as i64),
+                                    &thread_ranges,
+                                )
+                            };
                             let anchor = sbs_anchor_map.get(&idx).copied();
                             if let Some(anchor) = anchor {
                                 thread_positions
@@ -1002,6 +1052,7 @@ pub fn render_diff_stream(
                                         sbs_line,
                                         theme,
                                         anchor,
+                                        show_thread_bar,
                                         left_wrapped.as_ref(),
                                         right_wrapped.as_ref(),
                                         row,
@@ -1016,6 +1067,7 @@ pub fn render_diff_stream(
                                         sbs_line,
                                         theme,
                                         anchor,
+                                        show_thread_bar,
                                         entry.highlighted_lines.as_slice(),
                                     );
                                 });
@@ -1084,6 +1136,12 @@ pub fn render_diff_stream(
                 let display_items =
                     build_context_items(content.lines.as_slice(), &file_threads, &[]);
                 for item in display_items {
+                    let show_thread_bar = match &item {
+                        DisplayItem::Line { line_num, .. } => {
+                            line_in_thread_ranges(Some(*line_num), &thread_ranges)
+                        }
+                        DisplayItem::Separator(_) => false,
+                    };
                     match &item {
                         DisplayItem::Separator(_) => {
                             cursor.emit(|buf, y, theme| {
@@ -1093,6 +1151,7 @@ pub fn render_diff_stream(
                                     y,
                                     &item,
                                     theme,
+                                    show_thread_bar,
                                     entry.highlighted_lines.as_slice(),
                                 );
                             });
@@ -1109,7 +1168,14 @@ pub fn render_diff_stream(
                                 let rows = wrapped.len().max(1);
                                 cursor.emit_rows(rows, |buf, y, theme, row| {
                                     render_context_line_wrapped_row(
-                                        buf, area, y, *line_num, theme, &wrapped, row,
+                                        buf,
+                                        area,
+                                        y,
+                                        *line_num,
+                                        theme,
+                                        &wrapped,
+                                        row,
+                                        show_thread_bar,
                                     );
                                 });
                             } else {
@@ -1120,6 +1186,7 @@ pub fn render_diff_stream(
                                         y,
                                         &item,
                                         theme,
+                                        show_thread_bar,
                                         entry.highlighted_lines.as_slice(),
                                     );
                                 });
@@ -1179,6 +1246,7 @@ fn render_unified_diff_line_block(
     display_line: &DisplayLine,
     theme: &Theme,
     anchor: Option<&ThreadAnchor>,
+    show_thread_bar: bool,
     highlights: Option<&Vec<HighlightSpan>>,
 ) {
     let dt = &theme.diff;
@@ -1200,10 +1268,11 @@ fn render_unified_diff_line_block(
 
             let thread_x = diff_content_x(area);
             let thread_col_width: u32 = 2;
-            buffer.fill_rect(thread_x, y, thread_col_width, 1, line_bg);
-            if let Some(anchor) = anchor {
-                let (indicator, color) = thread_marker(anchor, theme);
-                buffer.draw_text(thread_x, y, indicator, Style::fg(color).with_bg(line_bg));
+            let _ = anchor;
+            if show_thread_bar {
+                draw_thread_range_bar(buffer, thread_x, y, theme.panel_bg, theme);
+            } else {
+                buffer.fill_rect(thread_x, y, thread_col_width, 1, line_bg);
             }
 
             let line_num_width: u32 = 12;
@@ -1231,6 +1300,7 @@ fn render_unified_diff_line_wrapped_row(
     line: &DiffLine,
     theme: &Theme,
     anchor: Option<&ThreadAnchor>,
+    show_thread_bar: bool,
     wrapped: &[WrappedLine],
     row: usize,
 ) {
@@ -1257,12 +1327,11 @@ fn render_unified_diff_line_wrapped_row(
 
     let thread_x = diff_content_x(area);
     let thread_col_width: u32 = 2;
-    buffer.fill_rect(thread_x, y, thread_col_width, 1, bg);
-    if row == 0 {
-        if let Some(anchor) = anchor {
-            let (indicator, color) = thread_marker(anchor, theme);
-            buffer.draw_text(thread_x, y, indicator, Style::fg(color).with_bg(bg));
-        }
+    let _ = (anchor, row);
+    if show_thread_bar {
+        draw_thread_range_bar(buffer, thread_x, y, theme.panel_bg, theme);
+    } else {
+        buffer.fill_rect(thread_x, y, thread_col_width, 1, bg);
     }
 
     let line_num_width: u32 = 12;
@@ -1330,6 +1399,7 @@ fn render_side_by_side_line_block(
     sbs_line: &SideBySideLine,
     theme: &Theme,
     anchor: Option<&ThreadAnchor>,
+    show_thread_bar: bool,
     highlighted_lines: &[Vec<HighlightSpan>],
 ) {
     let dt = &theme.diff;
@@ -1347,10 +1417,11 @@ fn render_side_by_side_line_block(
 
     let thread_x = diff_content_x(area);
     let thread_col_width: u32 = 2;
-    buffer.fill_rect(thread_x, y, thread_col_width, 1, base_bg);
-    if let Some(anchor) = anchor {
-        let (indicator, color) = thread_marker(anchor, theme);
-        buffer.draw_text(thread_x, y, indicator, Style::fg(color).with_bg(base_bg));
+    let _ = anchor;
+    if show_thread_bar {
+        draw_thread_range_bar(buffer, thread_x, y, theme.panel_bg, theme);
+    } else {
+        buffer.fill_rect(thread_x, y, thread_col_width, 1, base_bg);
     }
 
     let divider_width: u32 = 1;
@@ -1409,6 +1480,7 @@ fn render_side_by_side_line_wrapped_row(
     sbs_line: &SideBySideLine,
     theme: &Theme,
     anchor: Option<&ThreadAnchor>,
+    show_thread_bar: bool,
     left_wrapped: Option<&Vec<WrappedLine>>,
     right_wrapped: Option<&Vec<WrappedLine>>,
     row: usize,
@@ -1419,12 +1491,11 @@ fn render_side_by_side_line_wrapped_row(
 
     let thread_x = diff_content_x(area);
     let thread_col_width: u32 = 2;
-    buffer.fill_rect(thread_x, y, thread_col_width, 1, base_bg);
-    if row == 0 {
-        if let Some(anchor) = anchor {
-            let (indicator, color) = thread_marker(anchor, theme);
-            buffer.draw_text(thread_x, y, indicator, Style::fg(color).with_bg(base_bg));
-        }
+    let _ = (anchor, row);
+    if show_thread_bar {
+        draw_thread_range_bar(buffer, thread_x, y, theme.panel_bg, theme);
+    } else {
+        buffer.fill_rect(thread_x, y, thread_col_width, 1, base_bg);
     }
 
     let divider_width: u32 = 1;
@@ -1598,18 +1669,24 @@ fn emit_comment_block(
         }
     }
 
-    let total_rows = block_height(content_lines.len());
+    let top_margin = 0usize;
+    let bottom_margin = BLOCK_MARGIN;
+    let total_rows = content_lines
+        .len()
+        .saturating_add(BLOCK_PADDING * 2)
+        .saturating_add(top_margin)
+        .saturating_add(bottom_margin);
     let mut content_idx = 0usize;
 
     for row in 0..total_rows {
         cursor.emit(|buf, y, theme| {
-            if row < BLOCK_MARGIN {
+            if row < top_margin {
                 buf.fill_rect(area.x, y, area.width, 1, theme.background);
-            } else if row < BLOCK_MARGIN + BLOCK_PADDING {
+            } else if row < top_margin + BLOCK_PADDING {
                 buf.fill_rect(area.x, y, area.width, 1, theme.background);
                 buf.fill_rect(block.x, y, block.width, 1, theme.panel_bg);
                 draw_comment_bar(buf, block.x, y, theme.panel_bg, theme);
-            } else if row < BLOCK_MARGIN + BLOCK_PADDING + content_lines.len() {
+            } else if row < top_margin + BLOCK_PADDING + content_lines.len() {
                 let line = &content_lines[content_idx];
                 let (left_style, right_style) = match line.kind {
                     CommentLineKind::Header => (Style::fg(theme.muted), Style::fg(theme.muted)),
@@ -1630,7 +1707,7 @@ fn emit_comment_block(
                     right_style,
                 );
                 content_idx += 1;
-            } else if row < BLOCK_MARGIN + BLOCK_PADDING + content_lines.len() + BLOCK_PADDING {
+            } else if row < top_margin + BLOCK_PADDING + content_lines.len() + BLOCK_PADDING {
                 buf.fill_rect(area.x, y, area.width, 1, theme.background);
                 buf.fill_rect(block.x, y, block.width, 1, theme.panel_bg);
                 draw_comment_bar(buf, block.x, y, theme.panel_bg, theme);
@@ -1721,6 +1798,7 @@ fn emit_orphaned_context_section(
         return;
     }
 
+    let thread_ranges = build_thread_ranges(&context.threads);
     let dt = &cursor.theme.diff;
     cursor.emit(|buf, y, _| {
         draw_diff_base_line(buf, area, y, dt.context_bg);
@@ -1748,10 +1826,24 @@ fn emit_orphaned_context_section(
             }
         }
 
+        let show_thread_bar = match item {
+            DisplayItem::Line { line_num, .. } => {
+                line_in_thread_ranges(Some(*line_num), &thread_ranges)
+            }
+            DisplayItem::Separator(_) => false,
+        };
         match item {
             DisplayItem::Separator(_) => {
                 cursor.emit(|buf, y, theme| {
-                    render_context_item_block(buf, area, y, item, theme, context.highlights);
+                    render_context_item_block(
+                        buf,
+                        area,
+                        y,
+                        item,
+                        theme,
+                        show_thread_bar,
+                        context.highlights,
+                    );
                 });
             }
             DisplayItem::Line {
@@ -1767,12 +1859,27 @@ fn emit_orphaned_context_section(
                     let rows = wrapped.len().max(1);
                     cursor.emit_rows(rows, |buf, y, theme, row| {
                         render_context_line_wrapped_row(
-                            buf, area, y, *line_num, theme, &wrapped, row,
+                            buf,
+                            area,
+                            y,
+                            *line_num,
+                            theme,
+                            &wrapped,
+                            row,
+                            show_thread_bar,
                         );
                     });
                 } else {
                     cursor.emit(|buf, y, theme| {
-                        render_context_item_block(buf, area, y, item, theme, context.highlights);
+                        render_context_item_block(
+                            buf,
+                            area,
+                            y,
+                            item,
+                            theme,
+                            show_thread_bar,
+                            context.highlights,
+                        );
                     });
                 }
 
@@ -1825,12 +1932,16 @@ fn render_context_item_block(
     y: u32,
     item: &DisplayItem,
     theme: &Theme,
+    show_thread_bar: bool,
     highlighted_lines: &[Vec<HighlightSpan>],
 ) {
     let dt = &theme.diff;
     match item {
         DisplayItem::Separator(gap) => {
             draw_diff_base_line(buffer, area, y, dt.context_bg);
+            if show_thread_bar {
+                draw_thread_range_bar(buffer, diff_content_x(area), y, theme.panel_bg, theme);
+            }
             let sep_text = if *gap > 0 {
                 format!("··· {} lines ···", gap)
             } else {
@@ -1847,6 +1958,9 @@ fn render_context_item_block(
         }
         DisplayItem::Line { line_num, content } => {
             draw_diff_base_line(buffer, area, y, dt.context_bg);
+            if show_thread_bar {
+                draw_thread_range_bar(buffer, diff_content_x(area), y, theme.panel_bg, theme);
+            }
 
             let ln_str = format!("{:5} ", line_num);
             let line_num_width: u32 = 6;
@@ -1885,9 +1999,13 @@ fn render_context_line_wrapped_row(
     theme: &Theme,
     wrapped: &[WrappedLine],
     row: usize,
+    show_thread_bar: bool,
 ) {
     let dt = &theme.diff;
     draw_diff_base_line(buffer, area, y, dt.context_bg);
+    if show_thread_bar {
+        draw_thread_range_bar(buffer, diff_content_x(area), y, theme.panel_bg, theme);
+    }
 
     let ln_str = format!("{:5} ", line_num);
     let line_num_width: u32 = 6;

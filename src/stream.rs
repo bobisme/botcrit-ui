@@ -344,7 +344,7 @@ fn comment_block_height(comments: &[Comment], content_width: u32) -> usize {
         let wrapped = wrap_text(&comment.body, max_width);
         content_lines += wrapped.len();
     }
-    block_height(content_lines)
+    block_height(content_lines).saturating_sub(BLOCK_MARGIN)
 }
 
 fn context_display_count(

@@ -302,6 +302,14 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         .and_then(|entry| entry.diff.as_ref())
         .map(diff_change_counts);
 
+    buffer.fill_rect(
+        content_area.x,
+        content_area.y,
+        content_area.width,
+        content_area.height,
+        theme.background,
+    );
+
     render_diff_stream(
         buffer,
         content_area,

@@ -15,7 +15,7 @@ pub const BLOCK_RIGHT_PAD: u32 = 2;
 pub const SIDE_BY_SIDE_MIN_WIDTH: u32 = 100;
 
 /// Horizontal padding for diff lines (must match DIFF_H_PAD in diff.rs).
-const DIFF_H_PAD: u32 = 2;
+const DIFF_H_PAD: u32 = 0;
 const ORPHANED_CONTEXT_LEFT_PAD: u32 = 2;
 
 pub struct StreamLayout {

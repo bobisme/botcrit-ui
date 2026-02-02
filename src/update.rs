@@ -808,8 +808,10 @@ fn clamp_diff_scroll(model: &mut Model) {
 }
 
 fn diff_content_width(model: &Model) -> u32 {
+    /// Must match DIFF_MARGIN in diff.rs.
+    const DIFF_MARGIN: u32 = 2;
     let total_width = model.width as u32;
-    match model.layout_mode {
+    let pane_width = match model.layout_mode {
         crate::model::LayoutMode::Full
         | crate::model::LayoutMode::Compact
         | crate::model::LayoutMode::Overlay => {
@@ -820,7 +822,8 @@ fn diff_content_width(model: &Model) -> u32 {
             }
         }
         crate::model::LayoutMode::Single => total_width,
-    }
+    };
+    pane_width.saturating_sub(DIFF_MARGIN * 2)
 }
 
 /// If the theme picker is active, apply the currently highlighted theme as a preview.

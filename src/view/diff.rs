@@ -80,7 +80,8 @@ fn draw_block_base_line(buffer: &mut OptimizedBuffer, area: Rect, y: u32, bg: Rg
 
 // --- Diff helpers (no bar, no side margins, no padding) ---
 
-const DIFF_H_PAD: u32 = 2;
+const DIFF_H_PAD: u32 = 0;
+const DIFF_MARGIN: u32 = 2;
 const ORPHANED_CONTEXT_LEFT_PAD: u32 = 2;
 
 fn diff_content_x(area: Rect) -> u32 {
@@ -101,6 +102,15 @@ fn orphaned_context_width(area: Rect) -> u32 {
 
 fn draw_diff_base_line(buffer: &mut OptimizedBuffer, area: Rect, y: u32, bg: Rgba) {
     buffer.fill_rect(area.x, y, area.width, 1, bg);
+}
+
+fn diff_margin_area(area: Rect) -> Rect {
+    Rect::new(
+        area.x + DIFF_MARGIN,
+        area.y,
+        area.width.saturating_sub(DIFF_MARGIN * 2),
+        area.height,
+    )
 }
 
 // --- Comment bar (┃ in darkest background color) ---
@@ -803,6 +813,8 @@ pub fn render_diff_stream(
                     comment_map.insert(anchor.comment_after_line, anchor);
                 }
 
+                let line_area = diff_margin_area(area);
+
                 match view_mode {
                     crate::model::DiffViewMode::Unified => {
                         let mut display_lines: Vec<DisplayLine> = Vec::new();
@@ -820,6 +832,7 @@ pub fn render_diff_stream(
                                     if let Some(section) = context.sections.get(section_idx) {
                                         emit_orphaned_context_section(
                                             &mut cursor,
+                                            line_area,
                                             area,
                                             context,
                                             section,
@@ -852,7 +865,7 @@ pub fn render_diff_stream(
                                     cursor.emit(|buf, y, theme| {
                                         render_unified_diff_line_block(
                                             buf,
-                                            area,
+                                            line_area,
                                             y,
                                             display_line,
                                             theme,
@@ -866,7 +879,7 @@ pub fn render_diff_stream(
                                     if wrap {
                                         let thread_col_width: u32 = 2;
                                         let line_num_width: u32 = 12;
-                                        let content_width = diff_content_width(area)
+                                        let content_width = diff_content_width(line_area)
                                             .saturating_sub(thread_col_width + line_num_width);
                                         let max_content = content_width.saturating_sub(2) as usize;
                                         let wrapped = wrap_content(
@@ -878,7 +891,7 @@ pub fn render_diff_stream(
                                         cursor.emit_rows(rows, |buf, y, theme, row| {
                                             render_unified_diff_line_wrapped_row(
                                                 buf,
-                                                area,
+                                                line_area,
                                                 y,
                                                 line,
                                                 theme,
@@ -892,7 +905,7 @@ pub fn render_diff_stream(
                                         cursor.emit(|buf, y, theme| {
                                             render_unified_diff_line_block(
                                                 buf,
-                                                area,
+                                                line_area,
                                                 y,
                                                 display_line,
                                                 theme,
@@ -928,6 +941,7 @@ pub fn render_diff_stream(
                             if let Some(section) = context.sections.get(section_idx) {
                                 emit_orphaned_context_section(
                                     &mut cursor,
+                                    line_area,
                                     area,
                                     context,
                                     section,
@@ -985,6 +999,7 @@ pub fn render_diff_stream(
                                     if let Some(section) = context.sections.get(section_idx) {
                                         emit_orphaned_context_section(
                                             &mut cursor,
+                                            line_area,
                                             area,
                                             context,
                                             section,
@@ -1017,7 +1032,7 @@ pub fn render_diff_stream(
                                 let thread_col_width: u32 = 2;
                                 let divider_width: u32 = 1;
                                 let line_num_width: u32 = 6;
-                                let available = diff_content_width(area)
+                                let available = diff_content_width(line_area)
                                     .saturating_sub(thread_col_width + divider_width);
                                 let half_width = available / 2;
                                 let left_width = half_width.saturating_sub(line_num_width) as usize;
@@ -1047,7 +1062,7 @@ pub fn render_diff_stream(
                                 cursor.emit_rows(rows, |buf, y, theme, row| {
                                     render_side_by_side_line_wrapped_row(
                                         buf,
-                                        area,
+                                        line_area,
                                         y,
                                         sbs_line,
                                         theme,
@@ -1062,7 +1077,7 @@ pub fn render_diff_stream(
                                 cursor.emit(|buf, y, theme| {
                                     render_side_by_side_line_block(
                                         buf,
-                                        area,
+                                        line_area,
                                         y,
                                         sbs_line,
                                         theme,
@@ -1096,6 +1111,7 @@ pub fn render_diff_stream(
                             if let Some(section) = context.sections.get(section_idx) {
                                 emit_orphaned_context_section(
                                     &mut cursor,
+                                    line_area,
                                     area,
                                     context,
                                     section,
@@ -1133,6 +1149,7 @@ pub fn render_diff_stream(
                     }
                 }
             } else if let Some(content) = &entry.file_content {
+                let line_area = diff_margin_area(area);
                 let display_items =
                     build_context_items(content.lines.as_slice(), &file_threads, &[]);
                 for item in display_items {
@@ -1147,7 +1164,7 @@ pub fn render_diff_stream(
                             cursor.emit(|buf, y, theme| {
                                 render_context_item_block(
                                     buf,
-                                    area,
+                                    line_area,
                                     y,
                                     &item,
                                     theme,
@@ -1161,7 +1178,7 @@ pub fn render_diff_stream(
                                 let line_index = (*line_num).saturating_sub(1) as usize;
                                 let highlight = entry.highlighted_lines.get(line_index);
                                 let line_num_width: u32 = 6;
-                                let content_width = diff_content_width(area)
+                                let content_width = diff_content_width(line_area)
                                     .saturating_sub(line_num_width)
                                     as usize;
                                 let wrapped = wrap_content(highlight, content, content_width);
@@ -1169,7 +1186,7 @@ pub fn render_diff_stream(
                                 cursor.emit_rows(rows, |buf, y, theme, row| {
                                     render_context_line_wrapped_row(
                                         buf,
-                                        area,
+                                        line_area,
                                         y,
                                         *line_num,
                                         theme,
@@ -1182,7 +1199,7 @@ pub fn render_diff_stream(
                                 cursor.emit(|buf, y, theme| {
                                     render_context_item_block(
                                         buf,
-                                        area,
+                                        line_area,
                                         y,
                                         &item,
                                         theme,
@@ -1786,6 +1803,7 @@ fn group_context_ranges_by_hunks(
 fn emit_orphaned_context_section(
     cursor: &mut StreamCursor<'_>,
     area: Rect,
+    comment_area: Rect,
     context: &OrphanedContext<'_>,
     ranges: &[LineRange],
     wrap: bool,
@@ -1819,7 +1837,7 @@ fn emit_orphaned_context_section(
                             .borrow_mut()
                             .insert(thread.thread_id.clone(), cursor.stream_row);
                         if let Some(comments) = all_comments.get(&thread.thread_id) {
-                            emit_comment_block(cursor, area, thread, comments);
+                            emit_comment_block(cursor, comment_area, thread, comments);
                         }
                     }
                 }
@@ -1893,7 +1911,7 @@ fn emit_orphaned_context_section(
                         .borrow_mut()
                         .insert(thread.thread_id.clone(), cursor.stream_row);
                     if let Some(comments) = all_comments.get(&thread.thread_id) {
-                        emit_comment_block(cursor, area, thread, comments);
+                        emit_comment_block(cursor, comment_area, thread, comments);
                     }
                 }
                 *last_line_num = Some(*line_num);
@@ -1904,7 +1922,7 @@ fn emit_orphaned_context_section(
 
 fn emit_remaining_orphaned_comments(
     cursor: &mut StreamCursor<'_>,
-    area: Rect,
+    comment_area: Rect,
     context: &OrphanedContext<'_>,
     all_comments: &std::collections::HashMap<String, Vec<crate::db::Comment>>,
     thread_positions: &std::cell::RefCell<std::collections::HashMap<String, usize>>,
@@ -1921,7 +1939,7 @@ fn emit_remaining_orphaned_comments(
             .borrow_mut()
             .insert(thread.thread_id.clone(), cursor.stream_row);
         if let Some(comments) = all_comments.get(&thread.thread_id) {
-            emit_comment_block(cursor, area, thread, comments);
+            emit_comment_block(cursor, comment_area, thread, comments);
         }
     }
 }

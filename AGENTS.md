@@ -302,10 +302,18 @@ crit threads resolve <thread_id>
    crit doctor
    ```
 
+5. **Prefer stable output + paths** in automation:
+
+   ```bash
+   crit reviews list --format json --path /path/to/repo
+   ```
+
 ### Output Formats
 
 - Default output is TOON (token-optimized, human-readable)
-- Use `--json` flag for machine-parseable JSON output
+- Use `--format json` for machine-parseable output (preferred for scripts)
+- Use `--format text` for log-friendly output; `--format toon` for compact display
+- JSON output includes file context for threads (v0.10.0+)
 
 ### Key Concepts
 

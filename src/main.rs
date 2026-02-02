@@ -236,7 +236,6 @@ fn main() -> Result<()> {
                                 // If the remaining buffer is just 0x1b, mark pending
                                 if offset < n && buf[offset] == 0x1b && offset + 1 == n {
                                     pending_esc = true;
-                                    offset += 1;
                                 }
                                 break;
                             }

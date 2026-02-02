@@ -7,7 +7,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use opentui::input::{MouseButton, MouseEventKind, ParseError};
@@ -502,7 +502,7 @@ fn open_file_in_editor(repo_path: Option<&Path>, request: EditorRequest) -> Resu
     Ok(())
 }
 
-fn map_event_to_message(model: &Model, event: Event) -> Message {
+fn map_event_to_message(model: &mut Model, event: Event) -> Message {
     match event {
         Event::Key(key) => {
             // Check for Ctrl+C to quit
@@ -561,12 +561,20 @@ fn map_review_list_key(key: KeyCode, model: &Model) -> Message {
     }
 }
 
-fn map_review_list_mouse(model: &Model, mouse: opentui::MouseEvent) -> Message {
+fn map_review_list_mouse(model: &mut Model, mouse: opentui::MouseEvent) -> Message {
     if model.focus == Focus::CommandPalette {
         return Message::Noop;
     }
 
     if mouse.is_scroll() {
+        let direction = match mouse.kind {
+            MouseEventKind::ScrollUp => -1,
+            MouseEventKind::ScrollDown => 1,
+            _ => return Message::Noop,
+        };
+        if !should_handle_scroll(&mut model.last_list_scroll, direction) {
+            return Message::Noop;
+        }
         return match mouse.kind {
             MouseEventKind::ScrollUp => Message::ListUp,
             MouseEventKind::ScrollDown => Message::ListDown,
@@ -605,12 +613,56 @@ fn map_review_list_mouse(model: &Model, mouse: opentui::MouseEvent) -> Message {
     Message::Noop
 }
 
-fn map_review_detail_mouse(model: &Model, mouse: opentui::MouseEvent) -> Message {
+fn map_review_detail_mouse(model: &mut Model, mouse: opentui::MouseEvent) -> Message {
     if model.focus == Focus::CommandPalette || model.focus == Focus::Commenting {
         return Message::Noop;
     }
 
+    let sidebar_rect = match model.layout_mode {
+        LayoutMode::Full | LayoutMode::Compact | LayoutMode::Overlay => {
+            if !model.sidebar_visible {
+                None
+            } else {
+                Some((
+                    0u32,
+                    0u32,
+                    model.layout_mode.sidebar_width() as u32,
+                    model.height as u32,
+                ))
+            }
+        }
+        LayoutMode::Single => {
+            if !model.sidebar_visible || !matches!(model.focus, Focus::FileSidebar) {
+                None
+            } else {
+                Some((0u32, 0u32, model.width as u32, model.height as u32))
+            }
+        }
+    };
+
     if mouse.is_scroll() {
+        let direction = match mouse.kind {
+            MouseEventKind::ScrollUp => -1,
+            MouseEventKind::ScrollDown => 1,
+            _ => return Message::Noop,
+        };
+        if let Some((x, y, width, height)) = sidebar_rect {
+            if mouse.x >= x
+                && mouse.x < x.saturating_add(width)
+                && mouse.y >= y
+                && mouse.y < y.saturating_add(height)
+            {
+                if !should_handle_scroll(&mut model.last_sidebar_scroll, direction) {
+                    return Message::Noop;
+                }
+                return match mouse.kind {
+                    MouseEventKind::ScrollUp => Message::PrevFile,
+                    MouseEventKind::ScrollDown => Message::NextFile,
+                    _ => Message::Noop,
+                };
+            }
+        }
+
         return match mouse.kind {
             MouseEventKind::ScrollUp => Message::ScrollUp,
             MouseEventKind::ScrollDown => Message::ScrollDown,
@@ -626,24 +678,8 @@ fn map_review_detail_mouse(model: &Model, mouse: opentui::MouseEvent) -> Message
         return Message::Noop;
     }
 
-    let (sidebar_x, sidebar_y, sidebar_width, sidebar_height) = match model.layout_mode {
-        LayoutMode::Full | LayoutMode::Compact | LayoutMode::Overlay => {
-            if !model.sidebar_visible {
-                return Message::Noop;
-            }
-            (
-                0u32,
-                0u32,
-                model.layout_mode.sidebar_width() as u32,
-                model.height as u32,
-            )
-        }
-        LayoutMode::Single => {
-            if !model.sidebar_visible || !matches!(model.focus, Focus::FileSidebar) {
-                return Message::Noop;
-            }
-            (0u32, 0u32, model.width as u32, model.height as u32)
-        }
+    let Some((sidebar_x, sidebar_y, sidebar_width, sidebar_height)) = sidebar_rect else {
+        return Message::Noop;
     };
 
     if mouse.x < sidebar_x
@@ -671,6 +707,18 @@ fn map_review_detail_mouse(model: &Model, mouse: opentui::MouseEvent) -> Message
     }
 
     Message::Noop
+}
+
+fn should_handle_scroll(last: &mut Option<(Instant, i8)>, direction: i8) -> bool {
+    const DEBOUNCE: Duration = Duration::from_millis(5);
+    let now = Instant::now();
+    if let Some((prev_at, prev_dir)) = last {
+        if *prev_dir == direction && now.duration_since(*prev_at) < DEBOUNCE {
+            return false;
+        }
+    }
+    *last = Some((now, direction));
+    true
 }
 
 fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -> Message {

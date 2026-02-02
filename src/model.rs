@@ -2,6 +2,7 @@
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::time::Instant;
 
 use crate::command::CommandSpec;
 use crate::config::UiConfig;
@@ -196,6 +197,10 @@ pub struct Model {
     pub should_quit: bool,
     /// Flag indicating the view needs a full redraw
     pub needs_redraw: bool,
+
+    // === Input state ===
+    pub last_list_scroll: Option<(Instant, i8)>,
+    pub last_sidebar_scroll: Option<(Instant, i8)>,
 }
 
 impl Model {
@@ -244,6 +249,8 @@ impl Model {
             thread_positions: RefCell::new(HashMap::new()),
             should_quit: false,
             needs_redraw: true,
+            last_list_scroll: None,
+            last_sidebar_scroll: None,
         }
     }
 

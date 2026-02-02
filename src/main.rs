@@ -27,16 +27,19 @@ use botcrit_ui::{
 fn main() -> Result<()> {
     let args = parse_args()?;
     let db_path = args.db_path;
+    let repo_path_override = args.repo_path.clone();
 
     // Determine repo root from database path
     // Database is at <repo>/.crit/index.db, so repo is grandparent
     // Canonicalize first to handle relative paths like ".crit/index.db"
-    let repo_path = db_path.as_ref().and_then(|p| {
-        p.canonicalize().ok().and_then(|canonical| {
-            canonical
-                .parent() // .crit/
-                .and_then(|crit| crit.parent()) // repo root
-                .map(|p| p.to_path_buf())
+    let repo_path = repo_path_override.or_else(|| {
+        db_path.as_ref().and_then(|p| {
+            p.canonicalize().ok().and_then(|canonical| {
+                canonical
+                    .parent() // .crit/
+                    .and_then(|crit| crit.parent()) // repo root
+                    .map(|p| p.to_path_buf())
+            })
         })
     });
 
@@ -379,12 +382,14 @@ impl Drop for CursorGuard {
 struct CliArgs {
     db_path: Option<PathBuf>,
     theme: Option<String>,
+    repo_path: Option<PathBuf>,
 }
 
 fn parse_args() -> Result<CliArgs> {
     let args: Vec<String> = std::env::args().collect();
     let mut db_path: Option<PathBuf> = None;
     let mut theme: Option<String> = None;
+    let mut repo_path: Option<PathBuf> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -395,6 +400,7 @@ fn parse_args() -> Result<CliArgs> {
                 println!("Options:");
                 println!("  --theme <name|path>   Load theme by name or JSON path");
                 println!("  --db <path>      Path to .crit/index.db");
+                println!("  --path <path>    Path to repo root (uses <path>/.crit/index.db)");
                 println!();
                 println!("Environment:");
                 println!("  BOTCRIT_UI_THEME  Theme name or JSON path");
@@ -419,6 +425,13 @@ fn parse_args() -> Result<CliArgs> {
                 }
                 db_path = Some(PathBuf::from(&args[i]));
             }
+            "--path" => {
+                i += 1;
+                if i >= args.len() {
+                    anyhow::bail!("--path requires a path");
+                }
+                repo_path = Some(PathBuf::from(&args[i]));
+            }
             arg if arg.starts_with('-') => {
                 anyhow::bail!("Unknown option: {arg}");
             }
@@ -433,6 +446,14 @@ fn parse_args() -> Result<CliArgs> {
         i += 1;
     }
 
+    if repo_path.is_some() && db_path.is_some() {
+        anyhow::bail!("Use either --path or --db (not both)");
+    }
+
+    if let Some(path) = &repo_path {
+        db_path = Some(path.join(".crit/index.db"));
+    }
+
     // Try default location if no explicit DB path
     if db_path.is_none() {
         let default_path = PathBuf::from(".crit/index.db");
@@ -441,7 +462,11 @@ fn parse_args() -> Result<CliArgs> {
         }
     }
 
-    Ok(CliArgs { db_path, theme })
+    Ok(CliArgs {
+        db_path,
+        theme,
+        repo_path,
+    })
 }
 
 fn apply_default_diff_view(model: &mut Model) {

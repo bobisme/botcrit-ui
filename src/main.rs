@@ -739,6 +739,8 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
             KeyCode::Tab => Message::ToggleFocus,
             KeyCode::Char('j') | KeyCode::Down => Message::NextFile,
             KeyCode::Char('k') | KeyCode::Up => Message::PrevFile,
+            KeyCode::Char('g') | KeyCode::Home => Message::SidebarTop,
+            KeyCode::Char('G') | KeyCode::End => Message::SidebarBottom,
             KeyCode::Enter => Message::SidebarSelect,
             KeyCode::Char('l') => Message::ToggleFocus, // Move to diff pane
             KeyCode::Char('s') => Message::ToggleSidebar,
@@ -750,6 +752,8 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
             KeyCode::Tab => Message::ToggleFocus,
             KeyCode::Char('j') | KeyCode::Down => Message::ScrollDown,
             KeyCode::Char('k') | KeyCode::Up => Message::ScrollUp,
+            KeyCode::Char('g') | KeyCode::Home => Message::ScrollTop,
+            KeyCode::Char('G') | KeyCode::End => Message::ScrollBottom,
             KeyCode::Char('n') => Message::NextThread,
             KeyCode::Char('p') | KeyCode::Char('N') => Message::PrevThread,
             KeyCode::Char('v') => Message::ToggleDiffView, // Toggle unified/side-by-side
@@ -781,6 +785,8 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
             KeyCode::Esc => Message::CollapseThread,
             KeyCode::Char('j') | KeyCode::Down => Message::ScrollDown,
             KeyCode::Char('k') | KeyCode::Up => Message::ScrollUp,
+            KeyCode::Char('g') | KeyCode::Home => Message::ScrollTop,
+            KeyCode::Char('G') | KeyCode::End => Message::ScrollBottom,
             KeyCode::Char('r') | KeyCode::Char('R') => {
                 if let Some(id) = &model.expanded_thread {
                     Message::ResolveThread(id.clone())

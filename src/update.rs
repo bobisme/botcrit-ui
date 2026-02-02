@@ -139,6 +139,23 @@ pub fn update(model: &mut Model, msg: Message) {
             }
         }
 
+        Message::SidebarTop => {
+            if !model.sidebar_items().is_empty() {
+                model.sidebar_index = 0;
+                sync_file_index_from_sidebar(model);
+                ensure_sidebar_visible(model);
+            }
+        }
+
+        Message::SidebarBottom => {
+            let items = model.sidebar_items();
+            if !items.is_empty() {
+                model.sidebar_index = items.len() - 1;
+                sync_file_index_from_sidebar(model);
+                ensure_sidebar_visible(model);
+            }
+        }
+
         Message::SelectFile(idx) => {
             let file_count = model.files_with_threads().len();
             if idx < file_count {
@@ -218,6 +235,18 @@ pub fn update(model: &mut Model, msg: Message) {
         Message::ScrollDown => {
             model.diff_scroll += 1;
             clamp_diff_scroll(model);
+            update_active_file_from_scroll(model);
+        }
+
+        Message::ScrollTop => {
+            model.diff_scroll = 0;
+            update_active_file_from_scroll(model);
+        }
+
+        Message::ScrollBottom => {
+            let layout = stream_layout(model);
+            let visible = model.height.saturating_sub(2) as usize;
+            model.diff_scroll = layout.total_lines.saturating_sub(visible);
             update_active_file_from_scroll(model);
         }
 

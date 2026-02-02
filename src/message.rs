@@ -28,6 +28,10 @@ pub enum Message {
     NextFile,
     /// Move up in sidebar tree
     PrevFile,
+    /// Jump to first sidebar item
+    SidebarTop,
+    /// Jump to last sidebar item
+    SidebarBottom,
     /// Select file by index
     SelectFile(usize),
     /// Select sidebar item by row index (mouse click)
@@ -40,6 +44,10 @@ pub enum Message {
     ScrollUp,
     /// Scroll content down
     ScrollDown,
+    /// Scroll to top
+    ScrollTop,
+    /// Scroll to bottom
+    ScrollBottom,
     /// Scroll up by half a page
     ScrollHalfPageUp,
     /// Scroll down by half a page

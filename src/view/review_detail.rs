@@ -132,7 +132,8 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         return;
     }
 
-    for (item_idx, item) in items.iter().enumerate() {
+    let start_index = model.sidebar_scroll.min(items.len());
+    for (item_idx, item) in items.iter().enumerate().skip(start_index) {
         if y >= bottom {
             break;
         }

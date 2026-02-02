@@ -28,6 +28,7 @@ pub fn update(model: &mut Model, msg: Message) {
             model.focus = Focus::DiffPane;
             model.file_index = 0;
             model.sidebar_index = 0;
+            model.sidebar_scroll = 0;
             model.collapsed_files.clear();
             model.diff_scroll = 0;
             model.expanded_thread = None;
@@ -126,6 +127,7 @@ pub fn update(model: &mut Model, msg: Message) {
             if !items.is_empty() && model.sidebar_index < items.len() - 1 {
                 model.sidebar_index += 1;
                 sync_file_index_from_sidebar(model);
+                ensure_sidebar_visible(model);
             }
         }
 
@@ -133,6 +135,7 @@ pub fn update(model: &mut Model, msg: Message) {
             if model.sidebar_index > 0 {
                 model.sidebar_index -= 1;
                 sync_file_index_from_sidebar(model);
+                ensure_sidebar_visible(model);
             }
         }
 
@@ -148,6 +151,7 @@ pub fn update(model: &mut Model, msg: Message) {
                     model.sidebar_index = pos;
                 }
                 jump_to_file(model, idx);
+                ensure_sidebar_visible(model);
             }
         }
 
@@ -166,6 +170,7 @@ pub fn update(model: &mut Model, msg: Message) {
                         model.needs_redraw = true;
                     }
                 }
+                ensure_sidebar_visible(model);
             }
         }
 
@@ -189,6 +194,7 @@ pub fn update(model: &mut Model, msg: Message) {
                         if new_len > 0 && model.sidebar_index >= new_len {
                             model.sidebar_index = new_len - 1;
                         }
+                        ensure_sidebar_visible(model);
                         // Also select this file
                         let target = *file_idx;
                         jump_to_file(model, target);
@@ -601,7 +607,120 @@ fn update_active_file_from_scroll(model: &mut Model) {
         model.file_index = active;
         model.sync_active_file_cache();
     }
+    sync_sidebar_from_active(model);
     model.needs_redraw = true;
+}
+
+fn sync_sidebar_from_active(model: &mut Model) {
+    let items = model.sidebar_items();
+    let mut target = None;
+
+    if let Some(thread_id) = active_thread_from_scroll(model) {
+        target = items.iter().position(|item| match item {
+            crate::model::SidebarItem::Thread { thread_id: id, .. } => id == &thread_id,
+            _ => false,
+        });
+    }
+
+    if target.is_none() {
+        if let Some(thread_id) = &model.expanded_thread {
+            target = items.iter().position(|item| match item {
+                crate::model::SidebarItem::Thread { thread_id: id, .. } => id == thread_id,
+                _ => false,
+            });
+        }
+    }
+
+    if target.is_none() {
+        target = items.iter().position(|item| match item {
+            crate::model::SidebarItem::File { file_idx, .. } => *file_idx == model.file_index,
+            _ => false,
+        });
+    }
+
+    if let Some(index) = target {
+        model.sidebar_index = index;
+        ensure_sidebar_visible(model);
+    }
+}
+
+fn active_thread_from_scroll(model: &Model) -> Option<String> {
+    let positions = model.thread_positions.borrow();
+    if positions.is_empty() {
+        return None;
+    }
+
+    let files = model.files_with_threads();
+    let Some(file) = files.get(model.file_index) else {
+        return None;
+    };
+
+    let view_height = model.height.saturating_sub(2) as usize;
+    let view_end = model.diff_scroll.saturating_add(view_height);
+
+    let mut in_view: Option<(usize, &str)> = None;
+    let mut above: Option<(usize, &str)> = None;
+
+    for thread in model.threads.iter().filter(|t| t.file_path == file.path) {
+        if let Some(&pos) = positions.get(&thread.thread_id) {
+            if pos >= model.diff_scroll && pos <= view_end {
+                if in_view.map_or(true, |(best, _)| pos < best) {
+                    in_view = Some((pos, thread.thread_id.as_str()));
+                }
+            } else if pos < model.diff_scroll {
+                if above.map_or(true, |(best, _)| pos > best) {
+                    above = Some((pos, thread.thread_id.as_str()));
+                }
+            }
+        }
+    }
+
+    if let Some((_, id)) = in_view {
+        return Some(id.to_string());
+    }
+    if let Some((_, id)) = above {
+        return Some(id.to_string());
+    }
+
+    None
+}
+
+fn ensure_sidebar_visible(model: &mut Model) {
+    let items_len = model.sidebar_items().len();
+    let visible = sidebar_visible_rows(model);
+    if items_len == 0 || visible == 0 {
+        model.sidebar_scroll = 0;
+        return;
+    }
+
+    let max_scroll = items_len.saturating_sub(visible);
+    if model.sidebar_scroll > max_scroll {
+        model.sidebar_scroll = max_scroll;
+    }
+
+    if model.sidebar_index < model.sidebar_scroll {
+        model.sidebar_scroll = model.sidebar_index;
+    } else if model.sidebar_index >= model.sidebar_scroll + visible {
+        model.sidebar_scroll = model
+            .sidebar_index
+            .saturating_sub(visible.saturating_sub(1));
+    }
+
+    if model.sidebar_scroll > max_scroll {
+        model.sidebar_scroll = max_scroll;
+    }
+}
+
+fn sidebar_visible_rows(model: &Model) -> usize {
+    let mut start = 1usize;
+    if model.current_review.is_some() {
+        start = start.saturating_add(5);
+    }
+    let bottom = model.height.saturating_sub(1) as usize;
+    if start >= bottom {
+        return 0;
+    }
+    bottom - start
 }
 
 fn center_on_thread(model: &mut Model) {

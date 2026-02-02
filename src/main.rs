@@ -664,9 +664,10 @@ fn map_review_detail_mouse(model: &Model, mouse: opentui::MouseEvent) -> Message
     }
 
     let row = (mouse.y - list_start) as usize;
+    let index = model.sidebar_scroll.saturating_add(row);
     let items = model.sidebar_items();
-    if items.get(row).is_some() {
-        return Message::ClickSidebarItem(row);
+    if items.get(index).is_some() {
+        return Message::ClickSidebarItem(index);
     }
 
     Message::Noop

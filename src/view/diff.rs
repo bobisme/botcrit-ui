@@ -69,13 +69,7 @@ fn draw_block_bar(buffer: &mut OptimizedBuffer, x: u32, y: u32, bg: Rgba, theme:
     buffer.draw_text(x, y, "┃", Style::fg(theme.muted).with_bg(bg));
 }
 
-fn draw_block_base_line(
-    buffer: &mut OptimizedBuffer,
-    area: Rect,
-    y: u32,
-    bg: Rgba,
-    theme: &Theme,
-) {
+fn draw_block_base_line(buffer: &mut OptimizedBuffer, area: Rect, y: u32, bg: Rgba, theme: &Theme) {
     if BLOCK_SIDE_MARGIN > 0 {
         buffer.fill_rect(area.x, y, BLOCK_SIDE_MARGIN, 1, theme.background);
         buffer.fill_rect(
@@ -297,10 +291,7 @@ fn draw_file_header_line(
 }
 
 /// Map threads to display line indices within the diff
-pub fn map_threads_to_diff(
-    diff: &ParsedDiff,
-    threads: &[&ThreadSummary],
-) -> Vec<ThreadAnchor> {
+pub fn map_threads_to_diff(diff: &ParsedDiff, threads: &[&ThreadSummary]) -> Vec<ThreadAnchor> {
     let mut anchors = Vec::new();
 
     // Build maps from line numbers to display line index
@@ -722,10 +713,8 @@ pub fn render_diff_stream(
         if let Some(entry) = file_cache.get(&file.path) {
             if let Some(diff) = &entry.diff {
                 let anchors = map_threads_to_diff(diff, &file_threads);
-                let anchored_ids: std::collections::HashSet<&str> = anchors
-                    .iter()
-                    .map(|a| a.thread_id.as_str())
-                    .collect();
+                let anchored_ids: std::collections::HashSet<&str> =
+                    anchors.iter().map(|a| a.thread_id.as_str()).collect();
                 let orphaned_threads: Vec<&&ThreadSummary> = file_threads
                     .iter()
                     .filter(|t| !anchored_ids.contains(t.thread_id.as_str()))
@@ -751,6 +740,12 @@ pub fn render_diff_stream(
 
                         for (idx, display_line) in display_lines.iter().enumerate() {
                             let anchor = anchor_map.get(&idx).copied();
+                            if let Some(anchor) = anchor {
+                                thread_positions
+                                    .borrow_mut()
+                                    .entry(anchor.thread_id.clone())
+                                    .or_insert(cursor.stream_row);
+                            }
                             match display_line {
                                 DisplayLine::HunkHeader(_) => {
                                     cursor.emit(|buf, y, theme| {
@@ -802,17 +797,21 @@ pub fn render_diff_stream(
                             // Emit comment block after the last line of the thread range
                             if let Some(comment_anchor) = comment_map.get(&idx) {
                                 // Record position at comment block (not at ▽ anchor)
-                                thread_positions.borrow_mut().insert(comment_anchor.thread_id.clone(), cursor.stream_row);
+                                thread_positions
+                                    .borrow_mut()
+                                    .entry(comment_anchor.thread_id.clone())
+                                    .or_insert(cursor.stream_row);
                                 if let Some(thread) = file_threads
                                     .iter()
                                     .find(|t| t.thread_id == comment_anchor.thread_id)
                                 {
-                                    if let Some(comments) = all_comments.get(&comment_anchor.thread_id) {
+                                    if let Some(comments) =
+                                        all_comments.get(&comment_anchor.thread_id)
+                                    {
                                         emit_comment_block(&mut cursor, area, thread, comments);
                                     }
                                 }
                             }
-
                         }
                     }
                     crate::model::DiffViewMode::SideBySide => {
@@ -830,19 +829,14 @@ pub fn render_diff_stream(
                                 .find(|t| t.thread_id == anchor.thread_id)
                             {
                                 let start = thread.selection_start as u32;
-                                let end = thread
-                                    .selection_end
-                                    .unwrap_or(thread.selection_start)
-                                    as u32;
+                                let end =
+                                    thread.selection_end.unwrap_or(thread.selection_start) as u32;
                                 for (si, sl) in sbs_lines.iter().enumerate() {
                                     let has_start = sl
                                         .right
                                         .as_ref()
                                         .map_or(false, |l| l.line_num == start)
-                                        || sl
-                                            .left
-                                            .as_ref()
-                                            .map_or(false, |l| l.line_num == start);
+                                        || sl.left.as_ref().map_or(false, |l| l.line_num == start);
                                     if has_start {
                                         sbs_anchor_map.insert(si, anchor);
                                     }
@@ -850,10 +844,7 @@ pub fn render_diff_stream(
                                         .right
                                         .as_ref()
                                         .map_or(false, |l| l.line_num == end)
-                                        || sl
-                                            .left
-                                            .as_ref()
-                                            .map_or(false, |l| l.line_num == end);
+                                        || sl.left.as_ref().map_or(false, |l| l.line_num == end);
                                     if has_end {
                                         sbs_comment_map.insert(si, anchor);
                                     }
@@ -863,6 +854,12 @@ pub fn render_diff_stream(
 
                         for (idx, sbs_line) in sbs_lines.iter().enumerate() {
                             let anchor = sbs_anchor_map.get(&idx).copied();
+                            if let Some(anchor) = anchor {
+                                thread_positions
+                                    .borrow_mut()
+                                    .entry(anchor.thread_id.clone())
+                                    .or_insert(cursor.stream_row);
+                            }
                             if wrap && !sbs_line.is_header {
                                 let thread_col_width: u32 = 2;
                                 let divider_width: u32 = 1;
@@ -924,17 +921,21 @@ pub fn render_diff_stream(
                             // Emit comment block after the last line of the thread range
                             if let Some(comment_anchor) = sbs_comment_map.get(&idx) {
                                 // Record position at comment block (not at ▽ anchor)
-                                thread_positions.borrow_mut().insert(comment_anchor.thread_id.clone(), cursor.stream_row);
+                                thread_positions
+                                    .borrow_mut()
+                                    .entry(comment_anchor.thread_id.clone())
+                                    .or_insert(cursor.stream_row);
                                 if let Some(thread) = file_threads
                                     .iter()
                                     .find(|t| t.thread_id == comment_anchor.thread_id)
                                 {
-                                    if let Some(comments) = all_comments.get(&comment_anchor.thread_id) {
+                                    if let Some(comments) =
+                                        all_comments.get(&comment_anchor.thread_id)
+                                    {
                                         emit_comment_block(&mut cursor, area, thread, comments);
                                     }
                                 }
                             }
-
                         }
                     }
                 }
@@ -979,16 +980,13 @@ pub fn render_diff_stream(
                                     // falls between prev and current line_num
                                     // (meaning the end line was clipped).
                                     for thread in &orphaned_deref {
-                                        let end = thread
-                                            .selection_end
-                                            .unwrap_or(thread.selection_start);
-                                        if !emitted_threads
-                                            .contains(thread.thread_id.as_str())
+                                        let end =
+                                            thread.selection_end.unwrap_or(thread.selection_start);
+                                        if !emitted_threads.contains(thread.thread_id.as_str())
                                             && end > prev
                                             && end < *line_num
                                         {
-                                            emitted_threads
-                                                .insert(&thread.thread_id);
+                                            emitted_threads.insert(&thread.thread_id);
                                             thread_positions.borrow_mut().insert(
                                                 thread.thread_id.clone(),
                                                 cursor.stream_row,
@@ -1011,27 +1009,25 @@ pub fn render_diff_stream(
                             match item {
                                 DisplayItem::Separator(_) => {
                                     cursor.emit(|buf, y, theme| {
-                                        render_context_item_block(
-                                            buf, area, y, item, theme, hl,
-                                        );
+                                        render_context_item_block(buf, area, y, item, theme, hl);
                                     });
                                 }
-                                DisplayItem::Line { line_num, content: line_content } => {
+                                DisplayItem::Line {
+                                    line_num,
+                                    content: line_content,
+                                } => {
                                     if wrap {
-                                        let line_index =
-                                            (*line_num).saturating_sub(1) as usize;
+                                        let line_index = (*line_num).saturating_sub(1) as usize;
                                         let highlight = hl.get(line_index);
                                         let line_num_width: u32 = 6;
                                         let cw = diff_content_width(area)
                                             .saturating_sub(line_num_width)
                                             as usize;
-                                        let wrapped =
-                                            wrap_content(highlight, line_content, cw);
+                                        let wrapped = wrap_content(highlight, line_content, cw);
                                         let rows = wrapped.len().max(1);
                                         cursor.emit_rows(rows, |buf, y, theme, row| {
                                             render_context_line_wrapped_row(
-                                                buf, area, y, *line_num, theme, &wrapped,
-                                                row,
+                                                buf, area, y, *line_num, theme, &wrapped, row,
                                             );
                                         });
                                     } else {
@@ -1047,21 +1043,16 @@ pub fn render_diff_stream(
                                     let end_match = orphaned_deref.iter().find(|t| {
                                         let end = t.selection_end.unwrap_or(t.selection_start);
                                         end == *line_num
-                                            && !emitted_threads
-                                                .contains(t.thread_id.as_str())
+                                            && !emitted_threads.contains(t.thread_id.as_str())
                                     });
                                     if let Some(thread) = end_match {
                                         emitted_threads.insert(&thread.thread_id);
-                                        thread_positions.borrow_mut().insert(
-                                            thread.thread_id.clone(),
-                                            cursor.stream_row,
-                                        );
-                                        if let Some(comments) =
-                                            all_comments.get(&thread.thread_id)
+                                        thread_positions
+                                            .borrow_mut()
+                                            .insert(thread.thread_id.clone(), cursor.stream_row);
+                                        if let Some(comments) = all_comments.get(&thread.thread_id)
                                         {
-                                            emit_comment_block(
-                                                &mut cursor, area, thread, comments,
-                                            );
+                                            emit_comment_block(&mut cursor, area, thread, comments);
                                         }
                                     }
                                     last_line_num = Some(*line_num);
@@ -1073,22 +1064,15 @@ pub fn render_diff_stream(
                         // (their end line was beyond all displayed lines).
                         let mut remaining: Vec<&&ThreadSummary> = orphaned_deref
                             .iter()
-                            .filter(|t| {
-                                !emitted_threads.contains(t.thread_id.as_str())
-                            })
+                            .filter(|t| !emitted_threads.contains(t.thread_id.as_str()))
                             .collect();
                         remaining.sort_by_key(|t| t.selection_start);
                         for thread in remaining {
-                            thread_positions.borrow_mut().insert(
-                                thread.thread_id.clone(),
-                                cursor.stream_row,
-                            );
-                            if let Some(comments) =
-                                all_comments.get(&thread.thread_id)
-                            {
-                                emit_comment_block(
-                                    &mut cursor, area, thread, comments,
-                                );
+                            thread_positions
+                                .borrow_mut()
+                                .insert(thread.thread_id.clone(), cursor.stream_row);
+                            if let Some(comments) = all_comments.get(&thread.thread_id) {
+                                emit_comment_block(&mut cursor, area, thread, comments);
                             }
                         }
                     } else {
@@ -1096,10 +1080,9 @@ pub fn render_diff_stream(
                         let mut orphaned_sorted = orphaned_threads.clone();
                         orphaned_sorted.sort_by_key(|t| t.selection_start);
                         for thread in &orphaned_sorted {
-                            thread_positions.borrow_mut().insert(
-                                thread.thread_id.clone(),
-                                cursor.stream_row,
-                            );
+                            thread_positions
+                                .borrow_mut()
+                                .insert(thread.thread_id.clone(), cursor.stream_row);
                             if let Some(comments) = all_comments.get(&thread.thread_id) {
                                 emit_comment_block(&mut cursor, area, thread, comments);
                             }
@@ -1107,7 +1090,8 @@ pub fn render_diff_stream(
                     }
                 }
             } else if let Some(content) = &entry.file_content {
-                let display_items = build_context_items(content.lines.as_slice(), &file_threads, &[]);
+                let display_items =
+                    build_context_items(content.lines.as_slice(), &file_threads, &[]);
                 for item in display_items {
                     match &item {
                         DisplayItem::Separator(_) => {
@@ -1127,8 +1111,9 @@ pub fn render_diff_stream(
                                 let line_index = (*line_num).saturating_sub(1) as usize;
                                 let highlight = entry.highlighted_lines.get(line_index);
                                 let line_num_width: u32 = 6;
-                                let content_width =
-                                    diff_content_width(area).saturating_sub(line_num_width) as usize;
+                                let content_width = diff_content_width(area)
+                                    .saturating_sub(line_num_width)
+                                    as usize;
                                 let wrapped = wrap_content(highlight, content, content_width);
                                 let rows = wrapped.len().max(1);
                                 cursor.emit_rows(rows, |buf, y, theme, row| {
@@ -1158,13 +1143,14 @@ pub fn render_diff_stream(
                             end == *line_num
                         }) {
                             // Record position at comment block (not at start of tagged range)
-                            thread_positions.borrow_mut().insert(thread.thread_id.clone(), cursor.stream_row);
+                            thread_positions
+                                .borrow_mut()
+                                .insert(thread.thread_id.clone(), cursor.stream_row);
                             if let Some(comments) = all_comments.get(&thread.thread_id) {
                                 emit_comment_block(&mut cursor, area, thread, comments);
                             }
                         }
                     }
-
                 }
             } else {
                 cursor.emit(|buf, y, theme| {
@@ -1180,7 +1166,6 @@ pub fn render_diff_stream(
                 });
             }
         }
-
     }
 
     if cursor.remaining_rows() > 0 {
@@ -1210,8 +1195,8 @@ fn render_unified_diff_line_block(
         DisplayLine::HunkHeader(_) => {
             draw_diff_base_line(buffer, area, y, dt.context_bg);
             let sep = "···";
-            let sep_x =
-                diff_content_x(area) + diff_content_width(area).saturating_sub(sep.len() as u32) / 2;
+            let sep_x = diff_content_x(area)
+                + diff_content_width(area).saturating_sub(sep.len() as u32) / 2;
             buffer.draw_text(sep_x, y, sep, Style::fg(theme.muted).with_bg(dt.context_bg));
         }
         DisplayLine::Diff(line) => {

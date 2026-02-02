@@ -148,6 +148,8 @@ pub struct Model {
     pub file_index: usize,
     /// Selected index in the flat sidebar tree
     pub sidebar_index: usize,
+    /// Scroll offset for sidebar tree
+    pub sidebar_scroll: usize,
     /// Files whose thread children are collapsed
     pub collapsed_files: HashSet<String>,
     /// Scroll offset in diff pane
@@ -218,6 +220,7 @@ impl Model {
             list_scroll: 0,
             file_index: 0,
             sidebar_index: 0,
+            sidebar_scroll: 0,
             collapsed_files: HashSet::new(),
             diff_scroll: 0,
             expanded_thread: None,

@@ -25,7 +25,7 @@ pub fn update(model: &mut Model, msg: Message) {
             }
             // Switch to review detail screen
             model.screen = Screen::ReviewDetail;
-            model.focus = Focus::FileSidebar;
+            model.focus = Focus::DiffPane;
             model.file_index = 0;
             model.sidebar_index = 0;
             model.collapsed_files.clear();

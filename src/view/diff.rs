@@ -90,6 +90,7 @@ fn draw_block_base_line(buffer: &mut OptimizedBuffer, area: Rect, y: u32, bg: Rg
 // --- Diff helpers (no bar, no side margins, no padding) ---
 
 const DIFF_H_PAD: u32 = 2;
+const ORPHANED_CONTEXT_LEFT_PAD: u32 = 2;
 
 fn diff_content_x(area: Rect) -> u32 {
     area.x + DIFF_H_PAD
@@ -97,6 +98,14 @@ fn diff_content_x(area: Rect) -> u32 {
 
 fn diff_content_width(area: Rect) -> u32 {
     area.width.saturating_sub(DIFF_H_PAD * 2)
+}
+
+fn orphaned_context_x(area: Rect) -> u32 {
+    diff_content_x(area).saturating_add(ORPHANED_CONTEXT_LEFT_PAD)
+}
+
+fn orphaned_context_width(area: Rect) -> u32 {
+    diff_content_width(area).saturating_sub(ORPHANED_CONTEXT_LEFT_PAD)
 }
 
 fn draw_diff_base_line(buffer: &mut OptimizedBuffer, area: Rect, y: u32, bg: Rgba) {
@@ -970,6 +979,11 @@ pub fn render_diff_stream(
                             std::collections::HashSet::new();
                         let mut last_line_num: Option<i64> = None;
 
+                        let dt = &theme.diff;
+                        cursor.emit(|buf, y, _| {
+                            draw_diff_base_line(buf, area, y, dt.context_bg);
+                        });
+
                         for item in &display_items {
                             // Before rendering the next item, check if we've
                             // passed a thread's end line and should emit its
@@ -1020,7 +1034,7 @@ pub fn render_diff_stream(
                                         let line_index = (*line_num).saturating_sub(1) as usize;
                                         let highlight = hl.get(line_index);
                                         let line_num_width: u32 = 6;
-                                        let cw = diff_content_width(area)
+                                        let cw = orphaned_context_width(area)
                                             .saturating_sub(line_num_width)
                                             as usize;
                                         let wrapped = wrap_content(highlight, line_content, cw);
@@ -1695,40 +1709,41 @@ fn render_context_item_block(
     theme: &Theme,
     highlighted_lines: &[Vec<HighlightSpan>],
 ) {
+    let dt = &theme.diff;
     match item {
         DisplayItem::Separator(gap) => {
-            draw_diff_base_line(buffer, area, y, theme.panel_bg);
+            draw_diff_base_line(buffer, area, y, dt.context_bg);
             let sep_text = if *gap > 0 {
                 format!("··· {} lines ···", gap)
             } else {
                 "···".to_string()
             };
-            let sep_x = diff_content_x(area)
-                + diff_content_width(area).saturating_sub(sep_text.len() as u32) / 2;
+            let sep_x = orphaned_context_x(area)
+                + orphaned_context_width(area).saturating_sub(sep_text.len() as u32) / 2;
             buffer.draw_text(
                 sep_x,
                 y,
                 &sep_text,
-                Style::fg(theme.muted).with_bg(theme.panel_bg),
+                Style::fg(theme.muted).with_bg(dt.context_bg),
             );
         }
         DisplayItem::Line { line_num, content } => {
-            draw_diff_base_line(buffer, area, y, theme.background);
+            draw_diff_base_line(buffer, area, y, dt.context_bg);
 
             let ln_str = format!("{:5} ", line_num);
             let line_num_width: u32 = 6;
-            let ln_x = diff_content_x(area);
-            buffer.fill_rect(ln_x, y, line_num_width, 1, theme.panel_bg);
+            let ln_x = orphaned_context_x(area);
+            buffer.fill_rect(ln_x, y, line_num_width, 1, dt.context_bg);
             buffer.draw_text(
                 ln_x,
                 y,
                 &ln_str,
-                Style::fg(theme.muted).with_bg(theme.panel_bg),
+                Style::fg(dt.line_number).with_bg(dt.context_bg),
             );
 
             let content_x = ln_x + line_num_width;
-            let content_width = diff_content_width(area).saturating_sub(line_num_width);
-            buffer.fill_rect(content_x, y, content_width, 1, theme.background);
+            let content_width = orphaned_context_width(area).saturating_sub(line_num_width);
+            buffer.fill_rect(content_x, y, content_width, 1, dt.context_bg);
             let highlight = highlighted_lines.get((*line_num as usize).saturating_sub(1));
             draw_highlighted_text(
                 buffer,
@@ -1737,8 +1752,8 @@ fn render_context_item_block(
                 content_width,
                 highlight,
                 content,
-                theme.foreground,
-                theme.background,
+                dt.context,
+                dt.context_bg,
             );
         }
     }
@@ -1753,24 +1768,25 @@ fn render_context_line_wrapped_row(
     wrapped: &[WrappedLine],
     row: usize,
 ) {
-    draw_diff_base_line(buffer, area, y, theme.background);
+    let dt = &theme.diff;
+    draw_diff_base_line(buffer, area, y, dt.context_bg);
 
     let ln_str = format!("{:5} ", line_num);
     let line_num_width: u32 = 6;
-    let ln_x = diff_content_x(area);
-    buffer.fill_rect(ln_x, y, line_num_width, 1, theme.panel_bg);
+    let ln_x = orphaned_context_x(area);
+    buffer.fill_rect(ln_x, y, line_num_width, 1, dt.context_bg);
     if row == 0 {
         buffer.draw_text(
             ln_x,
             y,
             &ln_str,
-            Style::fg(theme.muted).with_bg(theme.panel_bg),
+            Style::fg(dt.line_number).with_bg(dt.context_bg),
         );
     }
 
     let content_x = ln_x + line_num_width;
-    let content_width = diff_content_width(area).saturating_sub(line_num_width);
-    buffer.fill_rect(content_x, y, content_width, 1, theme.background);
+    let content_width = orphaned_context_width(area).saturating_sub(line_num_width);
+    buffer.fill_rect(content_x, y, content_width, 1, dt.context_bg);
     if let Some(line_content) = wrapped.get(row) {
         draw_wrapped_line(
             buffer,
@@ -1778,8 +1794,8 @@ fn render_context_line_wrapped_row(
             y,
             content_width,
             line_content,
-            theme.foreground,
-            theme.background,
+            dt.context,
+            dt.context_bg,
         );
     }
 }

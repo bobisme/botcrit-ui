@@ -30,6 +30,3 @@ all = "warn"
 pedantic = "warn"
 nursery = "warn"
 
-# TODO: remove patch once https://github.com/Dicklesworthstone/opentui_rust/pull/3 is merged
-[patch."https://github.com/Dicklesworthstone/opentui_rust"]
-opentui = { git = "https://github.com/bobisme/opentui_rust", branch = "fix/present-force-cursor-home" }

@@ -4,63 +4,50 @@ use std::collections::HashMap;
 
 use crate::db::{Comment, ThreadSummary};
 use crate::diff::ParsedDiff;
+use crate::layout;
 use crate::model::{DiffViewMode, FileCacheEntry, FileEntry};
 use crate::text::{wrap_text, wrap_text_preserve};
 
-pub const BLOCK_MARGIN: usize = 1;
-pub const BLOCK_PADDING: usize = 1;
-pub const BLOCK_SIDE_MARGIN: u32 = 2;
-pub const BLOCK_LEFT_PAD: u32 = 2;
-pub const BLOCK_RIGHT_PAD: u32 = 2;
-pub const SIDE_BY_SIDE_MIN_WIDTH: u32 = 100;
-
-/// Horizontal padding for diff lines (must match DIFF_H_PAD in diff.rs).
-const DIFF_H_PAD: u32 = 0;
-const ORPHANED_CONTEXT_LEFT_PAD: u32 = 2;
+// Re-export for downstream users that were importing from stream::
+pub use crate::layout::{
+    block_height, BLOCK_LEFT_PAD, BLOCK_MARGIN, BLOCK_PADDING, BLOCK_RIGHT_PAD, BLOCK_SIDE_MARGIN,
+    SIDE_BY_SIDE_MIN_WIDTH,
+};
 
 pub struct StreamLayout {
     pub file_offsets: Vec<usize>,
     pub total_lines: usize,
 }
 
-pub fn block_height(content_lines: usize) -> usize {
-    content_lines + (BLOCK_MARGIN * 2) + (BLOCK_PADDING * 2)
-}
-
 /// Inner width for diff content (no block bar/margins, just horizontal padding).
 fn diff_inner_width(pane_width: u32) -> u32 {
-    pane_width.saturating_sub(DIFF_H_PAD * 2)
+    layout::diff_inner_width(pane_width)
 }
 
 fn unified_wrap_width(pane_width: u32) -> usize {
-    let thread_col_width: u32 = 2;
-    let line_num_width: u32 = 12;
-    let content_width =
-        diff_inner_width(pane_width).saturating_sub(thread_col_width + line_num_width);
+    let content_width = diff_inner_width(pane_width)
+        .saturating_sub(layout::THREAD_COL_WIDTH + layout::UNIFIED_LINE_NUM_WIDTH);
     let max_content = content_width.saturating_sub(2);
     max_content as usize
 }
 
 fn context_wrap_width(pane_width: u32) -> usize {
-    let line_num_width: u32 = 6;
-    diff_inner_width(pane_width).saturating_sub(line_num_width) as usize
+    diff_inner_width(pane_width).saturating_sub(layout::CONTEXT_LINE_NUM_WIDTH) as usize
 }
 
 fn orphaned_context_wrap_width(pane_width: u32) -> usize {
-    let line_num_width: u32 = 6;
     diff_inner_width(pane_width)
-        .saturating_sub(ORPHANED_CONTEXT_LEFT_PAD)
-        .saturating_sub(line_num_width) as usize
+        .saturating_sub(layout::ORPHANED_CONTEXT_LEFT_PAD)
+        .saturating_sub(layout::CONTEXT_LINE_NUM_WIDTH) as usize
 }
 
 fn side_by_side_wrap_widths(pane_width: u32) -> (usize, usize) {
-    let thread_col_width: u32 = 2;
     let divider_width: u32 = 0;
-    let line_num_width: u32 = 6;
-    let available = diff_inner_width(pane_width).saturating_sub(thread_col_width + divider_width);
+    let available = diff_inner_width(pane_width)
+        .saturating_sub(layout::THREAD_COL_WIDTH + divider_width);
     let half_width = available / 2;
-    let left = half_width.saturating_sub(line_num_width) as usize;
-    let right = half_width.saturating_sub(line_num_width) as usize;
+    let left = half_width.saturating_sub(layout::SBS_LINE_NUM_WIDTH) as usize;
+    let right = half_width.saturating_sub(layout::SBS_LINE_NUM_WIDTH) as usize;
     (left, right)
 }
 
@@ -350,8 +337,8 @@ fn context_display_count(
     let total_lines = lines.len();
     for thread in threads.iter().filter(|t| t.file_path == file_path) {
         let thread_end = thread.selection_end.unwrap_or(thread.selection_start);
-        let start = (thread.selection_start - 5).max(1);
-        let end = (thread_end + 5).min(total_lines as i64);
+        let start = (thread.selection_start - layout::CONTEXT_LINES).max(1);
+        let end = (thread_end + layout::CONTEXT_LINES).min(total_lines as i64);
         ranges.push((start, end));
     }
 
@@ -413,8 +400,8 @@ fn orphaned_context_display_count(
         .iter()
         .map(|t| {
             let thread_end = t.selection_end.unwrap_or(t.selection_start);
-            let start = (t.selection_start - 5).max(1);
-            let end = (thread_end + 5).min(total_lines as i64);
+            let start = (t.selection_start - layout::CONTEXT_LINES).max(1);
+            let end = (thread_end + layout::CONTEXT_LINES).min(total_lines as i64);
             (start, end)
         })
         .collect();

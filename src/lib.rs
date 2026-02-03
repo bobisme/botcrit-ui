@@ -12,6 +12,7 @@ pub mod command;
 pub mod config;
 pub mod db;
 pub mod diff;
+pub mod layout;
 pub mod message;
 pub mod model;
 pub mod stream;

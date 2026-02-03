@@ -149,10 +149,12 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
                 let selected = is_cursor;
                 let row_bg = if selected && focused {
                     theme.selection_bg
+                } else if selected {
+                    theme.panel_bg.lerp(theme.selection_bg, 0.5)
                 } else {
                     theme.panel_bg
                 };
-                if selected && focused {
+                if selected {
                     buffer.fill_rect(inner.x, y, inner.width, 1, row_bg);
                 }
                 let collapse_indicator = if *collapsed { "▸ " } else { "▾ " };
@@ -218,10 +220,12 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
             } => {
                 let row_bg = if is_cursor && focused {
                     theme.selection_bg
+                } else if is_cursor {
+                    theme.panel_bg.lerp(theme.selection_bg, 0.5)
                 } else {
                     theme.panel_bg
                 };
-                if is_cursor && focused {
+                if is_cursor {
                     buffer.fill_rect(inner.x, y, inner.width, 1, row_bg);
                 }
 

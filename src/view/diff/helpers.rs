@@ -58,6 +58,31 @@ pub(super) fn draw_block_base_line(
     draw_block_bar(buffer, content_x, y, bg, theme);
 }
 
+/// Like draw_block_base_line but uses comment bar color (theme.background)
+pub(super) fn draw_comment_block_base_line(
+    buffer: &mut OptimizedBuffer,
+    area: Rect,
+    y: u32,
+    bg: Rgba,
+    theme: &Theme,
+) {
+    if BLOCK_SIDE_MARGIN > 0 {
+        buffer.fill_rect(area.x, y, BLOCK_SIDE_MARGIN, 1, theme.background);
+        buffer.fill_rect(
+            area.x + area.width.saturating_sub(BLOCK_SIDE_MARGIN),
+            y,
+            BLOCK_SIDE_MARGIN,
+            1,
+            theme.background,
+        );
+    }
+
+    let content_x = area.x + BLOCK_SIDE_MARGIN;
+    let content_width = area.width.saturating_sub(BLOCK_SIDE_MARGIN * 2);
+    buffer.fill_rect(content_x, y, content_width, 1, bg);
+    draw_comment_bar(buffer, content_x, y, bg, theme);
+}
+
 // --- Diff helpers (no bar, no side margins, no padding) ---
 
 pub(super) fn diff_content_x(area: Rect) -> u32 {
@@ -150,6 +175,23 @@ pub(super) fn draw_block_text_line(
     let content_width = block_inner_width(area) as usize;
     let display_text = truncate_chars(text, content_width);
     draw_block_base_line(buffer, area, y, bg, theme);
+    buffer.draw_text(content_x, y, display_text, style.with_bg(bg));
+}
+
+/// Like draw_block_text_line but uses comment bar color (theme.background)
+pub(super) fn draw_comment_block_text_line(
+    buffer: &mut OptimizedBuffer,
+    area: Rect,
+    y: u32,
+    bg: Rgba,
+    text: &str,
+    style: Style,
+    theme: &Theme,
+) {
+    let content_x = block_inner_x(area);
+    let content_width = block_inner_width(area) as usize;
+    let display_text = truncate_chars(text, content_width);
+    draw_comment_block_base_line(buffer, area, y, bg, theme);
     buffer.draw_text(content_x, y, display_text, style.with_bg(bg));
 }
 

@@ -5,6 +5,7 @@ use opentui::{OptimizedBuffer, Style};
 use super::components::{dim_rect, draw_help_bar, draw_text_truncated, truncate_path, HotkeyHint, Rect};
 use super::diff::{diff_change_counts, render_diff_stream, render_pinned_header_block};
 use crate::model::{Focus, LayoutMode, Model, SidebarItem};
+use crate::layout::{BLOCK_MARGIN, BLOCK_PADDING, DIFF_MARGIN};
 use crate::stream::{block_height, description_block_height};
 
 /// Render the review detail screen
@@ -295,6 +296,28 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         .and_then(|entry| entry.diff.as_ref())
         .map(diff_change_counts);
 
+    let description = model
+        .current_review
+        .as_ref()
+        .and_then(|r| r.description.as_deref());
+
+    // Pinned header at the top
+    let pinned_height = block_height(1) as u32;
+    let pinned_area = Rect::new(
+        content_area.x,
+        content_area.y,
+        content_area.width,
+        pinned_height.min(content_area.height),
+    );
+
+    // Stream area starts below the pinned header
+    let stream_area = Rect::new(
+        content_area.x,
+        content_area.y + pinned_height,
+        content_area.width,
+        content_area.height.saturating_sub(pinned_height),
+    );
+
     buffer.fill_rect(
         content_area.x,
         content_area.y,
@@ -303,13 +326,10 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         theme.background,
     );
 
-    let description = model
-        .current_review
-        .as_ref()
-        .and_then(|r| r.description.as_deref());
+    // Render stream content (description block + files) below pinned header
     render_diff_stream(
         buffer,
-        content_area,
+        stream_area,
         &files,
         &model.file_cache,
         &model.threads,
@@ -322,18 +342,15 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         description,
     );
 
-    // Determine what to show in pinned header:
-    // - When at top (within description area): show review title
-    // - When scrolled past description: show current file header
-    let desc_lines = description_block_height(description, content_area.width);
-    let pinned_height = block_height(1) as u32;
-    let pinned_area = Rect::new(
-        content_area.x,
-        content_area.y,
-        content_area.width,
-        pinned_height.min(content_area.height),
-    );
-    if model.diff_scroll >= desc_lines {
+    // Render pinned header:
+    // - When at top (description visible): show review title
+    // - When file header reaches pinned position: show current file header
+    // The file header text is at: desc_lines + BLOCK_MARGIN + BLOCK_PADDING
+    // (accounting for the file block's margin and padding before the header text)
+    let layout_width = stream_area.width.saturating_sub(DIFF_MARGIN * 2);
+    let desc_lines = description_block_height(description, layout_width);
+    let file_header_offset = desc_lines + BLOCK_MARGIN + BLOCK_PADDING;
+    if model.diff_scroll >= file_header_offset {
         // Scrolled past description - show file header
         render_pinned_header_block(buffer, pinned_area, file_title, theme, counts);
     } else if let Some(review) = &model.current_review {

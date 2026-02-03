@@ -41,7 +41,7 @@ use context::{
 };
 use helpers::{
     diff_content_width, diff_margin_area, draw_block_base_line, draw_block_text_line,
-    draw_file_header_line,
+    draw_comment_block_base_line, draw_comment_block_text_line, draw_file_header_line,
 };
 use side_by_side::{render_side_by_side_line_block, render_side_by_side_line_wrapped_row};
 use text_util::wrap_content;
@@ -306,6 +306,7 @@ pub fn render_pinned_header_block(
 }
 
 /// Render a description block at the top of the stream.
+/// Uses comment-style bar color (theme.background) to match comment blocks.
 fn render_description_block(
     cursor: &mut StreamCursor<'_>,
     area: Rect,
@@ -326,19 +327,19 @@ fn render_description_block(
     // Padding
     for _ in 0..BLOCK_PADDING {
         cursor.emit(|buf, y, theme| {
-            draw_block_base_line(buf, area, y, theme.panel_bg, theme);
+            draw_comment_block_base_line(buf, area, y, theme.panel_bg, theme);
         });
     }
     // Content lines
     for line in &lines {
         cursor.emit(|buf, y, theme| {
-            draw_block_text_line(buf, area, y, theme.panel_bg, line, theme.style_foreground(), theme);
+            draw_comment_block_text_line(buf, area, y, theme.panel_bg, line, theme.style_foreground(), theme);
         });
     }
     // Padding
     for _ in 0..BLOCK_PADDING {
         cursor.emit(|buf, y, theme| {
-            draw_block_base_line(buf, area, y, theme.panel_bg, theme);
+            draw_comment_block_base_line(buf, area, y, theme.panel_bg, theme);
         });
     }
     // Margin after block

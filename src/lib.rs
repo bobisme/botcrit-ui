@@ -7,6 +7,7 @@
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_sign_loss)]
 
+pub mod cli_client;
 pub mod command;
 pub mod config;
 pub mod db;
@@ -22,7 +23,8 @@ pub mod vcs;
 pub mod view;
 
 // Re-exports
-pub use db::Db;
+pub use cli_client::CliClient;
+pub use db::CritClient;
 pub use message::Message;
 pub use model::{Focus, LayoutMode, Model, Screen};
 pub use syntax::{HighlightSpan, Highlighter};

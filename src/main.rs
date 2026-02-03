@@ -21,37 +21,21 @@ use botcrit_ui::model::{DiffViewMode, EditorRequest};
 use botcrit_ui::stream::{compute_stream_layout, file_scroll_offset, SIDE_BY_SIDE_MIN_WIDTH};
 use botcrit_ui::theme::{load_built_in_theme, load_theme_from_path};
 use botcrit_ui::{
-    update, vcs, view, Db, Focus, Highlighter, LayoutMode, Message, Model, Screen, Theme,
+    update, vcs, view, CliClient, CritClient, Focus, Highlighter, LayoutMode, Message, Model,
+    Screen, Theme,
 };
 
 fn main() -> Result<()> {
     let args = parse_args()?;
-    let db_path = args.db_path;
-    let repo_path_override = args.repo_path.clone();
 
-    // Determine repo root from database path
-    // Database is at <repo>/.crit/index.db, so repo is grandparent
-    // Canonicalize first to handle relative paths like ".crit/index.db"
-    let repo_path = repo_path_override.or_else(|| {
-        db_path.as_ref().and_then(|p| {
-            p.canonicalize().ok().and_then(|canonical| {
-                canonical
-                    .parent() // .crit/
-                    .and_then(|crit| crit.parent()) // repo root
-                    .map(|p| p.to_path_buf())
-            })
-        })
-    });
+    // Build client: --path or auto-detect .crit/ → CliClient, else demo
+    let client: Option<Box<dyn CritClient>> = args
+        .repo_path
+        .as_ref()
+        .map(|repo| -> Box<dyn CritClient> { Box::new(CliClient::new(repo)) });
 
-    // Open database if provided
-    let db = if let Some(path) = &db_path {
-        Some(
-            Db::open(path)
-                .with_context(|| format!("Failed to open database: {}", path.display()))?,
-        )
-    } else {
-        None
-    };
+    // Repo root for vcs diff loading
+    let repo_path = args.repo_path.clone();
 
     // Load theme (optional)
     let mut config = load_ui_config()?.unwrap_or_default();
@@ -115,8 +99,8 @@ fn main() -> Result<()> {
     model.pending_thread = args.thread;
 
     // Load initial data
-    if let Some(db) = &db {
-        model.reviews = db.list_reviews(None).unwrap_or_default();
+    if let Some(c) = &client {
+        model.reviews = c.list_reviews(None).unwrap_or_default();
     } else {
         // Demo data for testing without a database
         load_demo_data(&mut model);
@@ -204,8 +188,8 @@ fn main() -> Result<()> {
             break;
         }
 
-        if let Some(db) = &db {
-            handle_data_loading(&mut model, db, repo_path.as_deref());
+        if let Some(c) = &client {
+            handle_data_loading(&mut model, c.as_ref(), repo_path.as_deref());
         } else {
             handle_demo_data_loading(&mut model);
         }
@@ -235,7 +219,7 @@ fn main() -> Result<()> {
                                     &mut raw_guard,
                                     &mut wrap_guard,
                                     &mut cursor_guard,
-                                    &db,
+                                    &client,
                                     repo_path.as_deref(),
                                     options,
                                 )?;
@@ -268,7 +252,7 @@ fn main() -> Result<()> {
                                     &mut raw_guard,
                                     &mut wrap_guard,
                                     &mut cursor_guard,
-                                    &db,
+                                    &client,
                                     repo_path.as_deref(),
                                     options,
                                 )?;
@@ -297,7 +281,7 @@ fn main() -> Result<()> {
                     &mut raw_guard,
                     &mut wrap_guard,
                     &mut cursor_guard,
-                    &db,
+                    &client,
                     repo_path.as_deref(),
                     options,
                 )?;
@@ -313,7 +297,7 @@ fn main() -> Result<()> {
                 &mut raw_guard,
                 &mut wrap_guard,
                 &mut cursor_guard,
-                &db,
+                &client,
                 repo_path.as_deref(),
                 options,
             )?;
@@ -331,7 +315,7 @@ fn process_event(
     raw_guard: &mut Option<opentui::RawModeGuard>,
     wrap_guard: &mut Option<AutoWrapGuard>,
     cursor_guard: &mut Option<CursorGuard>,
-    _db: &Option<Db>,
+    _client: &Option<Box<dyn CritClient>>,
     repo_path: Option<&Path>,
     options: RendererOptions,
 ) -> Result<()> {
@@ -418,7 +402,6 @@ impl Drop for CursorGuard {
 }
 
 struct CliArgs {
-    db_path: Option<PathBuf>,
     theme: Option<String>,
     repo_path: Option<PathBuf>,
     review: Option<String>,
@@ -428,7 +411,6 @@ struct CliArgs {
 
 fn parse_args() -> Result<CliArgs> {
     let args: Vec<String> = std::env::args().collect();
-    let mut db_path: Option<PathBuf> = None;
     let mut theme: Option<String> = None;
     let mut repo_path: Option<PathBuf> = None;
     let mut review: Option<String> = None;
@@ -439,12 +421,11 @@ fn parse_args() -> Result<CliArgs> {
     while i < args.len() {
         match args[i].as_str() {
             "--help" | "-h" => {
-                println!("Usage: crit-ui [options] [path-to-crit-db]");
+                println!("Usage: crit-ui [options]");
                 println!();
                 println!("Options:");
                 println!("  --theme <name|path>   Load theme by name or JSON path");
-                println!("  --db <path>      Path to .crit/index.db");
-                println!("  --path <path>    Path to repo root (uses <path>/.crit/index.db)");
+                println!("  --path <path>    Path to repo root (uses crit CLI)");
                 println!("  --review <id>    Open directly to a review (skip review list)");
                 println!("  --file <path>    Navigate to a specific file (requires --review)");
                 println!("  --thread <id>    Expand a specific thread (requires --review)");
@@ -452,9 +433,7 @@ fn parse_args() -> Result<CliArgs> {
                 println!("Environment:");
                 println!("  BOTCRIT_UI_THEME  Theme name or JSON path");
                 println!();
-                println!(
-                    "If no DB path is provided, looks for .crit/index.db in current directory."
-                );
+                println!("If no path is provided, auto-detects .crit/ in the current directory.");
                 println!("If that doesn't exist, runs in demo mode with sample data.");
                 std::process::exit(0);
             }
@@ -464,13 +443,6 @@ fn parse_args() -> Result<CliArgs> {
                     anyhow::bail!("--theme requires a path");
                 }
                 theme = Some(args[i].clone());
-            }
-            "--db" => {
-                i += 1;
-                if i >= args.len() {
-                    anyhow::bail!("--db requires a path");
-                }
-                db_path = Some(PathBuf::from(&args[i]));
             }
             "--path" => {
                 i += 1;
@@ -504,34 +476,21 @@ fn parse_args() -> Result<CliArgs> {
                 anyhow::bail!("Unknown option: {arg}");
             }
             arg => {
-                if db_path.is_none() {
-                    db_path = Some(PathBuf::from(arg));
-                } else {
-                    anyhow::bail!("Unexpected argument: {arg}");
-                }
+                anyhow::bail!("Unexpected argument: {arg}");
             }
         }
         i += 1;
     }
 
-    if repo_path.is_some() && db_path.is_some() {
-        anyhow::bail!("Use either --path or --db (not both)");
-    }
-
-    if let Some(path) = &repo_path {
-        db_path = Some(path.join(".crit/index.db"));
-    }
-
-    // Try default location if no explicit DB path
-    if db_path.is_none() {
-        let default_path = PathBuf::from(".crit/index.db");
-        if default_path.exists() {
-            db_path = Some(default_path);
+    // Auto-detect: .crit/ exists in cwd → use CliClient with cwd
+    if repo_path.is_none() {
+        let crit_dir = PathBuf::from(".crit");
+        if crit_dir.is_dir() {
+            repo_path = Some(PathBuf::from("."));
         }
     }
 
     Ok(CliArgs {
-        db_path,
         theme,
         repo_path,
         review,
@@ -915,29 +874,16 @@ fn map_command_palette_key(key: KeyCode) -> Message {
     }
 }
 
-fn handle_data_loading(model: &mut Model, db: &Db, repo_path: Option<&std::path::Path>) {
+fn handle_data_loading(model: &mut Model, client: &dyn CritClient, repo_path: Option<&std::path::Path>) {
     // Load review details when entering detail screen
     if model.screen == Screen::ReviewDetail && model.current_review.is_none() {
         let reviews = model.filtered_reviews();
         if let Some(review) = reviews.get(model.list_index) {
             let review_id = review.review_id.clone();
-            if let Ok(Some(detail)) = db.get_review(&review_id) {
-                model.current_review = Some(detail);
-            }
-            if let Ok(threads) = db.list_threads(&review_id, None, None) {
-                model.threads = threads;
-            }
-            // Bulk-load comments for all threads
-            for thread in &model.threads {
-                if !model.all_comments.contains_key(&thread.thread_id) {
-                    if let Ok(comments) = db.list_comments(&thread.thread_id) {
-                        if !comments.is_empty() {
-                            model
-                                .all_comments
-                                .insert(thread.thread_id.clone(), comments);
-                        }
-                    }
-                }
+            if let Ok(Some(data)) = client.load_review_data(&review_id) {
+                model.current_review = Some(data.detail);
+                model.threads = data.threads;
+                model.all_comments = data.comments;
             }
         }
     }
@@ -1082,6 +1028,11 @@ fn nav_stream_layout(model: &Model) -> botcrit_ui::stream::StreamLayout {
 fn handle_demo_data_loading(model: &mut Model) {
     use botcrit_ui::db::ReviewDetail;
 
+    // In demo mode, repopulate threads/comments after SelectReview clears them
+    if model.screen == Screen::ReviewDetail && model.threads.is_empty() {
+        populate_demo_threads(model);
+    }
+
     // In demo mode, populate current_review when entering detail view
     if model.screen == Screen::ReviewDetail && model.current_review.is_none() {
         let reviews = model.filtered_reviews();
@@ -1137,7 +1088,7 @@ fn handle_demo_data_loading(model: &mut Model) {
 }
 
 fn load_demo_data(model: &mut Model) {
-    use botcrit_ui::db::{ReviewSummary, ThreadSummary};
+    use botcrit_ui::db::ReviewSummary;
 
     model.reviews = vec![
         ReviewSummary {
@@ -1182,7 +1133,12 @@ fn load_demo_data(model: &mut Model) {
         },
     ];
 
-    // Demo threads for when a review is selected
+    populate_demo_threads(model);
+}
+
+fn populate_demo_threads(model: &mut Model) {
+    use botcrit_ui::db::{Comment, ThreadSummary};
+
     model.threads = vec![
         ThreadSummary {
             thread_id: "th-001".to_string(),
@@ -1209,6 +1165,66 @@ fn load_demo_data(model: &mut Model) {
             comment_count: 1,
         },
     ];
+
+    model.all_comments.insert(
+        "th-001".to_string(),
+        vec![
+            Comment {
+                comment_id: "cm-001a".to_string(),
+                author: "bob".to_string(),
+                body: "The hardcoded 24h expiry should come from config. \
+                       What if we need shorter tokens for API clients?"
+                    .to_string(),
+                created_at: "2025-01-15T10:30:00Z".to_string(),
+            },
+            Comment {
+                comment_id: "cm-001b".to_string(),
+                author: "alice".to_string(),
+                body: "Good catch — updated to read from config.token_expiry_hours. \
+                       Defaults to 24h if unset."
+                    .to_string(),
+                created_at: "2025-01-15T11:05:00Z".to_string(),
+            },
+            Comment {
+                comment_id: "cm-001c".to_string(),
+                author: "bob".to_string(),
+                body: "Looks good, thanks!".to_string(),
+                created_at: "2025-01-15T11:20:00Z".to_string(),
+            },
+        ],
+    );
+
+    model.all_comments.insert(
+        "th-002".to_string(),
+        vec![
+            Comment {
+                comment_id: "cm-002a".to_string(),
+                author: "carol".to_string(),
+                body: "verify_password now returns Result instead of bool — \
+                       nice, this removes the silent failure path."
+                    .to_string(),
+                created_at: "2025-01-15T14:00:00Z".to_string(),
+            },
+            Comment {
+                comment_id: "cm-002b".to_string(),
+                author: "alice".to_string(),
+                body: "Exactly. The old unwrap_or(false) was masking bcrypt errors."
+                    .to_string(),
+                created_at: "2025-01-15T14:30:00Z".to_string(),
+            },
+        ],
+    );
+
+    model.all_comments.insert(
+        "th-003".to_string(),
+        vec![Comment {
+            comment_id: "cm-003a".to_string(),
+            author: "bob".to_string(),
+            body: "Should we also add a shutdown hook for graceful cleanup?"
+                .to_string(),
+            created_at: "2025-01-16T09:00:00Z".to_string(),
+        }],
+    );
 }
 
 fn ensure_default_expanded_thread(model: &mut Model) {

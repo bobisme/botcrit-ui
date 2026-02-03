@@ -20,6 +20,7 @@ Use Botty for rendering verification. The agent ID is always a **positional argu
 
 ```bash
 botty spawn --name <id> -- <command>   # spawn (--name sets the ID)
+botty spawn --name <id> --no-resize -- <command>  # spawn, immune to view auto-resize
 botty snapshot <id>                    # plain text snapshot (no ANSI)
 botty snapshot --raw <id>              # snapshot with ANSI color codes
 botty send <id> "<keys>"              # send printable keys
@@ -34,6 +35,7 @@ botty list                             # show all running agents
   ```bash
   botty spawn --name crit-ui -- /home/bob/src/botcrit-ui/target/release/crit-ui
   ```
+- **Use `--no-resize` for snapshot tests** — `botty view` auto-resizes terminals to match the viewer's dimensions. Use `--no-resize` on spawn to keep stable dimensions for programmatic snapshot comparisons.
 - **Wait after spawn** before snapshot (`sleep 2-3`) to let the TUI render its first frame.
 - **Wait after send** before snapshot (`sleep 0.3-0.5`) to let the app process input and redraw.
 - **Prefer plain `botty snapshot <id>`** (without `--raw`) for analyzing layout and content. Use `--raw` only when verifying colors/styling.
@@ -67,20 +69,20 @@ crit-ui --path /home/bob/src/botty --review cr-qmr8 --thread th-lkxz
 
 ```bash
 # Identity (once per session)
-export BOTBUS_AGENT=$(botbus generate-name)
+export BOTBUS_AGENT=$(bus generate-name)
 
 # Project status
-botbus status
-botbus history
-botbus agents
+bus status
+bus history
+bus agents
 
 # Communicate (chatty + labels)
-botbus send myproj "Working on bd-123" -L mesh -L task-claim
+bus send myproj "Working on bd-123" -L mesh -L task-claim
 
 # File and bead claims (auto-announce in #general)
-botbus claim "bead://myproj/bd-123" -m "bd-123"
-botbus claim "src/path/**" -m "bd-123"
-botbus release --all
+bus claim "bead://myproj/bd-123" -m "bd-123"
+bus claim "src/path/**" -m "bd-123"
+bus release --all
 ```
 
 Conventions:
@@ -93,16 +95,16 @@ Conventions:
 
 ```bash
 # Check if role is online
-botbus agents
+bus agents
 
 # Claim agent lease
-botbus claim "agent://reviewer-security" -m "bd-123"
+bus claim "agent://reviewer-security" -m "bd-123"
 
 # Spawn (example)
 botty spawn --name reviewer-security -- claude -p
 
 # Announce in project channel
-botbus send myproj "Spawned reviewer-security" -L mesh -L spawn-ack
+bus send myproj "Spawned reviewer-security" -L mesh -L spawn-ack
 ```
 
 ## MAW Workspaces (jj)
@@ -170,11 +172,11 @@ You are a peer agent working on [TASK] (bead: [BEAD]).
 
 Before starting:
 1. export BOTBUS_AGENT=[AGENT_NAME]
-2. botbus claim "bead://[PROJECT]/[BEAD]" -m "[BEAD]"
-3. botbus claim "src/[path]/**" -m "[BEAD]"
+2. bus claim "bead://[PROJECT]/[BEAD]" -m "[BEAD]"
+3. bus claim "src/[path]/**" -m "[BEAD]"
 4. maw ws create [WORKSPACE]
 5. cd .workspaces/[WORKSPACE]
-6. botbus send [PROJECT] "Working on [BEAD]" -L mesh -L task-claim
+6. bus send [PROJECT] "Working on [BEAD]" -L mesh -L task-claim
 
 During work:
 - Work only in your workspace
@@ -184,8 +186,8 @@ When done:
 1. jj describe -m "[commit message]"
 2. crit reviews create/request as needed
 3. br update [BEAD] --status=closed
-4. botbus send [PROJECT] "Done: [BEAD]" -L mesh -L task-update
-5. botbus release --all
+4. bus send [PROJECT] "Done: [BEAD]" -L mesh -L task-update
+5. bus release --all
 ```
 
 ## Reviewer Agent Template
@@ -348,28 +350,28 @@ crit threads resolve <thread_id>
 
 ## BotBus Agent Coordination
 
-This project uses [BotBus](https://github.com/anomalyco/botbus) for multi-agent coordination. Before starting work, check for other agents and active file claims.
+This project uses [BotBus](https://github.com/anomalyco/botbus) for multi-agent coordination. The CLI binary is `bus`. Before starting work, check for other agents and active file claims.
 
 ### Quick Start
 
 ```bash
 # Register yourself (once per session)
-botbus register --name YourAgentName --description "Brief description"
+bus register --name YourAgentName --description "Brief description"
 
 # Check what's happening
-botbus status              # Overview of project state
-botbus history             # Recent messages
-botbus agents              # Who's registered
+bus status              # Overview of project state
+bus history             # Recent messages
+bus agents              # Who's registered
 
 # Communicate
-botbus send general "Starting work on X"
-botbus send general "Done with X, ready for review"
-botbus send @OtherAgent "Question about Y"
+bus send general "Starting work on X"
+bus send general "Done with X, ready for review"
+bus send @OtherAgent "Question about Y"
 
 # Coordinate file access
-botbus claim "src/api/**" -m "Working on API routes"
-botbus check-claim src/api/routes.rs   # Before editing
-botbus release --all                    # When done
+bus claim "src/api/**" -m "Working on API routes"
+bus check-claim src/api/routes.rs   # Before editing
+bus release --all                    # When done
 ```
 
 ### Best Practices

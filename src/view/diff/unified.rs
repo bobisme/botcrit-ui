@@ -113,10 +113,10 @@ pub(super) fn render_unified_diff_line_wrapped_row(
     if row == 0 {
         let old_ln = line
             .old_line
-            .map_or("     ".to_string(), |n| format!("{:>5}", n));
+            .map_or_else(|| "     ".to_string(), |n| format!("{n:>5}"));
         let new_ln = line
             .new_line
-            .map_or("     ".to_string(), |n| format!("{:>5}", n));
+            .map_or_else(|| "     ".to_string(), |n| format!("{n:>5}"));
 
         buffer.draw_text(
             line_num_x,
@@ -199,10 +199,10 @@ pub(super) fn render_diff_line(
 
     let old_ln = line
         .old_line
-        .map_or("     ".to_string(), |n| format!("{:>5}", n));
+        .map_or_else(|| "     ".to_string(), |n| format!("{n:>5}"));
     let new_ln = line
         .new_line
-        .map_or("     ".to_string(), |n| format!("{:>5}", n));
+        .map_or_else(|| "     ".to_string(), |n| format!("{n:>5}"));
 
     buffer.draw_text(x, y, &old_ln, dt.style_line_number(line_num_bg));
     buffer.draw_text(x + 5, y, " ", dt.style_line_number(line_num_bg));

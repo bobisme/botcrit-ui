@@ -57,39 +57,39 @@ pub(super) fn calculate_context_ranges(
         }
     }
 
-    if !exclude_ranges.is_empty() {
-        let mut clipped: Vec<LineRange> = Vec::new();
-        for range in merged {
-            let mut remaining = vec![range];
-            for &(ex_start, ex_end) in exclude_ranges {
-                let mut next = Vec::new();
-                for r in remaining {
-                    if r.end < ex_start || r.start > ex_end {
-                        next.push(r);
-                    } else {
-                        if r.start < ex_start {
-                            next.push(LineRange {
-                                start: r.start,
-                                end: ex_start - 1,
-                            });
-                        }
-                        if r.end > ex_end {
-                            next.push(LineRange {
-                                start: ex_end + 1,
-                                end: r.end,
-                            });
-                        }
+    if exclude_ranges.is_empty() {
+        return merged;
+    }
+
+    let mut clipped: Vec<LineRange> = Vec::new();
+    for range in merged {
+        let mut remaining = vec![range];
+        for &(ex_start, ex_end) in exclude_ranges {
+            let mut next = Vec::new();
+            for r in remaining {
+                if r.end < ex_start || r.start > ex_end {
+                    next.push(r);
+                } else {
+                    if r.start < ex_start {
+                        next.push(LineRange {
+                            start: r.start,
+                            end: ex_start - 1,
+                        });
+                    }
+                    if r.end > ex_end {
+                        next.push(LineRange {
+                            start: ex_end + 1,
+                            end: r.end,
+                        });
                     }
                 }
-                remaining = next;
             }
-            clipped.extend(remaining);
+            remaining = next;
         }
-        clipped.sort_by_key(|r| r.start);
-        clipped
-    } else {
-        merged
+        clipped.extend(remaining);
     }
+    clipped.sort_by_key(|r| r.start);
+    clipped
 }
 
 // --- Context item building ---

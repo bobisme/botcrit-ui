@@ -564,18 +564,10 @@ pub fn render_diff_stream(
                                 let end =
                                     thread.selection_end.unwrap_or(thread.selection_start) as u32;
                                 for (si, sl) in sbs_lines.iter().enumerate() {
-                                    let has_start = sl
-                                        .right
-                                        .as_ref()
-                                        .map_or(false, |l| l.line_num == start);
-                                    if has_start {
+                                    if sl.right.as_ref().is_some_and(|l| l.line_num == start) {
                                         sbs_anchor_map.insert(si, anchor);
                                     }
-                                    let has_end = sl
-                                        .right
-                                        .as_ref()
-                                        .map_or(false, |l| l.line_num == end);
-                                    if has_end {
+                                    if sl.right.as_ref().is_some_and(|l| l.line_num == end) {
                                         sbs_comment_map.insert(si, anchor);
                                     }
                                 }
@@ -644,9 +636,9 @@ pub fn render_diff_stream(
                                 });
 
                                 let left_rows =
-                                    left_wrapped.as_ref().map(|lines| lines.len()).unwrap_or(1);
+                                    left_wrapped.as_ref().map(Vec::len).unwrap_or(1);
                                 let right_rows =
-                                    right_wrapped.as_ref().map(|lines| lines.len()).unwrap_or(1);
+                                    right_wrapped.as_ref().map(Vec::len).unwrap_or(1);
                                 let rows = left_rows.max(right_rows);
 
                                 cursor.emit_rows(rows, |buf, y, theme, row| {

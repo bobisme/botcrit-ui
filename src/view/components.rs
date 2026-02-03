@@ -252,7 +252,7 @@ pub fn draw_help_bar(
     let sep_len = separator.len();
     let total_width: usize = hints
         .iter()
-        .map(|h| h.width())
+        .map(HotkeyHint::width)
         .sum::<usize>()
         + hints.len().saturating_sub(1) * sep_len;
 

@@ -41,8 +41,7 @@ pub fn map_event_to_message(model: &mut Model, event: Event) -> Message {
             Screen::ReviewList => map_review_list_mouse(model, mouse),
             Screen::ReviewDetail => map_review_detail_mouse(model, mouse),
         },
-        Event::Paste(_) => Message::Noop,
-        Event::FocusGained | Event::FocusLost => Message::Noop,
+        Event::Paste(_) | Event::FocusGained | Event::FocusLost => Message::Noop,
     }
 }
 
@@ -129,15 +128,15 @@ fn map_review_detail_mouse(model: &mut Model, mouse: opentui::MouseEvent) -> Mes
 
     let sidebar_rect = match model.layout_mode {
         LayoutMode::Full | LayoutMode::Compact | LayoutMode::Overlay => {
-            if !model.sidebar_visible {
-                None
-            } else {
+            if model.sidebar_visible {
                 Some((
                     0u32,
                     0u32,
                     model.layout_mode.sidebar_width() as u32,
                     model.height as u32,
                 ))
+            } else {
+                None
             }
         }
         LayoutMode::Single => {
@@ -243,35 +242,33 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
         Focus::FileSidebar => match key {
             KeyCode::Char('q') => Message::Quit,
             KeyCode::Esc | KeyCode::Char('h') => Message::Back,
-            KeyCode::Tab => Message::ToggleFocus,
+            KeyCode::Tab | KeyCode::Char('l') => Message::ToggleFocus,
             KeyCode::Char('j') | KeyCode::Down => Message::NextFile,
             KeyCode::Char('k') | KeyCode::Up => Message::PrevFile,
             KeyCode::Char('g') | KeyCode::Home => Message::SidebarTop,
             KeyCode::Char('G') | KeyCode::End => Message::SidebarBottom,
             KeyCode::Enter => Message::SidebarSelect,
-            KeyCode::Char('l') => Message::ToggleFocus, // Move to diff pane
             KeyCode::Char('s') => Message::ToggleSidebar,
             _ => Message::Noop,
         },
         Focus::DiffPane => match key {
             KeyCode::Char('q') => Message::Quit,
             KeyCode::Esc => Message::Back,
-            KeyCode::Tab => Message::ToggleFocus,
+            KeyCode::Tab | KeyCode::Char('h') => Message::ToggleFocus,
             KeyCode::Char('j') | KeyCode::Down => Message::ScrollDown,
             KeyCode::Char('k') | KeyCode::Up => Message::ScrollUp,
             KeyCode::Char('g') | KeyCode::Home => Message::ScrollTop,
             KeyCode::Char('G') | KeyCode::End => Message::ScrollBottom,
             KeyCode::Char('n') => Message::NextThread,
             KeyCode::Char('p' | 'N') => Message::PrevThread,
-            KeyCode::Char('v') => Message::ToggleDiffView, // Toggle unified/side-by-side
+            KeyCode::Char('v') => Message::ToggleDiffView,
             KeyCode::Char('w') => Message::ToggleDiffWrap,
             KeyCode::Char('o') => Message::OpenFileInEditor,
             KeyCode::Char('c') => Message::EnterCommentMode,
             KeyCode::Char('u') => Message::ScrollHalfPageUp,
             KeyCode::Char('d') => Message::ScrollHalfPageDown,
-            KeyCode::Char('b') => Message::PageUp,
-            KeyCode::Char('f') => Message::PageDown,
-            KeyCode::Char('h') => Message::ToggleFocus,
+            KeyCode::Char('b') | KeyCode::PageUp => Message::PageUp,
+            KeyCode::Char('f') | KeyCode::PageDown => Message::PageDown,
             KeyCode::Char('s') => Message::ToggleSidebar,
             KeyCode::Enter => {
                 // Expand the current thread (if one is selected via n/p)
@@ -282,8 +279,6 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
                     Message::NextThread
                 }
             }
-            KeyCode::PageUp => Message::PageUp,
-            KeyCode::PageDown => Message::PageDown,
             KeyCode::Char('[') => Message::PrevFile,
             KeyCode::Char(']') => Message::NextFile,
             _ => Message::Noop,

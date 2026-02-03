@@ -201,10 +201,6 @@ fn side_by_side_line_count(diff: &ParsedDiff) -> usize {
         let lines = &hunk.lines;
         while i < lines.len() {
             match lines[i].kind {
-                crate::diff::DiffLineKind::Context => {
-                    count += 1;
-                    i += 1;
-                }
                 crate::diff::DiffLineKind::Removed => {
                     let mut removals = 0;
                     while i < lines.len() && lines[i].kind == crate::diff::DiffLineKind::Removed {
@@ -218,7 +214,7 @@ fn side_by_side_line_count(diff: &ParsedDiff) -> usize {
                     }
                     count += removals.max(additions);
                 }
-                crate::diff::DiffLineKind::Added => {
+                crate::diff::DiffLineKind::Context | crate::diff::DiffLineKind::Added => {
                     count += 1;
                     i += 1;
                 }

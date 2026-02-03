@@ -4,6 +4,12 @@
 //!
 //! If no path is provided, looks for .crit/index.db in current directory.
 
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::unnecessary_wraps)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::needless_pass_by_value)]
+#![allow(clippy::literal_string_with_formatting_args)]
+
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -84,7 +90,7 @@ fn main() -> Result<()> {
     let (width, height) = terminal_size().unwrap_or((80, 24));
 
     // Create model
-    let mut model = Model::new(width as u16, height as u16, config);
+    let mut model = Model::new(width, height, config);
     model.theme = theme;
     if let Some(theme_name) = syntax_theme {
         model.highlighter = Highlighter::with_theme(&theme_name);
@@ -165,8 +171,8 @@ fn main() -> Result<()> {
     loop {
         // Detect external terminal resize even if no input events are received
         if let Ok((term_width, term_height)) = terminal_size() {
-            let term_width_u16 = term_width as u16;
-            let term_height_u16 = term_height as u16;
+            let term_width_u16 = term_width;
+            let term_height_u16 = term_height;
             if term_width_u16 != model.width || term_height_u16 != model.height {
                 model.resize(term_width_u16, term_height_u16);
                 model.needs_redraw = true;
@@ -225,7 +231,7 @@ fn main() -> Result<()> {
                                     options,
                                 )?;
                             }
-                            Err(ParseError::Empty) | Err(ParseError::Incomplete) => {
+                            Err(ParseError::Empty | ParseError::Incomplete) => {
                                 // Check if stuck on a bare escape again
                                 if offset < combined_len
                                     && combined[offset] == 0x1b
@@ -258,7 +264,7 @@ fn main() -> Result<()> {
                                     options,
                                 )?;
                             }
-                            Err(ParseError::Empty) | Err(ParseError::Incomplete) => {
+                            Err(ParseError::Empty | ParseError::Incomplete) => {
                                 // If the remaining buffer is just 0x1b, mark pending
                                 if offset < n && buf[offset] == 0x1b && offset + 1 == n {
                                     pending_esc = true;
@@ -356,7 +362,7 @@ fn process_event(
         renderer.set_background(model.theme.background);
         *wrap_guard = Some(AutoWrapGuard::new().context("Failed to disable line wrap")?);
         *cursor_guard = Some(CursorGuard::new().context("Failed to hide cursor")?);
-        model.resize(width as u16, height as u16);
+        model.resize(width, height);
         model.needs_redraw = true;
         renderer.invalidate();
     }
@@ -551,7 +557,7 @@ fn open_file_in_editor(repo_path: Option<&Path>, request: EditorRequest) -> Resu
 
     let mut cmd = Command::new("nvim");
     if let Some(line) = request.line {
-        cmd.arg(format!("+{}", line));
+        cmd.arg(format!("+{line}"));
     }
     cmd.arg(file_path);
     let _ = cmd.status();
@@ -682,14 +688,14 @@ fn apply_pending_navigation(model: &mut Model) {
     }
 }
 
-/// Compute stream layout for navigation purposes (mirrors update.rs::stream_layout).
+/// Compute stream layout for navigation purposes (mirrors `update.rs::stream_layout`).
 fn nav_stream_layout(model: &Model) -> botcrit_ui::stream::StreamLayout {
     const DIFF_MARGIN: u32 = 2;
-    let total_width = model.width as u32;
+    let total_width = u32::from(model.width);
     let pane_width = match model.layout_mode {
         LayoutMode::Full | LayoutMode::Compact | LayoutMode::Overlay => {
             if model.sidebar_visible {
-                total_width.saturating_sub(model.layout_mode.sidebar_width() as u32)
+                total_width.saturating_sub(u32::from(model.layout_mode.sidebar_width()))
             } else {
                 total_width
             }

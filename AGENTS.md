@@ -67,6 +67,27 @@ crit-ui --path /home/bob/src/botty --review cr-qmr8 --thread th-lkxz
 
 ## Architecture Notes
 
+### Module Structure
+
+```
+src/
+├── input.rs          # Event → Message mapping (keyboard, mouse, resize)
+├── layout.rs         # Named constants: THREAD_COL_WIDTH, SBS_LINE_NUM_WIDTH, etc.
+├── stream.rs         # Diff stream layout computation
+├── theme/mod.rs      # Theme + style token methods (style_muted(), style_line_number())
+└── view/
+    ├── components.rs # Shared: Rect, dim_rect, draw_help_bar, HotkeyHint
+    └── diff/
+        ├── mod.rs        # render_diff_stream, shared types (StreamCursor, DisplayItem)
+        ├── analysis.rs   # map_threads_to_diff, diff_change_counts
+        ├── unified.rs    # Unified diff line rendering
+        ├── side_by_side.rs # SBS diff line rendering
+        ├── comments.rs   # Comment block rendering
+        ├── context.rs    # Orphaned context sections
+        ├── helpers.rs    # Draw primitives (bars, base lines)
+        └── text_util.rs  # Text wrapping, truncation, highlighting
+```
+
 ### Data Access
 
 Data comes from the `crit` CLI via `CliClient` (`src/cli_client.rs`), which shells out to `crit --format json --path <repo>`. The `CritClient` trait in `src/db.rs` abstracts the backend. There is no direct SQLite access — rusqlite was removed.

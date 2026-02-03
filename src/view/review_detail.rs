@@ -21,18 +21,7 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
 
     // Layout based on mode
     match model.layout_mode {
-        LayoutMode::Full | LayoutMode::Compact => {
-            if model.sidebar_visible {
-                let sidebar_width = model.layout_mode.sidebar_width() as u32;
-                let (sidebar_area, diff_area) = inner.split_left(sidebar_width);
-
-                draw_file_sidebar(model, buffer, sidebar_area);
-                draw_diff_pane(model, buffer, diff_area);
-            } else {
-                draw_diff_pane(model, buffer, inner);
-            }
-        }
-        LayoutMode::Overlay => {
+        LayoutMode::Full | LayoutMode::Compact | LayoutMode::Overlay => {
             if model.sidebar_visible {
                 let sidebar_width = model.layout_mode.sidebar_width() as u32;
                 let (sidebar_area, diff_area) = inner.split_left(sidebar_width);

@@ -349,11 +349,9 @@ pub fn update(model: &mut Model, msg: Message) {
         Message::ToggleFocus => {
             model.focus = match model.focus {
                 Focus::ReviewList => Focus::ReviewList, // No toggle on list screen
-                Focus::FileSidebar => Focus::DiffPane,
                 Focus::DiffPane => Focus::FileSidebar,
-                Focus::ThreadExpanded => Focus::DiffPane,
                 Focus::CommandPalette => model.previous_focus.take().unwrap_or(Focus::DiffPane),
-                Focus::Commenting => Focus::DiffPane,
+                Focus::FileSidebar | Focus::ThreadExpanded | Focus::Commenting => Focus::DiffPane,
             };
         }
 
@@ -520,10 +518,6 @@ pub fn update(model: &mut Model, msg: Message) {
             update_active_file_from_scroll(model);
         }
 
-        Message::Tick => {
-            // Could refresh data, animate, etc.
-        }
-
         Message::Quit => {
             model.should_quit = true;
         }
@@ -585,7 +579,7 @@ pub fn update(model: &mut Model, msg: Message) {
             }
         }
 
-        Message::Noop => {}
+        Message::Tick | Message::Noop => {}
     }
 }
 
@@ -647,7 +641,7 @@ fn sync_sidebar_from_active(model: &mut Model) {
     if let Some(thread_id) = active_thread_from_scroll(model) {
         target = items.iter().position(|item| match item {
             crate::model::SidebarItem::Thread { thread_id: id, .. } => id == &thread_id,
-            _ => false,
+            crate::model::SidebarItem::File { .. } => false,
         });
     }
 
@@ -655,7 +649,7 @@ fn sync_sidebar_from_active(model: &mut Model) {
         if let Some(thread_id) = &model.expanded_thread {
             target = items.iter().position(|item| match item {
                 crate::model::SidebarItem::Thread { thread_id: id, .. } => id == thread_id,
-                _ => false,
+                crate::model::SidebarItem::File { .. } => false,
             });
         }
     }
@@ -663,7 +657,7 @@ fn sync_sidebar_from_active(model: &mut Model) {
     if target.is_none() {
         target = items.iter().position(|item| match item {
             crate::model::SidebarItem::File { file_idx, .. } => *file_idx == model.file_index,
-            _ => false,
+            crate::model::SidebarItem::Thread { .. } => false,
         });
     }
 
@@ -693,11 +687,11 @@ fn active_thread_from_scroll(model: &Model) -> Option<String> {
     for thread in model.threads.iter().filter(|t| t.file_path == file.path) {
         if let Some(&pos) = positions.get(&thread.thread_id) {
             if pos >= model.diff_scroll && pos <= view_end {
-                if in_view.map_or(true, |(best, _)| pos < best) {
+                if in_view.is_none_or(|(best, _)| pos < best) {
                     in_view = Some((pos, thread.thread_id.as_str()));
                 }
             } else if pos < model.diff_scroll {
-                if above.map_or(true, |(best, _)| pos > best) {
+                if above.is_none_or(|(best, _)| pos > best) {
                     above = Some((pos, thread.thread_id.as_str()));
                 }
             }
@@ -844,7 +838,7 @@ fn preview_selected_theme(model: &mut Model) {
 
 fn filter_theme_names(query: &str) -> Vec<&'static str> {
     let names = theme::built_in_theme_names();
-    let terms: Vec<String> = query.split_whitespace().map(|s| s.to_lowercase()).collect();
+    let terms: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
     if terms.is_empty() {
         return names;
     }
@@ -859,7 +853,7 @@ fn filter_theme_names(query: &str) -> Vec<&'static str> {
 
 fn filter_commands(query: &str) -> Vec<crate::command::CommandSpec> {
     let commands = get_commands();
-    let terms: Vec<String> = query.split_whitespace().map(|s| s.to_lowercase()).collect();
+    let terms: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
     if terms.is_empty() {
         return commands;
     }

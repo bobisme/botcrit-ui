@@ -299,7 +299,7 @@ fn build_rows(commands: &[CommandSpec]) -> Vec<Row<'_>> {
 /// Filter theme names by search query (case-insensitive).
 fn filtered_theme_names(query: &str) -> Vec<&'static str> {
     let names = theme::built_in_theme_names();
-    let terms: Vec<String> = query.split_whitespace().map(|s| s.to_lowercase()).collect();
+    let terms: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
     if terms.is_empty() {
         return names;
     }

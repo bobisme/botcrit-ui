@@ -10,6 +10,42 @@ pub struct ParsedDiff {
     pub hunks: Vec<DiffHunk>,
 }
 
+/// Line ranges covered by diff hunks (union of old-side and new-side),
+/// merged and sorted. Used to exclude already-displayed lines from orphaned
+/// context sections.
+pub fn hunk_exclusion_ranges(hunks: &[DiffHunk]) -> Vec<(i64, i64)> {
+    let mut ranges: Vec<(i64, i64)> = Vec::new();
+    for h in hunks {
+        if h.old_count > 0 {
+            ranges.push((
+                h.old_start as i64,
+                (h.old_start + h.old_count.saturating_sub(1)) as i64,
+            ));
+        }
+        if h.new_count > 0 {
+            ranges.push((
+                h.new_start as i64,
+                (h.new_start + h.new_count.saturating_sub(1)) as i64,
+            ));
+        }
+    }
+    ranges.sort_by_key(|r| r.0);
+    // Merge overlapping/adjacent ranges
+    let mut merged: Vec<(i64, i64)> = Vec::new();
+    for (s, e) in ranges {
+        if let Some(last) = merged.last_mut() {
+            if s <= last.1 + 1 {
+                last.1 = last.1.max(e);
+            } else {
+                merged.push((s, e));
+            }
+        } else {
+            merged.push((s, e));
+        }
+    }
+    merged
+}
+
 /// A single hunk from a diff
 #[derive(Debug, Clone)]
 pub struct DiffHunk {

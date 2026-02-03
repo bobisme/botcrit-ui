@@ -113,16 +113,8 @@ pub fn compute_stream_layout(
 
                 if !orphaned_threads.is_empty() {
                     if let Some(content) = &entry.file_content {
-                        let hunk_ranges: Vec<(i64, i64)> = diff
-                            .hunks
-                            .iter()
-                            .map(|h| {
-                                (
-                                    h.new_start as i64,
-                                    (h.new_start + h.new_count.saturating_sub(1)) as i64,
-                                )
-                            })
-                            .collect();
+                        let hunk_ranges =
+                            crate::diff::hunk_exclusion_ranges(&diff.hunks);
                         count += orphaned_context_display_count(
                             content.lines.as_slice(),
                             &orphaned_threads,

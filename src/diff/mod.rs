@@ -2,4 +2,4 @@
 
 mod parse;
 
-pub use parse::{DiffHunk, DiffLine, DiffLineKind, ParsedDiff};
+pub use parse::{hunk_exclusion_ranges, DiffHunk, DiffLine, DiffLineKind, ParsedDiff};

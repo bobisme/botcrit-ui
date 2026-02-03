@@ -775,16 +775,8 @@ pub fn render_diff_stream(
                     if let Some(content) = &entry.file_content {
                         let orphaned_deref: Vec<&ThreadSummary> =
                             orphaned_threads.iter().map(|t| **t).collect();
-                        let hunk_ranges: Vec<(i64, i64)> = diff
-                            .hunks
-                            .iter()
-                            .map(|h| {
-                                (
-                                    h.new_start as i64,
-                                    (h.new_start + h.new_count.saturating_sub(1)) as i64,
-                                )
-                            })
-                            .collect();
+                        let hunk_ranges =
+                            crate::diff::hunk_exclusion_ranges(&diff.hunks);
                         let ranges = calculate_context_ranges(
                             &orphaned_deref,
                             content.lines.len(),
@@ -972,19 +964,21 @@ pub fn render_diff_stream(
                                 let end =
                                     thread.selection_end.unwrap_or(thread.selection_start) as u32;
                                 for (si, sl) in sbs_lines.iter().enumerate() {
+                                    // Only match on new-side (right) line numbers,
+                                    // consistent with map_threads_to_diff anchoring.
+                                    // Matching old-side too causes duplicate thread
+                                    // rendering when old and new line numbers collide.
                                     let has_start = sl
                                         .right
                                         .as_ref()
-                                        .map_or(false, |l| l.line_num == start)
-                                        || sl.left.as_ref().map_or(false, |l| l.line_num == start);
+                                        .map_or(false, |l| l.line_num == start);
                                     if has_start {
                                         sbs_anchor_map.insert(si, anchor);
                                     }
                                     let has_end = sl
                                         .right
                                         .as_ref()
-                                        .map_or(false, |l| l.line_num == end)
-                                        || sl.left.as_ref().map_or(false, |l| l.line_num == end);
+                                        .map_or(false, |l| l.line_num == end);
                                     if has_end {
                                         sbs_comment_map.insert(si, anchor);
                                     }

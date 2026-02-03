@@ -2,7 +2,7 @@
 
 use opentui::{OptimizedBuffer, Style};
 
-use super::components::{draw_text_truncated, truncate_path, Rect};
+use super::components::{dim_rect, draw_help_bar, draw_text_truncated, truncate_path, HotkeyHint, Rect};
 use super::diff::{diff_change_counts, render_diff_stream, render_pinned_header_block};
 use crate::model::{Focus, LayoutMode, Model, SidebarItem};
 use crate::stream::block_height;
@@ -15,7 +15,7 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
 
     if model.current_review.is_none() {
         draw_loading_splash(model, buffer, inner);
-        draw_help_bar(model, buffer, area);
+        render_help_bar(model, buffer, area);
         return;
     }
 
@@ -54,7 +54,7 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
     }
 
     // Help bar at bottom
-    draw_help_bar(model, buffer, area);
+    render_help_bar(model, buffer, area);
 }
 
 fn draw_loading_splash(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
@@ -349,25 +349,7 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
 }
 
 /// A hotkey hint: label in dim, key in bright
-struct HotkeyHint {
-    label: &'static str,
-    key: &'static str,
-}
-
-impl HotkeyHint {
-    const fn new(label: &'static str, key: &'static str) -> Self {
-        Self { label, key }
-    }
-
-    fn width(&self) -> usize {
-        self.label.len() + 1 + self.key.len()
-    }
-}
-
-fn draw_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
-    let theme = &model.theme;
-    let y = area.y + area.height.saturating_sub(2);
-
+fn render_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     let mut footer_x = area.x;
     let mut footer_width = area.width;
     if model.sidebar_visible {
@@ -387,96 +369,45 @@ fn draw_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         return;
     }
 
-    // Bottom margin row below the help bar (only covers diff pane, not sidebar)
-    let bottom_y = area.y + area.height.saturating_sub(1);
-    buffer.fill_rect(footer_x, bottom_y, footer_width, 1, theme.background);
+    let mut all_hints: Vec<HotkeyHint> = vec![HotkeyHint::new("Commands", "ctrl+p")];
 
-    buffer.fill_rect(footer_x, y, footer_width, 1, theme.background);
-
-    let commands_hint = HotkeyHint::new("Commands", "ctrl+p");
-
-    let hints: &[HotkeyHint] = match model.focus {
-        Focus::FileSidebar => &[
-            HotkeyHint::new("Navigate", "j/k"),
-            HotkeyHint::new("Open", "Enter"),
-            HotkeyHint::new("Sidebar", "s"),
-            HotkeyHint::new("Back", "h"),
-            HotkeyHint::new("Quit", "q"),
-        ],
-        Focus::DiffPane => &[
-            HotkeyHint::new("Scroll", "j/k"),
-            HotkeyHint::new("Thread", "n/p"),
-            HotkeyHint::new("View", "v"),
-            HotkeyHint::new("Wrap", "w"),
-            HotkeyHint::new("Open", "o"),
-            HotkeyHint::new("Sidebar", "s"),
-            HotkeyHint::new("Back", "Esc"),
-            HotkeyHint::new("Quit", "q"),
-        ],
-        Focus::ThreadExpanded => &[
-            HotkeyHint::new("Scroll", "j/k"),
-            HotkeyHint::new("Resolve", "r"),
-            HotkeyHint::new("Collapse", "Esc"),
-        ],
-        _ => &[HotkeyHint::new("Back", "Esc"), HotkeyHint::new("Quit", "q")],
-    };
-
-    let separator = "  ";
-    let sep_len = separator.len();
-
-    // Calculate total width: commands_hint + sep + each hint joined by sep
-    let hints_width: usize =
-        hints.iter().map(|h| h.width()).sum::<usize>() + hints.len().saturating_sub(1) * sep_len;
-    let total_width = commands_hint.width() + sep_len + hints_width;
-
-    let padding: u32 = 2;
-    let x_start = if (total_width as u32) + padding <= footer_width {
-        footer_x + footer_width - total_width as u32 - padding
-    } else {
-        footer_x + padding.min(footer_width)
-    };
-
-    let mut x = x_start;
-    let dim = theme.style_muted();
-    let bright = theme.style_foreground();
-
-    // Draw commands hint first
-    buffer.draw_text(x, y, commands_hint.label, dim);
-    x += commands_hint.label.len() as u32;
-    buffer.draw_text(x, y, " ", dim);
-    x += 1;
-    buffer.draw_text(x, y, commands_hint.key, bright);
-    x += commands_hint.key.len() as u32;
-
-    for hint in hints {
-        buffer.draw_text(x, y, separator, dim);
-        x += sep_len as u32;
-        buffer.draw_text(x, y, hint.label, dim);
-        x += hint.label.len() as u32;
-        buffer.draw_text(x, y, " ", dim);
-        x += 1;
-        buffer.draw_text(x, y, hint.key, bright);
-        x += hint.key.len() as u32;
-    }
-}
-
-fn dim_rect(buffer: &mut OptimizedBuffer, area: Rect, scale: f32) {
-    for row in area.y..area.y + area.height {
-        for col in area.x..area.x + area.width {
-            if let Some(cell) = buffer.get_mut(col, row) {
-                cell.fg = opentui::Rgba::new(
-                    cell.fg.r * scale,
-                    cell.fg.g * scale,
-                    cell.fg.b * scale,
-                    cell.fg.a,
-                );
-                cell.bg = opentui::Rgba::new(
-                    cell.bg.r * scale,
-                    cell.bg.g * scale,
-                    cell.bg.b * scale,
-                    cell.bg.a,
-                );
-            }
+    match model.focus {
+        Focus::FileSidebar => {
+            all_hints.extend([
+                HotkeyHint::new("Navigate", "j/k"),
+                HotkeyHint::new("Open", "Enter"),
+                HotkeyHint::new("Sidebar", "s"),
+                HotkeyHint::new("Back", "h"),
+                HotkeyHint::new("Quit", "q"),
+            ]);
+        }
+        Focus::DiffPane => {
+            all_hints.extend([
+                HotkeyHint::new("Scroll", "j/k"),
+                HotkeyHint::new("Thread", "n/p"),
+                HotkeyHint::new("View", "v"),
+                HotkeyHint::new("Wrap", "w"),
+                HotkeyHint::new("Open", "o"),
+                HotkeyHint::new("Sidebar", "s"),
+                HotkeyHint::new("Back", "Esc"),
+                HotkeyHint::new("Quit", "q"),
+            ]);
+        }
+        Focus::ThreadExpanded => {
+            all_hints.extend([
+                HotkeyHint::new("Scroll", "j/k"),
+                HotkeyHint::new("Resolve", "r"),
+                HotkeyHint::new("Collapse", "Esc"),
+            ]);
+        }
+        _ => {
+            all_hints.extend([
+                HotkeyHint::new("Back", "Esc"),
+                HotkeyHint::new("Quit", "q"),
+            ]);
         }
     }
+
+    let footer = Rect::new(footer_x, area.y, footer_width, area.height);
+    draw_help_bar(buffer, footer, &model.theme, &all_hints);
 }

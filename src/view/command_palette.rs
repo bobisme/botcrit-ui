@@ -17,7 +17,7 @@ use crate::{
     command::CommandSpec,
     model::{Focus, Model, PaletteMode},
     theme,
-    view::components::{draw_text_truncated, Rect},
+    view::components::{dim_rect, draw_text_truncated, Rect},
 };
 
 /// Left padding inside the modal (space before highlight area).
@@ -43,7 +43,7 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
     let screen = Rect::from_size(model.width, model.height);
 
     // --- Dim background by darkening both fg and bg of every cell ---
-    dim_background(buffer, screen);
+    dim_rect(buffer, screen, 0.35);
 
     match model.command_palette_mode {
         PaletteMode::Commands => render_commands(model, buffer, screen),
@@ -184,29 +184,6 @@ fn render_search_field(
             text_width,
             model.theme.style_foreground(),
         );
-    }
-}
-
-/// Dim the entire screen by scaling both fg and bg colors of every cell.
-fn dim_background(buffer: &mut OptimizedBuffer, screen: Rect) {
-    let scale = 0.35_f32;
-    for row in screen.y..screen.y + screen.height {
-        for col in screen.x..screen.x + screen.width {
-            if let Some(cell) = buffer.get_mut(col, row) {
-                cell.fg = opentui::Rgba::new(
-                    cell.fg.r * scale,
-                    cell.fg.g * scale,
-                    cell.fg.b * scale,
-                    cell.fg.a,
-                );
-                cell.bg = opentui::Rgba::new(
-                    cell.bg.r * scale,
-                    cell.bg.g * scale,
-                    cell.bg.b * scale,
-                    cell.bg.a,
-                );
-            }
-        }
     }
 }
 

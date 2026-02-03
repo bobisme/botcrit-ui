@@ -2,7 +2,7 @@
 
 use opentui::{OptimizedBuffer, Style};
 
-use super::components::{format_thread_count, Rect};
+use super::components::{draw_help_bar, format_thread_count, HotkeyHint, Rect};
 use crate::model::Model;
 
 /// Render the review list screen
@@ -41,7 +41,7 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
             "No reviews found",
             theme.style_muted(),
         );
-        draw_help_bar(model, buffer, area);
+        render_help_bar(model, buffer, area);
         return;
     }
 
@@ -56,7 +56,7 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
     }
 
     // Help bar at bottom
-    draw_help_bar(
+    render_help_bar(
         model,
         buffer,
         Rect::new(area.x, area.y, safe_width, area.height),
@@ -225,54 +225,14 @@ fn draw_segment(
     display.len() as u32
 }
 
-fn draw_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
-    let theme = &model.theme;
-    let y = area.y + area.height.saturating_sub(2);
-
-    // Bottom margin row below the help bar
-    let bottom_y = area.y + area.height.saturating_sub(1);
-    buffer.fill_rect(area.x, bottom_y, area.width, 1, theme.background);
-
-    buffer.fill_rect(area.x, y, area.width, 1, theme.background);
-
-    let dim = theme.style_muted();
-    let bright = theme.style_foreground();
-    let separator = "  ";
-    let sep_len = separator.len();
-
-    let hints: &[(&str, &str)] = &[
-        ("Commands", "ctrl+p"),
-        ("Navigate", "j/k"),
-        ("Select", "Enter"),
-        ("Open Only", "o"),
-        ("All", "a"),
-        ("Quit", "q"),
+fn render_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
+    let hints = &[
+        HotkeyHint::new("Commands", "ctrl+p"),
+        HotkeyHint::new("Navigate", "j/k"),
+        HotkeyHint::new("Select", "Enter"),
+        HotkeyHint::new("Open Only", "o"),
+        HotkeyHint::new("All", "a"),
+        HotkeyHint::new("Quit", "q"),
     ];
-
-    let total_width: usize = hints
-        .iter()
-        .map(|(label, key)| label.len() + 1 + key.len())
-        .sum::<usize>()
-        + hints.len().saturating_sub(1) * sep_len;
-
-    let padding: u32 = 2;
-    let x_start = if (total_width as u32) + padding <= area.width {
-        area.x + area.width - total_width as u32 - padding
-    } else {
-        area.x + padding.min(area.width)
-    };
-
-    let mut x = x_start;
-    for (i, (label, key)) in hints.iter().enumerate() {
-        if i > 0 {
-            buffer.draw_text(x, y, separator, dim);
-            x += sep_len as u32;
-        }
-        buffer.draw_text(x, y, label, dim);
-        x += label.len() as u32;
-        buffer.draw_text(x, y, " ", dim);
-        x += 1;
-        buffer.draw_text(x, y, key, bright);
-        x += key.len() as u32;
-    }
+    draw_help_bar(buffer, area, &model.theme, hints);
 }

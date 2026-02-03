@@ -3,6 +3,8 @@
 use opentui::buffer::BoxStyle;
 use opentui::{OptimizedBuffer, Rgba, Style};
 
+use crate::theme::Theme;
+
 /// A rectangular area for layout
 #[derive(Debug, Clone, Copy)]
 pub struct Rect {
@@ -181,4 +183,96 @@ pub fn truncate_path(path: &str, max_width: usize) -> String {
     // Just truncate from the end
     let truncated = &path[..max_width.saturating_sub(1)];
     format!("{truncated}…")
+}
+
+/// Dim the cells in `area` by scaling both fg and bg colors.
+pub fn dim_rect(buffer: &mut OptimizedBuffer, area: Rect, scale: f32) {
+    for row in area.y..area.y + area.height {
+        for col in area.x..area.x + area.width {
+            if let Some(cell) = buffer.get_mut(col, row) {
+                cell.fg = Rgba::new(
+                    cell.fg.r * scale,
+                    cell.fg.g * scale,
+                    cell.fg.b * scale,
+                    cell.fg.a,
+                );
+                cell.bg = Rgba::new(
+                    cell.bg.r * scale,
+                    cell.bg.g * scale,
+                    cell.bg.b * scale,
+                    cell.bg.a,
+                );
+            }
+        }
+    }
+}
+
+/// A label + key hint for the help bar.
+pub struct HotkeyHint {
+    pub label: &'static str,
+    pub key: &'static str,
+}
+
+impl HotkeyHint {
+    #[must_use]
+    pub const fn new(label: &'static str, key: &'static str) -> Self {
+        Self { label, key }
+    }
+
+    #[must_use]
+    pub fn width(&self) -> usize {
+        self.label.len() + 1 + self.key.len()
+    }
+}
+
+/// Draw a right-aligned help bar of `[label key]` pairs within `area`.
+///
+/// The bar is drawn on the second-to-last row of `area`. The last row
+/// is filled with `theme.background` as a bottom margin.
+pub fn draw_help_bar(
+    buffer: &mut OptimizedBuffer,
+    area: Rect,
+    theme: &Theme,
+    hints: &[HotkeyHint],
+) {
+    let y = area.y + area.height.saturating_sub(2);
+    let bottom_y = area.y + area.height.saturating_sub(1);
+    buffer.fill_rect(area.x, bottom_y, area.width, 1, theme.background);
+    buffer.fill_rect(area.x, y, area.width, 1, theme.background);
+
+    if hints.is_empty() || area.width == 0 {
+        return;
+    }
+
+    let separator = "  ";
+    let sep_len = separator.len();
+    let total_width: usize = hints
+        .iter()
+        .map(|h| h.width())
+        .sum::<usize>()
+        + hints.len().saturating_sub(1) * sep_len;
+
+    let padding: u32 = 2;
+    let x_start = if (total_width as u32) + padding <= area.width {
+        area.x + area.width - total_width as u32 - padding
+    } else {
+        area.x + padding.min(area.width)
+    };
+
+    let dim = theme.style_muted();
+    let bright = theme.style_foreground();
+
+    let mut x = x_start;
+    for (i, hint) in hints.iter().enumerate() {
+        if i > 0 {
+            buffer.draw_text(x, y, separator, dim);
+            x += sep_len as u32;
+        }
+        buffer.draw_text(x, y, hint.label, dim);
+        x += hint.label.len() as u32;
+        buffer.draw_text(x, y, " ", dim);
+        x += 1;
+        buffer.draw_text(x, y, hint.key, bright);
+        x += hint.key.len() as u32;
+    }
 }

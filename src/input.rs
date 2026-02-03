@@ -262,7 +262,7 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
             KeyCode::Char('g') | KeyCode::Home => Message::ScrollTop,
             KeyCode::Char('G') | KeyCode::End => Message::ScrollBottom,
             KeyCode::Char('n') => Message::NextThread,
-            KeyCode::Char('p') | KeyCode::Char('N') => Message::PrevThread,
+            KeyCode::Char('p' | 'N') => Message::PrevThread,
             KeyCode::Char('v') => Message::ToggleDiffView, // Toggle unified/side-by-side
             KeyCode::Char('w') => Message::ToggleDiffWrap,
             KeyCode::Char('o') => Message::OpenFileInEditor,
@@ -294,7 +294,7 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
             KeyCode::Char('k') | KeyCode::Up => Message::ScrollUp,
             KeyCode::Char('g') | KeyCode::Home => Message::ScrollTop,
             KeyCode::Char('G') | KeyCode::End => Message::ScrollBottom,
-            KeyCode::Char('r') | KeyCode::Char('R') => {
+            KeyCode::Char('r' | 'R') => {
                 if let Some(id) = &model.expanded_thread {
                     Message::ResolveThread(id.clone())
                 } else {

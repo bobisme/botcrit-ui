@@ -80,6 +80,7 @@ impl Rect {
 }
 
 /// Draw a bordered box with optional title
+#[allow(dead_code)]
 pub fn draw_box(
     buffer: &mut OptimizedBuffer,
     area: Rect,
@@ -107,6 +108,7 @@ pub fn draw_box(
 }
 
 /// Draw a filled rectangle
+#[allow(dead_code)]
 pub fn fill_rect(buffer: &mut OptimizedBuffer, area: Rect, color: Rgba) {
     buffer.fill_rect(area.x, area.y, area.width, area.height, color);
 }
@@ -139,12 +141,14 @@ pub fn draw_text_truncated(
 }
 
 /// Draw a horizontal line
+#[allow(dead_code)]
 pub fn draw_hline(buffer: &mut OptimizedBuffer, x: u32, y: u32, width: u32, color: Rgba) {
     let line = "─".repeat(width as usize);
     buffer.draw_text(x, y, &line, Style::fg(color));
 }
 
 /// Draw a status badge (e.g., "[open]", "[merged]")
+#[allow(dead_code)]
 pub fn draw_badge(buffer: &mut OptimizedBuffer, x: u32, y: u32, text: &str, fg: Rgba, bg: Rgba) {
     let badge = format!("[{text}]");
     buffer.draw_text(x, y, &badge, Style::fg(fg).with_bg(bg));

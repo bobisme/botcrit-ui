@@ -24,7 +24,7 @@ pub(super) fn render_unified_diff_line_block(
 ) {
     let dt = &theme.diff;
     match display_line {
-        DisplayLine::HunkHeader(_) => {
+        DisplayLine::HunkHeader => {
             draw_diff_base_line(buffer, area, y, dt.context_bg);
             let sep = "···";
             let sep_x = diff_content_x(area)

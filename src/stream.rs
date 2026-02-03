@@ -35,12 +35,6 @@ fn context_wrap_width(pane_width: u32) -> usize {
     diff_inner_width(pane_width).saturating_sub(layout::CONTEXT_LINE_NUM_WIDTH) as usize
 }
 
-fn orphaned_context_wrap_width(pane_width: u32) -> usize {
-    diff_inner_width(pane_width)
-        .saturating_sub(layout::ORPHANED_CONTEXT_LEFT_PAD)
-        .saturating_sub(layout::CONTEXT_LINE_NUM_WIDTH) as usize
-}
-
 fn side_by_side_wrap_widths(pane_width: u32) -> (usize, usize) {
     let divider_width: u32 = 0;
     let available = diff_inner_width(pane_width)
@@ -282,32 +276,6 @@ fn side_by_side_line_count_wrapped(
         }
     }
     count
-}
-
-pub(crate) fn find_display_line(diff: &ParsedDiff, line: u32) -> Option<usize> {
-    let mut old_line_to_display: std::collections::HashMap<u32, usize> =
-        std::collections::HashMap::new();
-    let mut new_line_to_display: std::collections::HashMap<u32, usize> =
-        std::collections::HashMap::new();
-    let mut display_idx = 0;
-
-    for hunk in &diff.hunks {
-        display_idx += 1;
-        for diff_line in &hunk.lines {
-            if let Some(old_ln) = diff_line.old_line {
-                old_line_to_display.insert(old_ln, display_idx);
-            }
-            if let Some(new_ln) = diff_line.new_line {
-                new_line_to_display.insert(new_ln, display_idx);
-            }
-            display_idx += 1;
-        }
-    }
-
-    new_line_to_display
-        .get(&line)
-        .or_else(|| old_line_to_display.get(&line))
-        .copied()
 }
 
 fn comment_block_height(comments: &[Comment], content_width: u32) -> usize {

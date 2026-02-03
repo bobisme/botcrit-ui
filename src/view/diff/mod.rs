@@ -72,7 +72,7 @@ pub(crate) struct ChangeCounts {
 
 /// A line to display (either hunk header or diff line)
 enum DisplayLine {
-    HunkHeader(String),
+    HunkHeader,
     Diff(DiffLine),
 }
 
@@ -82,7 +82,6 @@ struct SideBySideLine {
     left: Option<SideLine>,
     right: Option<SideLine>,
     is_header: bool,
-    header: String,
 }
 
 /// One side of a side-by-side line
@@ -96,7 +95,7 @@ struct SideLine {
 
 /// Display item for file context view
 enum DisplayItem {
-    Separator(i64),
+    Separator(#[allow(dead_code)] i64),
     Line { line_num: i64, content: String },
 }
 
@@ -168,7 +167,6 @@ fn build_side_by_side_lines(diff: &ParsedDiff) -> Vec<SideBySideLine> {
             left: None,
             right: None,
             is_header: true,
-            header: hunk.header.clone(),
         });
         display_index += 1;
 
@@ -194,7 +192,6 @@ fn build_side_by_side_lines(diff: &ParsedDiff) -> Vec<SideBySideLine> {
                             display_index: line_index,
                         }),
                         is_header: false,
-                        header: String::new(),
                     });
                     i += 1;
                     display_index += 1;
@@ -230,8 +227,7 @@ fn build_side_by_side_lines(diff: &ParsedDiff) -> Vec<SideBySideLine> {
                             left,
                             right,
                             is_header: false,
-                            header: String::new(),
-                        });
+                            });
                     }
                 }
                 DiffLineKind::Added => {
@@ -245,7 +241,6 @@ fn build_side_by_side_lines(diff: &ParsedDiff) -> Vec<SideBySideLine> {
                             display_index: line_index,
                         }),
                         is_header: false,
-                        header: String::new(),
                     });
                     i += 1;
                     display_index += 1;
@@ -419,7 +414,7 @@ pub fn render_diff_stream(
                     crate::model::DiffViewMode::Unified => {
                         let mut display_lines: Vec<DisplayLine> = Vec::new();
                         for hunk in &diff.hunks {
-                            display_lines.push(DisplayLine::HunkHeader(hunk.header.clone()));
+                            display_lines.push(DisplayLine::HunkHeader);
                             for line in &hunk.lines {
                                 display_lines.push(DisplayLine::Diff(line.clone()));
                             }
@@ -427,7 +422,7 @@ pub fn render_diff_stream(
 
                         let mut section_idx = 0usize;
                         for (idx, display_line) in display_lines.iter().enumerate() {
-                            if matches!(display_line, DisplayLine::HunkHeader(_)) {
+                            if matches!(display_line, DisplayLine::HunkHeader) {
                                 if let Some(context) = &orphaned_context {
                                     if let Some(section) = context.sections.get(section_idx) {
                                         emit_orphaned_context_section(
@@ -451,7 +446,7 @@ pub fn render_diff_stream(
                                     line.new_line.map(|n| n as i64),
                                     &thread_ranges,
                                 ),
-                                DisplayLine::HunkHeader(_) => false,
+                                DisplayLine::HunkHeader => false,
                             };
                             let anchor = anchor_map.get(&idx).copied();
                             if let Some(anchor) = anchor {
@@ -461,7 +456,7 @@ pub fn render_diff_stream(
                                     .or_insert(cursor.stream_row);
                             }
                             match display_line {
-                                DisplayLine::HunkHeader(_) => {
+                                DisplayLine::HunkHeader => {
                                     cursor.emit(|buf, y, theme| {
                                         render_unified_diff_line_block(
                                             buf,

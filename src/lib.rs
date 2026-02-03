@@ -2,7 +2,6 @@
 //!
 //! Uses Elm Architecture (Model/Message/Update/View) with opentui_rust rendering.
 
-#![allow(dead_code)]
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_sign_loss)]

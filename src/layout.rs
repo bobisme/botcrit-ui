@@ -49,3 +49,9 @@ pub fn block_height(content_lines: usize) -> usize {
 pub fn diff_inner_width(pane_width: u32) -> u32 {
     pane_width.saturating_sub(DIFF_H_PAD * 2)
 }
+
+/// Inner width for block content (file headers, comment blocks, description).
+/// Accounts for: side margins, bar character, and internal padding.
+pub fn block_inner_width(pane_width: u32) -> u32 {
+    pane_width.saturating_sub(BLOCK_SIDE_MARGIN * 2 + 1 + BLOCK_LEFT_PAD + BLOCK_RIGHT_PAD)
+}

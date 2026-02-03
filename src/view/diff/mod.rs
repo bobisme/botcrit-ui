@@ -305,6 +305,50 @@ pub fn render_pinned_header_block(
     height as usize
 }
 
+/// Render a description block at the top of the stream.
+fn render_description_block(
+    cursor: &mut StreamCursor<'_>,
+    area: Rect,
+    description: &str,
+    theme: &Theme,
+) {
+    use crate::text::wrap_text;
+
+    let wrap_width = crate::layout::block_inner_width(area.width) as usize;
+    let lines = wrap_text(description, wrap_width);
+
+    // Margin before block
+    for _ in 0..BLOCK_MARGIN {
+        cursor.emit(|buf, y, _| {
+            buf.fill_rect(area.x, y, area.width, 1, theme.background);
+        });
+    }
+    // Padding
+    for _ in 0..BLOCK_PADDING {
+        cursor.emit(|buf, y, theme| {
+            draw_block_base_line(buf, area, y, theme.panel_bg, theme);
+        });
+    }
+    // Content lines
+    for line in &lines {
+        cursor.emit(|buf, y, theme| {
+            draw_block_text_line(buf, area, y, theme.panel_bg, line, theme.style_foreground(), theme);
+        });
+    }
+    // Padding
+    for _ in 0..BLOCK_PADDING {
+        cursor.emit(|buf, y, theme| {
+            draw_block_base_line(buf, area, y, theme.panel_bg, theme);
+        });
+    }
+    // Margin after block
+    for _ in 0..BLOCK_MARGIN {
+        cursor.emit(|buf, y, _| {
+            buf.fill_rect(area.x, y, area.width, 1, theme.background);
+        });
+    }
+}
+
 pub fn render_diff_stream(
     buffer: &mut OptimizedBuffer,
     area: Rect,
@@ -317,6 +361,7 @@ pub fn render_diff_stream(
     view_mode: crate::model::DiffViewMode,
     wrap: bool,
     thread_positions: &std::cell::RefCell<std::collections::HashMap<String, usize>>,
+    description: Option<&str>,
 ) {
     thread_positions.borrow_mut().clear();
     let mut cursor = StreamCursor {
@@ -327,6 +372,13 @@ pub fn render_diff_stream(
         stream_row: 0,
         theme,
     };
+
+    // Render description block if present
+    if let Some(desc) = description {
+        if !desc.trim().is_empty() {
+            render_description_block(&mut cursor, area, desc, theme);
+        }
+    }
 
     for file in files {
         // File header block

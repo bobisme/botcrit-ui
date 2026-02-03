@@ -781,6 +781,10 @@ fn center_on_thread(model: &mut Model) {
 fn stream_layout(model: &Model) -> crate::stream::StreamLayout {
     let files = model.files_with_threads();
     let width = diff_content_width(model);
+    let description = model
+        .current_review
+        .as_ref()
+        .and_then(|r| r.description.as_deref());
     compute_stream_layout(
         &files,
         &model.file_cache,
@@ -789,6 +793,7 @@ fn stream_layout(model: &Model) -> crate::stream::StreamLayout {
         model.diff_view_mode,
         model.diff_wrap,
         width,
+        description,
     )
 }
 

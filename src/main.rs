@@ -704,6 +704,10 @@ fn nav_stream_layout(model: &Model) -> botcrit_ui::stream::StreamLayout {
     };
     let width = pane_width.saturating_sub(DIFF_MARGIN * 2);
     let files = model.files_with_threads();
+    let description = model
+        .current_review
+        .as_ref()
+        .and_then(|r| r.description.as_deref());
     compute_stream_layout(
         &files,
         &model.file_cache,
@@ -712,6 +716,7 @@ fn nav_stream_layout(model: &Model) -> botcrit_ui::stream::StreamLayout {
         model.diff_view_mode,
         model.diff_wrap,
         width,
+        description,
     )
 }
 

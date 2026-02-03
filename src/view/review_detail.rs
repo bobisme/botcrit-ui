@@ -5,7 +5,7 @@ use opentui::{OptimizedBuffer, Style};
 use super::components::{dim_rect, draw_help_bar, draw_text_truncated, truncate_path, HotkeyHint, Rect};
 use super::diff::{diff_change_counts, render_diff_stream, render_pinned_header_block};
 use crate::model::{Focus, LayoutMode, Model, SidebarItem};
-use crate::stream::block_height;
+use crate::stream::{block_height, description_block_height};
 
 /// Render the review detail screen
 pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
@@ -303,6 +303,10 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         theme.background,
     );
 
+    let description = model
+        .current_review
+        .as_ref()
+        .and_then(|r| r.description.as_deref());
     render_diff_stream(
         buffer,
         content_area,
@@ -315,16 +319,23 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         model.diff_view_mode,
         model.diff_wrap,
         &model.thread_positions,
+        description,
     );
 
-    let pinned_height = block_height(1) as u32;
-    let pinned_area = Rect::new(
-        content_area.x,
-        content_area.y,
-        content_area.width,
-        pinned_height.min(content_area.height),
-    );
-    render_pinned_header_block(buffer, pinned_area, file_title, theme, counts);
+    // Determine whether to show pinned file header or not
+    // When scrolled within description area, don't show pinned header (let description show)
+    // When scrolled past description, show pinned file header
+    let desc_lines = description_block_height(description, content_area.width);
+    if model.diff_scroll >= desc_lines {
+        let pinned_height = block_height(1) as u32;
+        let pinned_area = Rect::new(
+            content_area.x,
+            content_area.y,
+            content_area.width,
+            pinned_height.min(content_area.height),
+        );
+        render_pinned_header_block(buffer, pinned_area, file_title, theme, counts);
+    }
 
     // Bottom margin between content and footer
     if inner.height >= 3 {

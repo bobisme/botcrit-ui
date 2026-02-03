@@ -15,8 +15,28 @@ pub use crate::layout::{
 };
 
 pub struct StreamLayout {
+    /// Offset where files start (after description block, if any)
+    pub description_lines: usize,
     pub file_offsets: Vec<usize>,
     pub total_lines: usize,
+}
+
+/// Inner width for description/comment block content.
+fn block_wrap_width(pane_width: u32) -> usize {
+    layout::block_inner_width(pane_width) as usize
+}
+
+/// Compute height of description block (if present).
+pub fn description_block_height(description: Option<&str>, pane_width: u32) -> usize {
+    let Some(desc) = description else {
+        return 0;
+    };
+    if desc.trim().is_empty() {
+        return 0;
+    }
+    let wrap_width = block_wrap_width(pane_width);
+    let wrapped = wrap_text(desc, wrap_width);
+    block_height(wrapped.len())
 }
 
 /// Inner width for diff content (no block bar/margins, just horizontal padding).
@@ -61,9 +81,11 @@ pub fn compute_stream_layout(
     view_mode: DiffViewMode,
     wrap: bool,
     content_width: u32,
+    description: Option<&str>,
 ) -> StreamLayout {
+    let description_lines = description_block_height(description, content_width);
     let mut file_offsets = Vec::with_capacity(files.len());
-    let mut total = 0usize;
+    let mut total = description_lines;
 
     for file in files {
         file_offsets.push(total);
@@ -132,6 +154,7 @@ pub fn compute_stream_layout(
     }
 
     StreamLayout {
+        description_lines,
         file_offsets,
         total_lines: total,
     }

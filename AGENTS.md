@@ -65,6 +65,29 @@ crit-ui --path /home/bob/src/botty --review cr-qmr8 --thread th-lkxz
 - If the review/file/thread ID doesn't exist, falls back gracefully (review list, or first file).
 - `--thread` takes precedence over `--file` (it implies the file).
 
+## Architecture Notes
+
+### Data Access
+
+Data comes from the `crit` CLI via `CliClient` (`src/cli_client.rs`), which shells out to `crit --format json --path <repo>`. The `CritClient` trait in `src/db.rs` abstracts the backend. There is no direct SQLite access — rusqlite was removed.
+
+### Thread Anchoring (view/diff.rs)
+
+Threads anchor to diff hunks via **new-side line numbers only** (`map_threads_to_diff`). A thread whose `selection_start` doesn't appear on the new side of any hunk is "orphaned" and rendered in a separate context section.
+
+Key invariant: **all line-number matching in diff rendering must use new-side only.** Old-side line numbers can collide with thread line numbers from different commits, causing false matches. This applies to:
+- `map_threads_to_diff` (anchoring decision)
+- `sbs_anchor_map` / `sbs_comment_map` (SBS display position)
+- `hunk_exclusion_ranges` (orphaned context clipping) — must exclude **both** old and new side ranges since orphaned context shows raw file lines that could overlap with either side of the diff
+
+### Debugging Rendering Issues
+
+To investigate visual duplication or layout bugs:
+1. Use `crit review <id> --format json` to check thread `selection_start`/`selection_end` values
+2. Use `git diff <from> <to> -- <file> | grep '^@@'` to see hunk ranges (old_start,old_count → new_start,new_count)
+3. Spawn with `botty spawn --name <id> -- crit-ui --path <repo> --review <id> --file <path>` and scroll through in both unified (`v` to toggle) and SBS modes
+4. Wider terminals expose more SBS bugs — don't only test with `--no-resize`
+
 ## BotBus Coordination
 
 ```bash

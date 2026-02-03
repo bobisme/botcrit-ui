@@ -322,19 +322,23 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         description,
     );
 
-    // Determine whether to show pinned file header or not
-    // When scrolled within description area, don't show pinned header (let description show)
-    // When scrolled past description, show pinned file header
+    // Determine what to show in pinned header:
+    // - When at top (within description area): show review title
+    // - When scrolled past description: show current file header
     let desc_lines = description_block_height(description, content_area.width);
+    let pinned_height = block_height(1) as u32;
+    let pinned_area = Rect::new(
+        content_area.x,
+        content_area.y,
+        content_area.width,
+        pinned_height.min(content_area.height),
+    );
     if model.diff_scroll >= desc_lines {
-        let pinned_height = block_height(1) as u32;
-        let pinned_area = Rect::new(
-            content_area.x,
-            content_area.y,
-            content_area.width,
-            pinned_height.min(content_area.height),
-        );
+        // Scrolled past description - show file header
         render_pinned_header_block(buffer, pinned_area, file_title, theme, counts);
+    } else if let Some(review) = &model.current_review {
+        // At top - show review title
+        render_pinned_header_block(buffer, pinned_area, &review.title, theme, None);
     }
 
     // Bottom margin between content and footer

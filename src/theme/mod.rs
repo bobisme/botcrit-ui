@@ -83,6 +83,46 @@ impl Default for Theme {
 }
 
 // ---------------------------------------------------------------------------
+// Style token methods
+// ---------------------------------------------------------------------------
+
+use opentui::Style;
+
+impl Theme {
+    /// `Style::fg(self.muted)`
+    pub fn style_muted(&self) -> Style {
+        Style::fg(self.muted)
+    }
+
+    /// `Style::fg(self.muted).with_bg(bg)`
+    pub fn style_muted_on(&self, bg: Rgba) -> Style {
+        Style::fg(self.muted).with_bg(bg)
+    }
+
+    /// `Style::fg(self.foreground)`
+    pub fn style_foreground(&self) -> Style {
+        Style::fg(self.foreground)
+    }
+
+    /// `Style::fg(self.foreground).with_bg(bg)`
+    pub fn style_foreground_on(&self, bg: Rgba) -> Style {
+        Style::fg(self.foreground).with_bg(bg)
+    }
+
+    /// `Style::fg(self.primary)`
+    pub fn style_primary(&self) -> Style {
+        Style::fg(self.primary)
+    }
+}
+
+impl DiffTheme {
+    /// `Style::fg(self.line_number).with_bg(bg)`
+    pub fn style_line_number(&self, bg: Rgba) -> Style {
+        Style::fg(self.line_number).with_bg(bg)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Seed-based theme construction
 // ---------------------------------------------------------------------------
 

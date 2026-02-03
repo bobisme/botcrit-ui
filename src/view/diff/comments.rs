@@ -1,7 +1,5 @@
 //! Comment block rendering (thread comment bubbles in the diff stream).
 
-use opentui::Style;
-
 use crate::db::ThreadSummary;
 use crate::layout::{BLOCK_MARGIN, BLOCK_PADDING};
 use crate::text::wrap_text;
@@ -114,9 +112,9 @@ pub(super) fn emit_comment_block(
             } else if row < top_margin + BLOCK_PADDING + content_lines.len() {
                 let line = &content_lines[content_idx];
                 let (left_style, right_style) = match line.kind {
-                    CommentLineKind::Header => (Style::fg(theme.muted), Style::fg(theme.muted)),
-                    CommentLineKind::Author => (Style::fg(theme.primary), Style::fg(theme.muted)),
-                    CommentLineKind::Body => (Style::fg(theme.foreground), Style::fg(theme.muted)),
+                    CommentLineKind::Header => (theme.style_muted(), theme.style_muted()),
+                    CommentLineKind::Author => (theme.style_primary(), theme.style_muted()),
+                    CommentLineKind::Body => (theme.style_foreground(), theme.style_muted()),
                 };
                 buf.fill_rect(area.x, y, area.width, 1, theme.background);
                 buf.fill_rect(block.x, y, block.width, 1, theme.panel_bg);

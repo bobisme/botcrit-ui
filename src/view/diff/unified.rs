@@ -29,7 +29,7 @@ pub(super) fn render_unified_diff_line_block(
             let sep = "···";
             let sep_x = diff_content_x(area)
                 + diff_content_width(area).saturating_sub(sep.len() as u32) / 2;
-            buffer.draw_text(sep_x, y, sep, Style::fg(theme.muted).with_bg(dt.context_bg));
+            buffer.draw_text(sep_x, y, sep, theme.style_muted_on(dt.context_bg));
         }
         DisplayLine::Diff(line) => {
             let line_bg = match line.kind {
@@ -122,25 +122,25 @@ pub(super) fn render_unified_diff_line_wrapped_row(
             line_num_x,
             y,
             &old_ln,
-            Style::fg(dt.line_number).with_bg(line_num_bg),
+            dt.style_line_number(line_num_bg),
         );
         buffer.draw_text(
             line_num_x + 5,
             y,
             " ",
-            Style::fg(dt.line_number).with_bg(line_num_bg),
+            dt.style_line_number(line_num_bg),
         );
         buffer.draw_text(
             line_num_x + 6,
             y,
             &new_ln,
-            Style::fg(dt.line_number).with_bg(line_num_bg),
+            dt.style_line_number(line_num_bg),
         );
         buffer.draw_text(
             line_num_x + 11,
             y,
             " ",
-            Style::fg(dt.line_number).with_bg(line_num_bg),
+            dt.style_line_number(line_num_bg),
         );
     }
 
@@ -204,10 +204,10 @@ pub(super) fn render_diff_line(
         .new_line
         .map_or("     ".to_string(), |n| format!("{:>5}", n));
 
-    buffer.draw_text(x, y, &old_ln, Style::fg(dt.line_number).with_bg(line_num_bg));
-    buffer.draw_text(x + 5, y, " ", Style::fg(dt.line_number).with_bg(line_num_bg));
-    buffer.draw_text(x + 6, y, &new_ln, Style::fg(dt.line_number).with_bg(line_num_bg));
-    buffer.draw_text(x + 11, y, " ", Style::fg(dt.line_number).with_bg(line_num_bg));
+    buffer.draw_text(x, y, &old_ln, dt.style_line_number(line_num_bg));
+    buffer.draw_text(x + 5, y, " ", dt.style_line_number(line_num_bg));
+    buffer.draw_text(x + 6, y, &new_ln, dt.style_line_number(line_num_bg));
+    buffer.draw_text(x + 11, y, " ", dt.style_line_number(line_num_bg));
 
     buffer.draw_text(content_x, y, sign, Style::fg(sign_color).with_bg(bg));
 

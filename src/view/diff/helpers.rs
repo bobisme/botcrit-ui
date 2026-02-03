@@ -31,7 +31,7 @@ pub(super) fn draw_block_bar(
     theme: &Theme,
 ) {
     buffer.fill_rect(x, y, 1, 1, bg);
-    buffer.draw_text(x, y, "┃", Style::fg(theme.muted).with_bg(bg));
+    buffer.draw_text(x, y, "┃", theme.style_muted_on(bg));
 }
 
 pub(super) fn draw_block_base_line(
@@ -261,7 +261,7 @@ pub(super) fn draw_file_header_line(
         content_x,
         y,
         left_text,
-        Style::fg(theme.foreground).with_bg(bg),
+        theme.style_foreground_on(bg),
     );
 
     if let Some(counts) = counts {
@@ -272,7 +272,7 @@ pub(super) fn draw_file_header_line(
             let add_text = format!("+{}", counts.added);
             buffer.draw_text(x, y, &add_text, Style::fg(theme.success).with_bg(bg));
             x += add_text.len() as u32;
-            buffer.draw_text(x, y, " / ", Style::fg(theme.muted).with_bg(bg));
+            buffer.draw_text(x, y, " / ", theme.style_muted_on(bg));
             x += 3;
             let rem_text = format!("-{}", counts.removed);
             buffer.draw_text(x, y, &rem_text, Style::fg(theme.error).with_bg(bg));

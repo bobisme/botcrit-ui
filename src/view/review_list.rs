@@ -39,7 +39,7 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
             inner.x + 2,
             inner.y + 1,
             "No reviews found",
-            Style::fg(theme.muted),
+            theme.style_muted(),
         );
         draw_help_bar(model, buffer, area);
         return;
@@ -86,7 +86,7 @@ fn draw_review_row(
             Style::fg(theme.selection_fg).with_bg(theme.selection_bg),
         )
     } else {
-        ("  ", Style::fg(theme.foreground).with_bg(bg))
+        ("  ", theme.style_foreground_on(bg))
     };
 
     let row_width = area.width;
@@ -171,7 +171,7 @@ fn draw_review_row(
             y,
             &review.author,
             author_width,
-            Style::fg(theme.muted).with_bg(bg),
+            theme.style_muted_on(bg),
         );
         x += used;
         if remaining > used {
@@ -235,8 +235,8 @@ fn draw_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
 
     buffer.fill_rect(area.x, y, area.width, 1, theme.background);
 
-    let dim = Style::fg(theme.muted);
-    let bright = Style::fg(theme.foreground);
+    let dim = theme.style_muted();
+    let bright = theme.style_foreground();
     let separator = "  ";
     let sep_len = separator.len();
 

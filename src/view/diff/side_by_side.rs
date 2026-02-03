@@ -28,7 +28,7 @@ pub(super) fn render_side_by_side_line_block(
         let sep = "···";
         let sep_x =
             diff_content_x(area) + diff_content_width(area).saturating_sub(sep.len() as u32) / 2;
-        buffer.draw_text(sep_x, y, sep, Style::fg(theme.muted).with_bg(dt.context_bg));
+        buffer.draw_text(sep_x, y, sep, theme.style_muted_on(dt.context_bg));
         return;
     }
 

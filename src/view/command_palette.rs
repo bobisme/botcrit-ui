@@ -77,9 +77,9 @@ fn render_commands(model: &Model, buffer: &mut OptimizedBuffer, screen: Rect) {
     y += 1;
 
     // --- Title row: "Commands" (bold left) + "esc" (dim right) ---
-    buffer.draw_text(text_x, y, "Commands", Style::fg(model.theme.foreground).with_bold());
+    buffer.draw_text(text_x, y, "Commands", model.theme.style_foreground().with_bold());
     let esc_x = esc_right.saturating_sub(esc_label.len() as u32);
-    buffer.draw_text(esc_x, y, esc_label, Style::fg(model.theme.muted));
+    buffer.draw_text(esc_x, y, esc_label, model.theme.style_muted());
     y += 1;
 
     // --- 1 blank row ---
@@ -100,7 +100,7 @@ fn render_commands(model: &Model, buffer: &mut OptimizedBuffer, screen: Rect) {
         }
         match row {
             Row::Category(name) => {
-                buffer.draw_text(text_x, y, name, Style::fg(model.theme.primary).with_bold());
+                buffer.draw_text(text_x, y, name, model.theme.style_primary().with_bold());
             }
             Row::Separator => {
                 // blank row between categories
@@ -137,9 +137,9 @@ fn render_themes(model: &Model, buffer: &mut OptimizedBuffer, screen: Rect) {
     y += 1;
 
     // --- Title row ---
-    buffer.draw_text(text_x, y, "Themes", Style::fg(model.theme.foreground).with_bold());
+    buffer.draw_text(text_x, y, "Themes", model.theme.style_foreground().with_bold());
     let esc_x = esc_right.saturating_sub(esc_label.len() as u32);
-    buffer.draw_text(esc_x, y, esc_label, Style::fg(model.theme.muted));
+    buffer.draw_text(esc_x, y, esc_label, model.theme.style_muted());
     y += 1;
 
     // --- 1 blank row ---
@@ -173,7 +173,7 @@ fn render_search_field(
     text_width: u32,
 ) {
     if model.command_palette_input.is_empty() {
-        buffer.draw_text(text_x, y, "Search", Style::fg(model.theme.muted));
+        buffer.draw_text(text_x, y, "Search", model.theme.style_muted());
     } else {
         let input_text = format!("{}\u{2588}", model.command_palette_input);
         draw_text_truncated(
@@ -182,7 +182,7 @@ fn render_search_field(
             y,
             &input_text,
             text_width,
-            Style::fg(model.theme.foreground),
+            model.theme.style_foreground(),
         );
     }
 }
@@ -245,7 +245,7 @@ fn render_item_row(
         let shortcut_len = shortcut.len() as u32;
         if shortcut_len < content_width {
             let shortcut_x = content_end - shortcut_len;
-            buffer.draw_text(shortcut_x, y, shortcut, Style::fg(model.theme.muted));
+            buffer.draw_text(shortcut_x, y, shortcut, model.theme.style_muted());
 
             let name_max = content_width.saturating_sub(shortcut_len + 1);
             draw_text_truncated(buffer, name_x, y, cmd.name, name_max, Style::fg(fg));

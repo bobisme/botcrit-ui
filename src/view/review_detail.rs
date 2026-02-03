@@ -102,7 +102,7 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
             y,
             &bookmark,
             text_width,
-            Style::fg(theme.muted),
+            theme.style_muted(),
         );
         y += 1;
 
@@ -120,14 +120,14 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
             y,
             &commit_range,
             text_width,
-            Style::fg(theme.muted),
+            theme.style_muted(),
         );
         y += 2;
     }
 
     if items.is_empty() {
         if y < bottom {
-            buffer.draw_text(text_x, y, "No files", Style::fg(theme.muted));
+            buffer.draw_text(text_x, y, "No files", theme.style_muted());
         }
         return;
     }
@@ -159,11 +159,11 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
                 }
                 let collapse_indicator = if *collapsed { "▸ " } else { "▾ " };
                 let (prefix, style) = if *file_idx == model.file_index {
-                    (collapse_indicator, Style::fg(theme.primary).with_bg(row_bg))
+                    (collapse_indicator, theme.style_primary().with_bg(row_bg))
                 } else {
                     (
                         collapse_indicator,
-                        Style::fg(theme.foreground).with_bg(row_bg),
+                        theme.style_foreground_on(row_bg),
                     )
                 };
 
@@ -249,9 +249,9 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
                 let id_width = indicator_x.saturating_sub(thread_x + 1);
 
                 let text_style = if is_cursor {
-                    Style::fg(theme.foreground).with_bg(row_bg)
+                    theme.style_foreground_on(row_bg)
                 } else {
-                    Style::fg(theme.muted).with_bg(row_bg)
+                    theme.style_muted_on(row_bg)
                 };
                 draw_text_truncated(buffer, thread_x, y, thread_id, id_width, text_style);
 
@@ -291,7 +291,7 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
             inner.x + 2,
             inner.y + 1,
             "No content available",
-            Style::fg(theme.muted),
+            theme.style_muted(),
         );
         return;
     }
@@ -437,8 +437,8 @@ fn draw_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     };
 
     let mut x = x_start;
-    let dim = Style::fg(theme.muted);
-    let bright = Style::fg(theme.foreground);
+    let dim = theme.style_muted();
+    let bright = theme.style_foreground();
 
     // Draw commands hint first
     buffer.draw_text(x, y, commands_hint.label, dim);

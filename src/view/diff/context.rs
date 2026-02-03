@@ -1,6 +1,6 @@
 //! Orphaned context building, rendering, and calculate_context_ranges.
 
-use opentui::{OptimizedBuffer, Style};
+use opentui::OptimizedBuffer;
 
 use crate::db::ThreadSummary;
 use crate::layout::{CONTEXT_LINES, SBS_LINE_NUM_WIDTH};
@@ -314,7 +314,7 @@ pub(super) fn render_context_item_block(
                 sep_x,
                 y,
                 &sep_text,
-                Style::fg(theme.muted).with_bg(dt.context_bg),
+                theme.style_muted_on(dt.context_bg),
             );
         }
         DisplayItem::Line { line_num, content } => {
@@ -331,7 +331,7 @@ pub(super) fn render_context_item_block(
                 ln_x,
                 y,
                 &ln_str,
-                Style::fg(dt.line_number).with_bg(dt.context_bg),
+                dt.style_line_number(dt.context_bg),
             );
 
             let content_x = ln_x + line_num_width;
@@ -369,7 +369,7 @@ pub(super) fn render_context_line_wrapped_row(
     if row == 0 {
         buffer.draw_text(
             ln_x, y, &ln_str,
-            Style::fg(dt.line_number).with_bg(dt.context_bg),
+            dt.style_line_number(dt.context_bg),
         );
     }
 

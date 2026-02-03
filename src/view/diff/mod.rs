@@ -17,7 +17,7 @@ mod side_by_side;
 mod text_util;
 mod unified;
 
-use opentui::{OptimizedBuffer, Style};
+use opentui::OptimizedBuffer;
 
 use super::components::Rect;
 use crate::db::ThreadSummary;
@@ -826,7 +826,7 @@ pub fn render_diff_stream(
                         y,
                         theme.panel_bg,
                         "No content available",
-                        Style::fg(theme.muted),
+                        theme.style_muted(),
                         theme,
                     );
                 });

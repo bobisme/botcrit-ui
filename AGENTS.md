@@ -52,13 +52,13 @@ Use `--review`, `--file`, and `--thread` to skip the main menu and open directly
 
 ```bash
 # Open directly to a review
-botty spawn --name crit-ui -- /home/bob/src/botcrit-ui/target/release/crit-ui --path /home/bob/src/botty --review cr-qmr8
+botty spawn --name crit-ui -- /home/bob/src/botcrit-ui/target/release/crit-ui --path /home/bob/src/botty/ws/default --review cr-qmr8
 
 # Open to a specific file within a review
-crit-ui --path /home/bob/src/botty --review cr-qmr8 --file src/attach.rs
+crit-ui --path /home/bob/src/botty/ws/default --review cr-qmr8 --file src/attach.rs
 
 # Open with a specific thread expanded (also selects its file)
-crit-ui --path /home/bob/src/botty --review cr-qmr8 --thread th-lkxz
+crit-ui --path /home/bob/src/botty/ws/default --review cr-qmr8 --thread th-lkxz
 ```
 
 - `--file` and `--thread` require `--review`; without it they are silently ignored.

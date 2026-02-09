@@ -8,19 +8,20 @@ Groom a set of ready beads to improve backlog quality. Use this when you need to
 
 ## Steps
 
-1. Check ready beads: `br ready`
-2. For each bead from `br ready`, run `br show <bead-id>` and fix anything missing:
-   - **Title**: Should be clear and actionable (imperative form, e.g., "Add /health endpoint"). If vague, update: `br update <bead-id> --title="..."`
-   - **Description**: Should explain what and why. If missing or vague, add context: `br update <bead-id> --description="..."`
-   - **Priority**: Should reflect relative importance. Adjust if wrong: `br update <bead-id> --priority=<1-4>`
-   - **Labels**: Add labels if the bead fits a category (see label conventions). Create labels with `br label create <name>`, apply with `br label add <bead-id> <label>`.
+1. Check ready beads: `maw exec default -- br ready`
+2. For each bead from `maw exec default -- br ready`, run `maw exec default -- br show <bead-id>` and fix anything missing:
+   - **Title**: Should be clear and actionable (imperative form, e.g., "Add /health endpoint"). If vague, update: `maw exec default -- br update --actor $AGENT <bead-id> --title="..."`
+   - **Description**: Should explain what and why. If missing or vague, add context: `maw exec default -- br update --actor $AGENT <bead-id> --description="..."`
+   - **Priority**: Should reflect relative importance. Adjust if wrong: `maw exec default -- br update --actor $AGENT <bead-id> --priority=<1-4>`
+   - **Labels**: Add labels if the bead fits a category (see Label Conventions below). Apply with `maw exec default -- br label add --actor $AGENT -l <label> <bead-id>` (creates label if it doesn't exist).
    - **Acceptance criteria**: Description should include what "done" looks like. If missing, append criteria to the description.
    - **Testing strategy**: Description should mention how to verify the work (e.g., "run tests", "manual check", "curl endpoint"). If missing, append a brief testing note.
-   - Add a comment noting what you groomed: `br comments add <bead-id> "Groomed by $AGENT: <what changed>"`
-3. Check bead size: if a bead is large (epic, or description suggests multiple distinct changes), break it down:
-   - Create smaller child beads with `br create` and `br dep add <child> <parent>`.
-   - Add a comment to the parent: `br comments add <parent-id> "Broken down into smaller tasks: <child-id>, ..."`
-4. Announce if you groomed multiple beads: `botbus send --agent $AGENT $BOTBOX_PROJECT "Groomed N beads: <summary>" -L mesh -L grooming`
+   - Add a comment noting what you groomed: `maw exec default -- br comments add --actor $AGENT --author $AGENT <bead-id> "Groomed by $AGENT: <what changed>"`
+3. Check bead size: each bead should be one resumable unit of work — if a session crashes after completing it, the next session knows exactly where to pick up. If a bead covers multiple distinct steps, break it down:
+   - Create smaller child beads with `maw exec default -- br create --actor $AGENT --owner $AGENT` and `maw exec default -- br dep add --actor $AGENT <child> <parent>`.
+   - Add sibling dependencies where order matters: `maw exec default -- br dep add --actor $AGENT <later> <earlier>` (e.g., "write report" blocked by "run eval").
+   - Add a comment to the parent: `maw exec default -- br comments add --actor $AGENT --author $AGENT <parent-id> "Broken down into smaller tasks: <child-id>, ..."`
+4. Announce if you groomed multiple beads: `bus send --agent $AGENT $BOTBOX_PROJECT "Groomed N beads: <summary>" -L grooming`
 
 ## Acceptance Criteria
 
@@ -36,3 +37,65 @@ Groom a set of ready beads to improve backlog quality. Use this when you need to
 - After filing a batch of new beads (get them ready for triage)
 - When you notice vague or overlapping beads (preventive cleanup)
 - As a standalone task when other work is blocked
+
+## Label Conventions
+
+Labels categorize beads for filtering, reporting, and prioritization. Use labels consistently to make the backlog navigable.
+
+### When to Label
+
+Apply labels during grooming when a bead clearly fits a category. Don't over-label — only use labels that add useful filtering value.
+
+### Label Categories
+
+**Organizational**
+- `epic` — Parent tracking issue that aggregates related beads (typically has child dependencies)
+
+**Component/Area** (where the work happens)
+- `cli` — CLI code changes
+- `docs` — Documentation updates
+- `skill` — Skill implementation or changes
+- `eval` — Evaluation framework or test runs
+
+**Review-Related**
+- `review` — Review process improvements or review-related tasks
+- `review-finding` — Issues discovered during code review
+- `must-fix` — Critical issues from reviews (blocks merge)
+- `should-fix` — Non-blocking review feedback (nice-to-have improvements)
+
+### Naming Conventions
+
+- Use lowercase, singular form
+- Use hyphens for multi-word labels (kebab-case): `review-finding`, not `review_finding` or `reviewFinding`
+- Keep labels short and descriptive (1-2 words)
+- Be specific but not too granular (prefer `eval` over `eval-level-2-test-case-3`)
+
+### Creating New Labels
+
+Before creating a new label:
+1. Check existing labels: `maw exec default -- br label list`
+2. Reuse an existing label if it fits (prefer consistency over perfect naming)
+3. Only create a new label if you expect to use it for multiple beads
+4. Apply with `maw exec default -- br label add --actor $AGENT -l <name> <bead-id>` (creates label automatically if it doesn't exist — no separate creation command needed)
+
+### Project-Specific vs Cross-Project
+
+Labels are project-scoped (stored in each project's beads database). Use naming that makes sense for your project. If you work across multiple projects, use similar conventions for consistency, but don't try to share labels between projects.
+
+### Listing and Filtering
+
+- List all labels: `maw exec default -- br label list`
+- Filter beads by label: `maw exec default -- br list --label <name>`
+- Filter ready beads: `maw exec default -- br ready` (shows all labels in output)
+
+### Examples
+
+Good labeling:
+- A bead about adding OAuth support to the CLI → `cli`
+- An epic tracking review evals → `epic`, `eval`, `review`
+- A bug found during review that must be fixed → `review-finding`, `must-fix`
+- Documentation for the report-issue workflow → `docs`
+
+Over-labeling (avoid):
+- A CLI bug that's also a P0 priority → just `cli` (priority is a field, not a label)
+- A one-off task specific to a single bead → no new label needed

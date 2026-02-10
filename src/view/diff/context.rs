@@ -269,7 +269,7 @@ pub(super) fn emit_remaining_orphaned_comments(
     context: &OrphanedContext<'_>,
     all_comments: &std::collections::HashMap<String, Vec<crate::db::Comment>>,
     thread_positions: &std::cell::RefCell<std::collections::HashMap<String, usize>>,
-    emitted_threads: &mut std::collections::HashSet<String>,
+    emitted_threads: &std::collections::HashSet<String>,
 ) {
     let mut remaining: Vec<&&ThreadSummary> = context
         .threads

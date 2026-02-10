@@ -588,11 +588,11 @@ fn sync_file_index_from_sidebar(model: &mut Model) {
     if let Some(item) = items.get(model.sidebar_index) {
         match item {
             crate::model::SidebarItem::File { file_idx, .. } => {
-                if *file_idx != model.file_index {
-                    jump_to_file(model, *file_idx);
-                } else {
+                if *file_idx == model.file_index {
                     model.expanded_thread = None;
                     model.needs_redraw = true;
+                } else {
+                    jump_to_file(model, *file_idx);
                 }
             }
             crate::model::SidebarItem::Thread {
@@ -636,14 +636,14 @@ fn update_active_file_from_scroll(model: &mut Model) {
 
 fn sync_sidebar_from_active(model: &mut Model) {
     let items = model.sidebar_items();
-    let mut target = None;
-
-    if let Some(thread_id) = active_thread_from_scroll(model) {
-        target = items.iter().position(|item| match item {
+    let mut target = if let Some(thread_id) = active_thread_from_scroll(model) {
+        items.iter().position(|item| match item {
             crate::model::SidebarItem::Thread { thread_id: id, .. } => id == &thread_id,
             crate::model::SidebarItem::File { .. } => false,
-        });
-    }
+        })
+    } else {
+        None
+    };
 
     if target.is_none() {
         if let Some(thread_id) = &model.expanded_thread {
@@ -674,9 +674,7 @@ fn active_thread_from_scroll(model: &Model) -> Option<String> {
     }
 
     let files = model.files_with_threads();
-    let Some(file) = files.get(model.file_index) else {
-        return None;
-    };
+    let file = files.get(model.file_index)?;
 
     let view_height = model.height.saturating_sub(2) as usize;
     let view_end = model.diff_scroll.saturating_add(view_height);
@@ -690,10 +688,10 @@ fn active_thread_from_scroll(model: &Model) -> Option<String> {
                 if in_view.is_none_or(|(best, _)| pos < best) {
                     in_view = Some((pos, thread.thread_id.as_str()));
                 }
-            } else if pos < model.diff_scroll {
-                if above.is_none_or(|(best, _)| pos > best) {
-                    above = Some((pos, thread.thread_id.as_str()));
-                }
+            } else if pos < model.diff_scroll
+                && above.is_none_or(|(best, _)| pos > best)
+            {
+                above = Some((pos, thread.thread_id.as_str()));
             }
         }
     }

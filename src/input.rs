@@ -23,9 +23,8 @@ pub fn map_event_to_message(model: &mut Model, event: Event) -> Message {
                 return Message::ShowCommandPalette;
             }
 
-            match model.focus {
-                Focus::CommandPalette => return map_command_palette_key(key.code),
-                _ => {}
+            if model.focus == Focus::CommandPalette {
+                return map_command_palette_key(key.code);
             }
 
             match model.screen {

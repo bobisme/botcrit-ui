@@ -279,9 +279,7 @@ enum Row<'a> {
 fn build_rows(commands: &[CommandSpec]) -> Vec<Row<'_>> {
     let mut rows = Vec::new();
     let mut current_category: Option<&str> = None;
-    let mut selectable_index: usize = 0;
-
-    for cmd in commands {
+    for (selectable_index, cmd) in commands.iter().enumerate() {
         if current_category != Some(cmd.category) {
             if current_category.is_some() {
                 rows.push(Row::Separator);
@@ -290,7 +288,6 @@ fn build_rows(commands: &[CommandSpec]) -> Vec<Row<'_>> {
             current_category = Some(cmd.category);
         }
         rows.push(Row::Item(cmd, selectable_index));
-        selectable_index += 1;
     }
 
     rows

@@ -122,7 +122,7 @@ struct OrphanedContext<'a> {
     highlights: &'a [Vec<HighlightSpan>],
 }
 
-impl<'a> StreamCursor<'a> {
+impl StreamCursor<'_> {
     fn emit<F>(&mut self, draw: F)
     where
         F: FnOnce(&mut OptimizedBuffer, u32, &Theme),
@@ -767,7 +767,7 @@ pub fn render_diff_stream(
                         context,
                         all_comments,
                         thread_positions,
-                        &mut emitted_threads,
+                        &emitted_threads,
                     );
                 } else if !orphaned_threads.is_empty() {
                     let mut orphaned_sorted = orphaned_threads.clone();

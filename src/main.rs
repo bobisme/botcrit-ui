@@ -314,7 +314,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::ref_option)]
 fn process_event(
     event: &Event,
     model: &mut Model,

@@ -302,7 +302,7 @@ fn comment_block_height(comments: &[Comment], content_width: u32) -> usize {
         return 0;
     }
     let max_width = content_width
-        .saturating_sub((BLOCK_SIDE_MARGIN * 2 + 1 + BLOCK_LEFT_PAD + BLOCK_RIGHT_PAD) as u32);
+        .saturating_sub(BLOCK_SIDE_MARGIN * 2 + 1 + BLOCK_LEFT_PAD + BLOCK_RIGHT_PAD);
     let max_width = max_width as usize;
     let mut content_lines = 2; // thread header line + spacing
     for comment in comments {

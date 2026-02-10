@@ -11,12 +11,10 @@ pub(super) fn split_at_char(text: &str, max_chars: usize) -> (&str, &str) {
     if max_chars == 0 {
         return ("", text);
     }
-    let mut count = 0usize;
-    for (idx, _) in text.char_indices() {
+    for (count, (idx, _)) in text.char_indices().enumerate() {
         if count == max_chars {
             return (&text[..idx], &text[idx..]);
         }
-        count += 1;
     }
     (text, "")
 }

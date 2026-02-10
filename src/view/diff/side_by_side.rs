@@ -142,34 +142,31 @@ fn render_side_line_wrapped_row(
     wrapped: Option<&Vec<WrappedLine>>,
     row: usize,
 ) {
-    match side {
-        Some(line) => {
-            let (bg, line_num_bg, fg) = match line.kind {
-                DiffLineKind::Added => (dt.added_bg, dt.added_line_number_bg, dt.added),
-                DiffLineKind::Removed => (dt.removed_bg, dt.removed_line_number_bg, dt.removed),
-                DiffLineKind::Context => (dt.context_bg, dt.context_bg, dt.context),
-            };
+    if let Some(line) = side {
+        let (bg, line_num_bg, fg) = match line.kind {
+            DiffLineKind::Added => (dt.added_bg, dt.added_line_number_bg, dt.added),
+            DiffLineKind::Removed => (dt.removed_bg, dt.removed_line_number_bg, dt.removed),
+            DiffLineKind::Context => (dt.context_bg, dt.context_bg, dt.context),
+        };
 
-            buffer.fill_rect(ln_x, y, 6, 1, line_num_bg);
-            if row == 0 {
-                let ln_str = format!("{:>5} ", line.line_num);
-                buffer.draw_text(
-                    ln_x, y, &ln_str,
-                    Style::fg(line_number_color).with_bg(line_num_bg),
-                );
-            }
+        buffer.fill_rect(ln_x, y, 6, 1, line_num_bg);
+        if row == 0 {
+            let ln_str = format!("{:>5} ", line.line_num);
+            buffer.draw_text(
+                ln_x, y, &ln_str,
+                Style::fg(line_number_color).with_bg(line_num_bg),
+            );
+        }
 
-            buffer.fill_rect(content_x, y, content_width, 1, bg);
-            if let Some(lines) = wrapped {
-                if let Some(line_content) = lines.get(row) {
-                    draw_wrapped_line(buffer, content_x, y, content_width, line_content, fg, bg);
-                }
+        buffer.fill_rect(content_x, y, content_width, 1, bg);
+        if let Some(lines) = wrapped {
+            if let Some(line_content) = lines.get(row) {
+                draw_wrapped_line(buffer, content_x, y, content_width, line_content, fg, bg);
             }
         }
-        None => {
-            buffer.fill_rect(ln_x, y, 6, 1, dt.context_bg);
-            buffer.fill_rect(content_x, y, content_width, 1, dt.context_bg);
-        }
+    } else {
+        buffer.fill_rect(ln_x, y, 6, 1, dt.context_bg);
+        buffer.fill_rect(content_x, y, content_width, 1, dt.context_bg);
     }
 }
 
@@ -184,30 +181,27 @@ fn render_side_line(
     line_number_color: Rgba,
     highlights: Option<&Vec<HighlightSpan>>,
 ) {
-    match side {
-        Some(line) => {
-            let (bg, line_num_bg, fg) = match line.kind {
-                DiffLineKind::Added => (dt.added_bg, dt.added_line_number_bg, dt.added),
-                DiffLineKind::Removed => (dt.removed_bg, dt.removed_line_number_bg, dt.removed),
-                DiffLineKind::Context => (dt.context_bg, dt.context_bg, dt.context),
-            };
+    if let Some(line) = side {
+        let (bg, line_num_bg, fg) = match line.kind {
+            DiffLineKind::Added => (dt.added_bg, dt.added_line_number_bg, dt.added),
+            DiffLineKind::Removed => (dt.removed_bg, dt.removed_line_number_bg, dt.removed),
+            DiffLineKind::Context => (dt.context_bg, dt.context_bg, dt.context),
+        };
 
-            let ln_str = format!("{:>5} ", line.line_num);
-            buffer.fill_rect(ln_x, y, 6, 1, line_num_bg);
-            buffer.draw_text(
-                ln_x, y, &ln_str,
-                Style::fg(line_number_color).with_bg(line_num_bg),
-            );
+        let ln_str = format!("{:>5} ", line.line_num);
+        buffer.fill_rect(ln_x, y, 6, 1, line_num_bg);
+        buffer.draw_text(
+            ln_x, y, &ln_str,
+            Style::fg(line_number_color).with_bg(line_num_bg),
+        );
 
-            buffer.fill_rect(content_x, y, content_width, 1, bg);
-            draw_highlighted_text(
-                buffer, content_x, y, content_width,
-                highlights, &line.content, fg, bg,
-            );
-        }
-        None => {
-            buffer.fill_rect(ln_x, y, 6, 1, dt.context_bg);
-            buffer.fill_rect(content_x, y, content_width, 1, dt.context_bg);
-        }
+        buffer.fill_rect(content_x, y, content_width, 1, bg);
+        draw_highlighted_text(
+            buffer, content_x, y, content_width,
+            highlights, &line.content, fg, bg,
+        );
+    } else {
+        buffer.fill_rect(ln_x, y, 6, 1, dt.context_bg);
+        buffer.fill_rect(content_x, y, content_width, 1, dt.context_bg);
     }
 }

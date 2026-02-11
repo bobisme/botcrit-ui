@@ -25,7 +25,12 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
     // Header block
     let header_text = model.repo_path.as_ref().map_or_else(
         || "Reviews".to_string(),
-        |path| format!("Reviews for {path}"),
+        |path| {
+            let display_path = std::env::var("HOME").ok().and_then(|home| {
+                path.strip_prefix(&home).map(|rest| format!("~{rest}"))
+            }).unwrap_or_else(|| path.clone());
+            format!("Reviews for {display_path}")
+        },
     );
     draw_block(
         buffer,

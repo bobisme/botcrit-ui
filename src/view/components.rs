@@ -127,11 +127,11 @@ pub fn draw_text_truncated(
     }
 
     let text = if text.len() > max_width as usize {
-        if max_width <= 3 {
+        if max_width <= 1 {
             text[..max_width as usize].to_string()
         } else {
-            let truncated = &text[..max_width.saturating_sub(3) as usize];
-            format!("{truncated}...")
+            let truncated = &text[..max_width.saturating_sub(1) as usize];
+            format!("{truncated}\u{2026}")
         }
     } else {
         text.to_string()
@@ -176,11 +176,11 @@ pub fn truncate_path(path: &str, max_width: usize) -> String {
     // Try to keep the filename
     if let Some(idx) = path.rfind('/') {
         let filename = &path[idx + 1..];
-        if filename.len() + 4 <= max_width {
-            // ".../" + filename
-            let available = max_width - filename.len() - 4;
+        if filename.len() + 2 <= max_width {
+            // "\u{2026}/" + filename
+            let available = max_width - filename.len() - 2;
             let prefix = &path[..available.min(idx)];
-            return format!("{prefix}.../{filename}");
+            return format!("{prefix}\u{2026}/{filename}");
         }
     }
 

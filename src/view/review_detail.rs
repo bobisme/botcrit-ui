@@ -449,8 +449,6 @@ fn render_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         }
         Focus::DiffPane => {
             all_hints.extend([
-                HotkeyHint::new("Scroll", "j/k"),
-                HotkeyHint::new("Thread", "n/p"),
                 HotkeyHint::new("View", "v"),
                 HotkeyHint::new("Wrap", "w"),
                 HotkeyHint::new("Open", "o"),
@@ -461,7 +459,6 @@ fn render_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         }
         Focus::ThreadExpanded => {
             all_hints.extend([
-                HotkeyHint::new("Scroll", "j/k"),
                 HotkeyHint::new("Resolve", "r"),
                 HotkeyHint::new("Collapse", "Esc"),
             ]);

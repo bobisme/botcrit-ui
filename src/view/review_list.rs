@@ -127,6 +127,91 @@ fn draw_review_row(
     }
 
     // Status badge for closed reviews
+    x += draw_status_badge(buffer, theme, x, y, review, remaining, bg);
+
+    // Title (truncated to fit)
+    let remaining = row_width.saturating_sub(x - area.x);
+    if remaining == 0 {
+        return;
+    }
+    let title_width = remaining.saturating_sub(25).max(10).min(remaining);
+    let used = draw_segment(buffer, x, y, &review.title, title_width, style);
+    x += used;
+    if remaining > used {
+        x += 1;
+    }
+
+    // Author
+    let remaining = row_width.saturating_sub(x - area.x);
+    x += draw_author(buffer, theme, x, y, review, remaining, bg);
+
+    // Thread count
+    let remaining = row_width.saturating_sub(x - area.x);
+    if remaining > 0 {
+        draw_thread_count(buffer, theme, x, y, review, remaining, bg);
+    }
+}
+
+fn draw_author(
+    buffer: &mut OptimizedBuffer,
+    theme: &crate::theme::Theme,
+    x: u32,
+    y: u32,
+    review: &crate::db::ReviewSummary,
+    remaining: u32,
+    bg: opentui::Rgba,
+) -> u32 {
+    let author_width = 12.min(remaining.saturating_sub(12));
+    if author_width > 0 {
+        let used = draw_segment(
+            buffer,
+            x,
+            y,
+            &review.author,
+            author_width,
+            theme.style_muted_on(bg),
+        );
+        used + u32::from(remaining > used)
+    } else {
+        0
+    }
+}
+
+fn draw_thread_count(
+    buffer: &mut OptimizedBuffer,
+    theme: &crate::theme::Theme,
+    x: u32,
+    y: u32,
+    review: &crate::db::ReviewSummary,
+    remaining: u32,
+    bg: opentui::Rgba,
+) {
+    let thread_str = format_thread_count(review.thread_count, review.open_thread_count);
+    let thread_color = if review.open_thread_count > 0 {
+        theme.warning
+    } else {
+        theme.muted
+    };
+    let threads_label = format!("{thread_str} threads");
+    draw_segment(
+        buffer,
+        x,
+        y,
+        &threads_label,
+        remaining,
+        Style::fg(thread_color).with_bg(bg),
+    );
+}
+
+fn draw_status_badge(
+    buffer: &mut OptimizedBuffer,
+    theme: &crate::theme::Theme,
+    x: u32,
+    y: u32,
+    review: &crate::db::ReviewSummary,
+    remaining: u32,
+    bg: opentui::Rgba,
+) -> u32 {
     if review.status != "open" && remaining > 0 {
         let badge = format!("[{}]", review.status);
         let badge_color = match review.status.as_str() {
@@ -143,60 +228,9 @@ fn draw_review_row(
             remaining,
             Style::fg(badge_color).with_bg(bg),
         );
-        x += used;
-        if remaining > used {
-            x += 1;
-        }
-    }
-
-    // Title (truncated to fit)
-    let remaining = row_width.saturating_sub(x - area.x);
-    if remaining == 0 {
-        return;
-    }
-    let title_width = remaining.saturating_sub(25).max(10).min(remaining);
-    let used = draw_segment(buffer, x, y, &review.title, title_width, style);
-    x += used;
-    if remaining > used {
-        x += 1;
-    }
-
-    // Author
-    let remaining = row_width.saturating_sub(x - area.x);
-    let author_width = 12.min(remaining.saturating_sub(12));
-    if author_width > 0 {
-        let used = draw_segment(
-            buffer,
-            x,
-            y,
-            &review.author,
-            author_width,
-            theme.style_muted_on(bg),
-        );
-        x += used;
-        if remaining > used {
-            x += 1;
-        }
-    }
-
-    // Thread count
-    let remaining = row_width.saturating_sub(x - area.x);
-    if remaining > 0 {
-        let thread_str = format_thread_count(review.thread_count, review.open_thread_count);
-        let thread_color = if review.open_thread_count > 0 {
-            theme.warning
-        } else {
-            theme.muted
-        };
-        let threads_label = format!("{thread_str} threads");
-        draw_segment(
-            buffer,
-            x,
-            y,
-            &threads_label,
-            remaining,
-            Style::fg(thread_color).with_bg(bg),
-        );
+        used + u32::from(remaining > used)
+    } else {
+        0
     }
 }
 

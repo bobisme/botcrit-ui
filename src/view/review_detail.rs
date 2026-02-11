@@ -8,6 +8,11 @@ use crate::model::{Focus, LayoutMode, Model, SidebarItem};
 use crate::layout::{BLOCK_MARGIN, BLOCK_PADDING, DIFF_MARGIN};
 use crate::stream::{block_height, description_block_height};
 
+struct SidebarPadding {
+    left: u32,
+    right: u32,
+}
+
 /// Render the review detail screen
 pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
     let area = Rect::from_size(model.width, model.height);
@@ -60,20 +65,175 @@ fn draw_loading_splash(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) 
     buffer.draw_text(x, y, title, Style::fg(theme.foreground).with_bold());
 }
 
+/// Render a file item in the sidebar
+fn draw_sidebar_file_item(
+    model: &Model,
+    buffer: &mut OptimizedBuffer,
+    item: &SidebarItem,
+    y: u32,
+    inner: Rect,
+    pad: &SidebarPadding,
+) {
+    if let SidebarItem::File {
+        entry,
+        file_idx,
+        collapsed,
+    } = item
+    {
+        let theme = &model.theme;
+        let selected = *file_idx == model.sidebar_index;
+        let focused = matches!(model.focus, Focus::FileSidebar);
+
+        let row_bg = if selected && focused {
+            theme.selection_bg
+        } else if selected {
+            theme.panel_bg.lerp(theme.selection_bg, 0.5)
+        } else {
+            theme.panel_bg
+        };
+
+        if selected {
+            buffer.fill_rect(inner.x, y, inner.width, 1, row_bg);
+        }
+
+        let collapse_indicator = if *collapsed { "▸ " } else { "▾ " };
+        let (prefix, style) = if *file_idx == model.file_index {
+            (collapse_indicator, theme.style_primary().with_bg(row_bg))
+        } else {
+            (
+                collapse_indicator,
+                theme.style_foreground_on(row_bg),
+            )
+        };
+
+        let prefix_x = inner.x + pad.left;
+        buffer.draw_text(prefix_x, y, prefix, style);
+
+        // Thread count indicator
+        let thread_indicator = if entry.open_threads > 0 {
+            format!("{}", entry.open_threads)
+        } else if entry.resolved_threads > 0 {
+            "✓".to_string()
+        } else {
+            " ".to_string()
+        };
+
+        let indicator_color = if entry.open_threads > 0 {
+            theme.warning
+        } else {
+            theme.success
+        };
+
+        let indicator_len = thread_indicator.chars().count() as u32;
+        let prefix_width: u32 = 2;
+        let filename_width = inner
+            .width
+            .saturating_sub(prefix_width + indicator_len + pad.left + pad.right);
+
+        let filename = truncate_path(&entry.path, filename_width as usize);
+        draw_text_truncated(
+            buffer,
+            prefix_x + prefix_width,
+            y,
+            &filename,
+            filename_width,
+            style,
+        );
+
+        let indicator_x = inner
+            .x
+            .saturating_add(inner.width)
+            .saturating_sub(pad.right + indicator_len);
+        buffer.draw_text(
+            indicator_x,
+            y,
+            &thread_indicator,
+            Style::fg(indicator_color).with_bg(row_bg),
+        );
+    }
+}
+
+/// Render a thread item in the sidebar
+fn draw_sidebar_thread_item(
+    model: &Model,
+    buffer: &mut OptimizedBuffer,
+    item: &SidebarItem,
+    item_idx: usize,
+    y: u32,
+    inner: Rect,
+    pad: &SidebarPadding,
+) {
+    if let SidebarItem::Thread {
+        thread_id,
+        status,
+        comment_count,
+        ..
+    } = item
+    {
+        let theme = &model.theme;
+        let is_cursor = item_idx == model.sidebar_index;
+        let focused = matches!(model.focus, Focus::FileSidebar);
+
+        let row_bg = if is_cursor && focused {
+            theme.selection_bg
+        } else if is_cursor {
+            theme.panel_bg.lerp(theme.selection_bg, 0.5)
+        } else {
+            theme.panel_bg
+        };
+
+        if is_cursor {
+            buffer.fill_rect(inner.x, y, inner.width, 1, row_bg);
+        }
+
+        let indent: u32 = 4;
+        let thread_x = inner.x + pad.left + indent;
+
+        // Right-aligned comment count indicator
+        let count_text = format!("{comment_count}");
+        let count_len = count_text.chars().count() as u32;
+        let count_color = if status == "open" {
+            theme.warning
+        } else {
+            theme.muted
+        };
+
+        let indicator_x = inner
+            .x
+            .saturating_add(inner.width)
+            .saturating_sub(pad.right + count_len);
+
+        let id_width = indicator_x.saturating_sub(thread_x + 1);
+
+        let text_style = if is_cursor {
+            theme.style_foreground_on(row_bg)
+        } else {
+            theme.style_muted_on(row_bg)
+        };
+        draw_text_truncated(buffer, thread_x, y, thread_id, id_width, text_style);
+
+        buffer.draw_text(
+            indicator_x,
+            y,
+            &count_text,
+            Style::fg(count_color).with_bg(row_bg),
+        );
+    }
+}
+
 fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     let theme = &model.theme;
     let inner = area;
     buffer.fill_rect(inner.x, inner.y, inner.width, inner.height, theme.panel_bg);
     let items = model.sidebar_items();
-    let focused = matches!(model.focus, Focus::FileSidebar);
 
-    let left_pad: u32 = 2;
-    let right_pad: u32 = 2;
+    let pad = SidebarPadding { left: 2, right: 2 };
     let mut y = inner.y + 1;
-    let text_x = inner.x + left_pad;
-    let text_width = inner.width.saturating_sub(left_pad + right_pad);
+    let text_x = inner.x + pad.left;
+    let text_width = inner.width.saturating_sub(pad.left + pad.right);
     let bottom = inner.y + inner.height.saturating_sub(1);
 
+    // Draw review header info
     if let Some(review) = &model.current_review {
         draw_text_truncated(
             buffer,
@@ -128,129 +288,12 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
             break;
         }
 
-        let is_cursor = item_idx == model.sidebar_index;
-
         match item {
-            SidebarItem::File {
-                entry,
-                file_idx,
-                collapsed,
-            } => {
-                let selected = is_cursor;
-                let row_bg = if selected && focused {
-                    theme.selection_bg
-                } else if selected {
-                    theme.panel_bg.lerp(theme.selection_bg, 0.5)
-                } else {
-                    theme.panel_bg
-                };
-                if selected {
-                    buffer.fill_rect(inner.x, y, inner.width, 1, row_bg);
-                }
-                let collapse_indicator = if *collapsed { "▸ " } else { "▾ " };
-                let (prefix, style) = if *file_idx == model.file_index {
-                    (collapse_indicator, theme.style_primary().with_bg(row_bg))
-                } else {
-                    (
-                        collapse_indicator,
-                        theme.style_foreground_on(row_bg),
-                    )
-                };
-
-                let prefix_x = inner.x + left_pad;
-                buffer.draw_text(prefix_x, y, prefix, style);
-
-                // Thread count indicator
-                let thread_indicator = if entry.open_threads > 0 {
-                    format!("{}", entry.open_threads)
-                } else if entry.resolved_threads > 0 {
-                    "✓".to_string()
-                } else {
-                    " ".to_string()
-                };
-
-                let indicator_color = if entry.open_threads > 0 {
-                    theme.warning
-                } else {
-                    theme.success
-                };
-
-                let indicator_len = thread_indicator.chars().count() as u32;
-                let prefix_width: u32 = 2;
-                let filename_width = inner
-                    .width
-                    .saturating_sub(prefix_width + indicator_len + left_pad + right_pad);
-
-                let filename = truncate_path(&entry.path, filename_width as usize);
-                draw_text_truncated(
-                    buffer,
-                    prefix_x + prefix_width,
-                    y,
-                    &filename,
-                    filename_width,
-                    style,
-                );
-
-                let indicator_x = inner
-                    .x
-                    .saturating_add(inner.width)
-                    .saturating_sub(right_pad + indicator_len);
-                buffer.draw_text(
-                    indicator_x,
-                    y,
-                    &thread_indicator,
-                    Style::fg(indicator_color).with_bg(row_bg),
-                );
+            SidebarItem::File { .. } => {
+                draw_sidebar_file_item(model, buffer, item, y, inner, &pad);
             }
-            SidebarItem::Thread {
-                thread_id,
-                status,
-                comment_count,
-                ..
-            } => {
-                let row_bg = if is_cursor && focused {
-                    theme.selection_bg
-                } else if is_cursor {
-                    theme.panel_bg.lerp(theme.selection_bg, 0.5)
-                } else {
-                    theme.panel_bg
-                };
-                if is_cursor {
-                    buffer.fill_rect(inner.x, y, inner.width, 1, row_bg);
-                }
-
-                let indent: u32 = 4;
-                let thread_x = inner.x + left_pad + indent;
-
-                // Right-aligned comment count indicator
-                let count_text = format!("{comment_count}");
-                let count_len = count_text.chars().count() as u32;
-                let count_color = if status == "open" {
-                    theme.warning
-                } else {
-                    theme.muted
-                };
-
-                let indicator_x = inner
-                    .x
-                    .saturating_add(inner.width)
-                    .saturating_sub(right_pad + count_len);
-
-                let id_width = indicator_x.saturating_sub(thread_x + 1);
-
-                let text_style = if is_cursor {
-                    theme.style_foreground_on(row_bg)
-                } else {
-                    theme.style_muted_on(row_bg)
-                };
-                draw_text_truncated(buffer, thread_x, y, thread_id, id_width, text_style);
-
-                buffer.draw_text(
-                    indicator_x,
-                    y,
-                    &count_text,
-                    Style::fg(count_color).with_bg(row_bg),
-                );
+            SidebarItem::Thread { .. } => {
+                draw_sidebar_thread_item(model, buffer, item, item_idx, y, inner, &pad);
             }
         }
 

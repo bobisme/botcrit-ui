@@ -375,6 +375,668 @@ pub struct DiffStreamParams<'a> {
     pub description: Option<&'a str>,
 }
 
+#[allow(clippy::too_many_arguments)]
+fn render_file_with_diff(
+    cursor: &mut StreamCursor<'_>,
+    area: Rect,
+    diff: &ParsedDiff,
+    entry: &crate::model::FileCacheEntry,
+    file_threads: &[&ThreadSummary],
+    view_mode: crate::model::DiffViewMode,
+    wrap: bool,
+    all_comments: &std::collections::HashMap<String, Vec<crate::db::Comment>>,
+    thread_positions: &std::cell::RefCell<std::collections::HashMap<String, usize>>,
+) {
+    let anchors = map_threads_to_diff(diff, file_threads);
+    let anchored_ids: std::collections::HashSet<&str> =
+        anchors.iter().map(|a| a.thread_id.as_str()).collect();
+    let orphaned_threads: Vec<&&ThreadSummary> = file_threads
+        .iter()
+        .filter(|t| !anchored_ids.contains(t.thread_id.as_str()))
+        .collect();
+    let mut orphaned_context: Option<OrphanedContext<'_>> = None;
+    if !orphaned_threads.is_empty() {
+        if let Some(content) = &entry.file_content {
+            let orphaned_deref: Vec<&ThreadSummary> =
+                orphaned_threads.iter().map(|t| **t).collect();
+            let hunk_ranges =
+                crate::diff::hunk_exclusion_ranges(&diff.hunks);
+            let ranges = calculate_context_ranges(
+                &orphaned_deref,
+                content.lines.len(),
+                &hunk_ranges,
+            );
+            let sections = group_context_ranges_by_hunks(ranges, &hunk_ranges);
+            if sections.iter().any(|section| !section.is_empty()) {
+                orphaned_context = Some(OrphanedContext {
+                    sections,
+                    threads: orphaned_deref,
+                    lines: content.lines.as_slice(),
+                    highlights: entry.file_highlighted_lines.as_slice(),
+                });
+            }
+        }
+    }
+    let line_area = diff_margin_area(area);
+
+    let emitted_threads = match view_mode {
+        crate::model::DiffViewMode::Unified => {
+            render_file_diff_unified(
+                cursor,
+                line_area,
+                area,
+                &diff.hunks,
+                file_threads,
+                &entry.highlighted_lines,
+                wrap,
+                all_comments,
+                thread_positions,
+                orphaned_context.as_ref(),
+                &anchors,
+            )
+        }
+        crate::model::DiffViewMode::SideBySide => {
+            let sbs_lines = build_side_by_side_lines(diff);
+            render_file_diff_sbs(
+                cursor,
+                line_area,
+                area,
+                &sbs_lines,
+                file_threads,
+                &entry.highlighted_lines,
+                wrap,
+                all_comments,
+                thread_positions,
+                orphaned_context.as_ref(),
+                &anchors,
+            )
+        }
+    };
+
+    if let Some(context) = &orphaned_context {
+        emit_remaining_orphaned_comments(
+            cursor,
+            area,
+            context,
+            all_comments,
+            thread_positions,
+            &emitted_threads,
+        );
+    } else if !orphaned_threads.is_empty() {
+        let mut orphaned_sorted = orphaned_threads.clone();
+        orphaned_sorted.sort_by_key(|t| t.selection_start);
+        for thread in &orphaned_sorted {
+            thread_positions
+                .borrow_mut()
+                .insert(thread.thread_id.clone(), cursor.stream_row);
+            if let Some(comments) = all_comments.get(&thread.thread_id) {
+                emit_comment_block(cursor, area, thread, comments);
+            }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_file_content_no_diff(
+    cursor: &mut StreamCursor<'_>,
+    area: Rect,
+    content: &crate::model::FileContent,
+    file_threads: &[&ThreadSummary],
+    file_highlights: &[Vec<HighlightSpan>],
+    wrap: bool,
+    all_comments: &std::collections::HashMap<String, Vec<crate::db::Comment>>,
+    thread_positions: &std::cell::RefCell<std::collections::HashMap<String, usize>>,
+) {
+    let line_area = diff_margin_area(area);
+    let thread_ranges = build_thread_ranges(file_threads);
+    let display_items =
+        build_context_items(content.lines.as_slice(), file_threads, &[]);
+    for item in display_items {
+        let show_thread_bar = match &item {
+            DisplayItem::Line { line_num, .. } => {
+                line_in_thread_ranges(Some(*line_num), &thread_ranges)
+            }
+            DisplayItem::Separator(_) => false,
+        };
+        match &item {
+            DisplayItem::Separator(_) => {
+                cursor.emit(|buf, y, theme| {
+                    render_context_item_block(
+                        buf,
+                        line_area,
+                        y,
+                        &item,
+                        theme,
+                        show_thread_bar,
+                        file_highlights,
+                    );
+                });
+            }
+            DisplayItem::Line { line_num, content } => {
+                if wrap {
+                    let line_index = (*line_num).saturating_sub(1) as usize;
+                    let highlight = file_highlights.get(line_index);
+                    let line_num_width = SBS_LINE_NUM_WIDTH;
+                    let content_width = diff_content_width(line_area)
+                        .saturating_sub(line_num_width)
+                        as usize;
+                    let wrapped = wrap_content(highlight, content, content_width);
+                    let rows = wrapped.len().max(1);
+                    cursor.emit_rows(rows, |buf, y, theme, row| {
+                        render_context_line_wrapped_row(
+                            buf,
+                            y,
+                            *line_num,
+                            theme,
+                            &LineRenderCtx { area: line_area, anchor: None, show_thread_bar },
+                            &wrapped,
+                            row,
+                        );
+                    });
+                } else {
+                    cursor.emit(|buf, y, theme| {
+                        render_context_item_block(
+                            buf,
+                            line_area,
+                            y,
+                            &item,
+                            theme,
+                            show_thread_bar,
+                            file_highlights,
+                        );
+                    });
+                }
+            }
+        }
+
+        if let DisplayItem::Line { line_num, .. } = &item {
+            if let Some(thread) = file_threads.iter().find(|t| {
+                let end = t.selection_end.unwrap_or(t.selection_start);
+                end == *line_num
+            }) {
+                thread_positions
+                    .borrow_mut()
+                    .insert(thread.thread_id.clone(), cursor.stream_row);
+                if let Some(comments) = all_comments.get(&thread.thread_id) {
+                    emit_comment_block(cursor, area, thread, comments);
+                }
+            }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_file_header(
+    cursor: &mut StreamCursor<'_>,
+    area: Rect,
+    file: &crate::model::FileEntry,
+    file_cache: &std::collections::HashMap<String, crate::model::FileCacheEntry>,
+    theme: &Theme,
+) {
+    for _ in 0..BLOCK_MARGIN {
+        cursor.emit(|buf, y, _| {
+            buf.fill_rect(area.x, y, area.width, 1, theme.background);
+        });
+    }
+    for _ in 0..BLOCK_PADDING {
+        cursor.emit(|buf, y, theme| {
+            draw_block_base_line(buf, area, y, theme.panel_bg, theme);
+        });
+    }
+    let counts = file_cache
+        .get(&file.path)
+        .and_then(|entry| entry.diff.as_ref())
+        .map(diff_change_counts);
+    cursor.emit(|buf, y, theme| {
+        draw_file_header_line(buf, area, y, theme, &file.path, counts);
+    });
+    for _ in 0..BLOCK_PADDING {
+        cursor.emit(|buf, y, theme| {
+            draw_block_base_line(buf, area, y, theme.panel_bg, theme);
+        });
+    }
+    for _ in 0..BLOCK_MARGIN {
+        cursor.emit(|buf, y, _| {
+            buf.fill_rect(area.x, y, area.width, 1, theme.background);
+        });
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+struct UnifiedDisplayData<'a> {
+    display_lines: Vec<DisplayLine>,
+    anchor_map: std::collections::HashMap<usize, &'a ThreadAnchor>,
+    comment_map: std::collections::HashMap<usize, &'a ThreadAnchor>,
+    thread_ranges: Vec<(i64, i64)>,
+}
+
+fn build_unified_display_data<'a>(
+    hunks: &[crate::diff::DiffHunk],
+    threads: &[&ThreadSummary],
+    anchors: &'a [ThreadAnchor],
+) -> UnifiedDisplayData<'a> {
+    let mut anchor_map: std::collections::HashMap<usize, &ThreadAnchor> =
+        std::collections::HashMap::new();
+    let mut comment_map: std::collections::HashMap<usize, &ThreadAnchor> =
+        std::collections::HashMap::new();
+    for anchor in anchors {
+        anchor_map.insert(anchor.display_line, anchor);
+        comment_map.insert(anchor.comment_after_line, anchor);
+    }
+
+    let thread_ranges = build_thread_ranges(threads);
+
+    let mut display_lines: Vec<DisplayLine> = Vec::new();
+    for hunk in hunks {
+        display_lines.push(DisplayLine::HunkHeader);
+        for line in &hunk.lines {
+            display_lines.push(DisplayLine::Diff(line.clone()));
+        }
+    }
+
+    UnifiedDisplayData {
+        display_lines,
+        anchor_map,
+        comment_map,
+        thread_ranges,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_lines)]
+fn render_unified_display_items(
+    cursor: &mut StreamCursor<'_>,
+    line_area: Rect,
+    area: Rect,
+    display_data: &UnifiedDisplayData<'_>,
+    threads: &[&ThreadSummary],
+    file_highlights: &[Vec<HighlightSpan>],
+    wrap: bool,
+    all_comments: &std::collections::HashMap<String, Vec<crate::db::Comment>>,
+    thread_positions: &std::cell::RefCell<std::collections::HashMap<String, usize>>,
+    orphaned_context: Option<&OrphanedContext<'_>>,
+    emitted_threads: &mut std::collections::HashSet<String>,
+    last_line_num: &mut Option<i64>,
+) -> usize {
+    let mut section_idx = 0usize;
+    for (idx, display_line) in display_data.display_lines.iter().enumerate() {
+        if matches!(display_line, DisplayLine::HunkHeader) {
+            if let Some(context) = orphaned_context {
+                if let Some(section) = context.sections.get(section_idx) {
+                    emit_orphaned_context_section(
+                        cursor,
+                        line_area,
+                        area,
+                        context,
+                        section,
+                        wrap,
+                        &mut OrphanedRenderState {
+                            all_comments,
+                            thread_positions,
+                            emitted_threads,
+                            last_line_num,
+                        },
+                    );
+                }
+            }
+            section_idx = section_idx.saturating_add(1);
+        }
+        let show_thread_bar = match display_line {
+            DisplayLine::Diff(line) => line_in_thread_ranges(
+                line.new_line.map(i64::from),
+                &display_data.thread_ranges,
+            ),
+            DisplayLine::HunkHeader => false,
+        };
+        let anchor = display_data.anchor_map.get(&idx).copied();
+        if let Some(anchor) = anchor {
+            thread_positions
+                .borrow_mut()
+                .entry(anchor.thread_id.clone())
+                .or_insert(cursor.stream_row);
+        }
+        match display_line {
+            DisplayLine::HunkHeader => {
+                cursor.emit(|buf, y, theme| {
+                    render_unified_diff_line_block(
+                        buf,
+                        y,
+                        display_line,
+                        theme,
+                        &LineRenderCtx { area: line_area, anchor, show_thread_bar },
+                        file_highlights.get(idx),
+                    );
+                });
+            }
+            DisplayLine::Diff(line) => {
+                if wrap {
+                    let thread_col_width = THREAD_COL_WIDTH;
+                    let line_num_width = UNIFIED_LINE_NUM_WIDTH;
+                    let content_width = diff_content_width(line_area)
+                        .saturating_sub(thread_col_width + line_num_width);
+                    let max_content = content_width.saturating_sub(2) as usize;
+                    let wrapped = wrap_content(
+                        file_highlights.get(idx),
+                        &line.content,
+                        max_content,
+                    );
+                    let rows = wrapped.len().max(1);
+                    cursor.emit_rows(rows, |buf, y, theme, row| {
+                        render_unified_diff_line_wrapped_row(
+                            buf,
+                            y,
+                            line,
+                            theme,
+                            &LineRenderCtx { area: line_area, anchor, show_thread_bar },
+                            &wrapped,
+                            row,
+                        );
+                    });
+                } else {
+                    cursor.emit(|buf, y, theme| {
+                        render_unified_diff_line_block(
+                            buf,
+                            y,
+                            display_line,
+                            theme,
+                            &LineRenderCtx { area: line_area, anchor, show_thread_bar },
+                            file_highlights.get(idx),
+                        );
+                    });
+                }
+            }
+        }
+
+        // Emit comment block after the last line of the thread range
+        if let Some(comment_anchor) = display_data.comment_map.get(&idx) {
+            thread_positions
+                .borrow_mut()
+                .entry(comment_anchor.thread_id.clone())
+                .or_insert(cursor.stream_row);
+            if let Some(thread) = threads
+                .iter()
+                .find(|t| t.thread_id == comment_anchor.thread_id)
+            {
+                if let Some(comments) =
+                    all_comments.get(&comment_anchor.thread_id)
+                {
+                    emit_comment_block(cursor, area, thread, comments);
+                }
+            }
+        }
+    }
+    section_idx
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_file_diff_unified(
+    cursor: &mut StreamCursor<'_>,
+    line_area: Rect,
+    area: Rect,
+    hunks: &[crate::diff::DiffHunk],
+    threads: &[&ThreadSummary],
+    file_highlights: &[Vec<HighlightSpan>],
+    wrap: bool,
+    all_comments: &std::collections::HashMap<String, Vec<crate::db::Comment>>,
+    thread_positions: &std::cell::RefCell<std::collections::HashMap<String, usize>>,
+    orphaned_context: Option<&OrphanedContext<'_>>,
+    anchors: &[ThreadAnchor],
+) -> std::collections::HashSet<String> {
+    let mut emitted_threads: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
+    let mut last_line_num: Option<i64> = None;
+
+    let display_data = build_unified_display_data(hunks, threads, anchors);
+
+    let section_idx = render_unified_display_items(
+        cursor,
+        line_area,
+        area,
+        &display_data,
+        threads,
+        file_highlights,
+        wrap,
+        all_comments,
+        thread_positions,
+        orphaned_context,
+        &mut emitted_threads,
+        &mut last_line_num,
+    );
+
+    if let Some(context) = orphaned_context {
+        if let Some(section) = context.sections.get(section_idx) {
+            emit_orphaned_context_section(
+                cursor,
+                line_area,
+                area,
+                context,
+                section,
+                wrap,
+                &mut OrphanedRenderState {
+                    all_comments,
+                    thread_positions,
+                    emitted_threads: &mut emitted_threads,
+                    last_line_num: &mut last_line_num,
+                },
+            );
+        }
+    }
+    emitted_threads
+}
+
+/// Build anchor and comment maps for side-by-side rendering.
+/// Maps thread anchors to their corresponding SBS line indices.
+#[allow(clippy::too_many_lines)]
+fn build_sbs_anchor_maps<'a>(
+    anchors: &'a [ThreadAnchor],
+    threads: &[&ThreadSummary],
+    sbs_lines: &[SideBySideLine],
+) -> (
+    std::collections::HashMap<usize, &'a ThreadAnchor>,
+    std::collections::HashMap<usize, &'a ThreadAnchor>,
+) {
+    let mut sbs_anchor_map: std::collections::HashMap<usize, &ThreadAnchor> =
+        std::collections::HashMap::new();
+    let mut sbs_comment_map: std::collections::HashMap<usize, &ThreadAnchor> =
+        std::collections::HashMap::new();
+    for anchor in anchors {
+        if let Some(thread) = threads
+            .iter()
+            .find(|t| t.thread_id == anchor.thread_id)
+        {
+            let start = thread.selection_start as u32;
+            let end =
+                thread.selection_end.unwrap_or(thread.selection_start) as u32;
+            for (si, sl) in sbs_lines.iter().enumerate() {
+                if sl.right.as_ref().is_some_and(|l| l.line_num == start) {
+                    sbs_anchor_map.insert(si, anchor);
+                }
+                if sl.right.as_ref().is_some_and(|l| l.line_num == end) {
+                    sbs_comment_map.insert(si, anchor);
+                }
+            }
+        }
+    }
+    (sbs_anchor_map, sbs_comment_map)
+}
+
+/// Render a single SBS line with wrapping support.
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_lines)]
+fn render_sbs_line(
+    cursor: &mut StreamCursor<'_>,
+    line_area: Rect,
+    sbs_line: &SideBySideLine,
+    anchor: Option<&ThreadAnchor>,
+    show_thread_bar: bool,
+    wrap: bool,
+    file_highlights: &[Vec<HighlightSpan>],
+) {
+    if wrap && !sbs_line.is_header {
+        let thread_col_width = THREAD_COL_WIDTH;
+        let divider_width: u32 = 1;
+        let line_num_width = SBS_LINE_NUM_WIDTH;
+        let available = diff_content_width(line_area)
+            .saturating_sub(thread_col_width + divider_width);
+        let half_width = available / 2;
+        let left_width = half_width.saturating_sub(line_num_width) as usize;
+        let right_width =
+            half_width.saturating_sub(line_num_width) as usize;
+
+        let left_highlights = sbs_line.left.as_ref().and_then(|line| {
+            file_highlights.get(line.display_index)
+        });
+        let right_highlights = sbs_line.right.as_ref().and_then(|line| {
+            file_highlights.get(line.display_index)
+        });
+
+        let left_wrapped = sbs_line.left.as_ref().map(|line| {
+            wrap_content(left_highlights, &line.content, left_width)
+        });
+        let right_wrapped = sbs_line.right.as_ref().map(|line| {
+            wrap_content(right_highlights, &line.content, right_width)
+        });
+
+        let left_rows =
+            left_wrapped.as_ref().map_or(1, Vec::len);
+        let right_rows =
+            right_wrapped.as_ref().map_or(1, Vec::len);
+        let rows = left_rows.max(right_rows);
+
+        cursor.emit_rows(rows, |buf, y, theme, row| {
+            render_side_by_side_line_wrapped_row(
+                buf,
+                y,
+                sbs_line,
+                theme,
+                &LineRenderCtx { area: line_area, anchor, show_thread_bar },
+                (left_wrapped.as_ref(), right_wrapped.as_ref()),
+                row,
+            );
+        });
+    } else {
+        cursor.emit(|buf, y, theme| {
+            render_side_by_side_line_block(
+                buf,
+                y,
+                sbs_line,
+                theme,
+                &LineRenderCtx { area: line_area, anchor, show_thread_bar },
+                file_highlights,
+            );
+        });
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_file_diff_sbs(
+    cursor: &mut StreamCursor<'_>,
+    line_area: Rect,
+    area: Rect,
+    sbs_lines: &[SideBySideLine],
+    threads: &[&ThreadSummary],
+    file_highlights: &[Vec<HighlightSpan>],
+    wrap: bool,
+    all_comments: &std::collections::HashMap<String, Vec<crate::db::Comment>>,
+    thread_positions: &std::cell::RefCell<std::collections::HashMap<String, usize>>,
+    orphaned_context: Option<&OrphanedContext<'_>>,
+    anchors: &[ThreadAnchor],
+) -> std::collections::HashSet<String> {
+    let mut emitted_threads: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
+    let mut last_line_num: Option<i64> = None;
+
+    let thread_ranges = build_thread_ranges(threads);
+    let (sbs_anchor_map, sbs_comment_map) =
+        build_sbs_anchor_maps(anchors, threads, sbs_lines);
+
+    let mut section_idx = 0usize;
+    for (idx, sbs_line) in sbs_lines.iter().enumerate() {
+        if sbs_line.is_header {
+            if let Some(context) = orphaned_context {
+                if let Some(section) = context.sections.get(section_idx) {
+                    emit_orphaned_context_section(
+                        cursor,
+                        line_area,
+                        area,
+                        context,
+                        section,
+                        wrap,
+                        &mut OrphanedRenderState {
+                            all_comments,
+                            thread_positions,
+                            emitted_threads: &mut emitted_threads,
+                            last_line_num: &mut last_line_num,
+                        },
+                    );
+                }
+            }
+            section_idx = section_idx.saturating_add(1);
+        }
+        let show_thread_bar = if sbs_line.is_header {
+            false
+        } else {
+            line_in_thread_ranges(
+                sbs_line.right.as_ref().map(|line| i64::from(line.line_num)),
+                &thread_ranges,
+            )
+        };
+        let anchor = sbs_anchor_map.get(&idx).copied();
+        if let Some(anchor) = anchor {
+            thread_positions
+                .borrow_mut()
+                .entry(anchor.thread_id.clone())
+                .or_insert(cursor.stream_row);
+        }
+        render_sbs_line(
+            cursor,
+            line_area,
+            sbs_line,
+            anchor,
+            show_thread_bar,
+            wrap,
+            file_highlights,
+        );
+
+        // Emit comment block after the last line of the thread range
+        if let Some(comment_anchor) = sbs_comment_map.get(&idx) {
+            thread_positions
+                .borrow_mut()
+                .entry(comment_anchor.thread_id.clone())
+                .or_insert(cursor.stream_row);
+            if let Some(thread) = threads
+                .iter()
+                .find(|t| t.thread_id == comment_anchor.thread_id)
+            {
+                if let Some(comments) =
+                    all_comments.get(&comment_anchor.thread_id)
+                {
+                    emit_comment_block(cursor, area, thread, comments);
+                }
+            }
+        }
+    }
+    if let Some(context) = orphaned_context {
+        if let Some(section) = context.sections.get(section_idx) {
+            emit_orphaned_context_section(
+                cursor,
+                line_area,
+                area,
+                context,
+                section,
+                wrap,
+                &mut OrphanedRenderState {
+                    all_comments,
+                    thread_positions,
+                    emitted_threads: &mut emitted_threads,
+                    last_line_num: &mut last_line_num,
+                },
+            );
+        }
+    }
+    emitted_threads
+}
+
 pub fn render_diff_stream(
     buffer: &mut OptimizedBuffer,
     area: Rect,
@@ -407,478 +1069,37 @@ pub fn render_diff_stream(
     let thread_positions = params.thread_positions;
 
     for file in files {
-        // File header block
-        for _ in 0..BLOCK_MARGIN {
-            cursor.emit(|buf, y, _| {
-                buf.fill_rect(area.x, y, area.width, 1, theme.background);
-            });
-        }
-        for _ in 0..BLOCK_PADDING {
-            cursor.emit(|buf, y, theme| {
-                draw_block_base_line(buf, area, y, theme.panel_bg, theme);
-            });
-        }
-        let counts = file_cache
-            .get(&file.path)
-            .and_then(|entry| entry.diff.as_ref())
-            .map(diff_change_counts);
-        cursor.emit(|buf, y, theme| {
-            draw_file_header_line(buf, area, y, theme, &file.path, counts);
-        });
-        for _ in 0..BLOCK_PADDING {
-            cursor.emit(|buf, y, theme| {
-                draw_block_base_line(buf, area, y, theme.panel_bg, theme);
-            });
-        }
-        for _ in 0..BLOCK_MARGIN {
-            cursor.emit(|buf, y, _| {
-                buf.fill_rect(area.x, y, area.width, 1, theme.background);
-            });
-        }
+        render_file_header(&mut cursor, area, file, file_cache, theme);
 
         let file_threads: Vec<&ThreadSummary> = threads
             .iter()
             .filter(|t| t.file_path == file.path)
             .collect();
-        let thread_ranges = build_thread_ranges(&file_threads);
 
         if let Some(entry) = file_cache.get(&file.path) {
             if let Some(diff) = &entry.diff {
-                let anchors = map_threads_to_diff(diff, &file_threads);
-                let anchored_ids: std::collections::HashSet<&str> =
-                    anchors.iter().map(|a| a.thread_id.as_str()).collect();
-                let orphaned_threads: Vec<&&ThreadSummary> = file_threads
-                    .iter()
-                    .filter(|t| !anchored_ids.contains(t.thread_id.as_str()))
-                    .collect();
-                let mut orphaned_context: Option<OrphanedContext<'_>> = None;
-                if !orphaned_threads.is_empty() {
-                    if let Some(content) = &entry.file_content {
-                        let orphaned_deref: Vec<&ThreadSummary> =
-                            orphaned_threads.iter().map(|t| **t).collect();
-                        let hunk_ranges =
-                            crate::diff::hunk_exclusion_ranges(&diff.hunks);
-                        let ranges = calculate_context_ranges(
-                            &orphaned_deref,
-                            content.lines.len(),
-                            &hunk_ranges,
-                        );
-                        let sections = group_context_ranges_by_hunks(ranges, &hunk_ranges);
-                        if sections.iter().any(|section| !section.is_empty()) {
-                            orphaned_context = Some(OrphanedContext {
-                                sections,
-                                threads: orphaned_deref,
-                                lines: content.lines.as_slice(),
-                                highlights: entry.file_highlighted_lines.as_slice(),
-                            });
-                        }
-                    }
-                }
-                let mut emitted_threads: std::collections::HashSet<String> =
-                    std::collections::HashSet::new();
-                let mut last_line_num: Option<i64> = None;
-                let mut anchor_map: std::collections::HashMap<usize, &ThreadAnchor> =
-                    std::collections::HashMap::new();
-                let mut comment_map: std::collections::HashMap<usize, &ThreadAnchor> =
-                    std::collections::HashMap::new();
-                for anchor in &anchors {
-                    anchor_map.insert(anchor.display_line, anchor);
-                    comment_map.insert(anchor.comment_after_line, anchor);
-                }
-
-                let line_area = diff_margin_area(area);
-
-                match view_mode {
-                    crate::model::DiffViewMode::Unified => {
-                        let mut display_lines: Vec<DisplayLine> = Vec::new();
-                        for hunk in &diff.hunks {
-                            display_lines.push(DisplayLine::HunkHeader);
-                            for line in &hunk.lines {
-                                display_lines.push(DisplayLine::Diff(line.clone()));
-                            }
-                        }
-
-                        let mut section_idx = 0usize;
-                        for (idx, display_line) in display_lines.iter().enumerate() {
-                            if matches!(display_line, DisplayLine::HunkHeader) {
-                                if let Some(context) = &orphaned_context {
-                                    if let Some(section) = context.sections.get(section_idx) {
-                                        emit_orphaned_context_section(
-                                            &mut cursor,
-                                            line_area,
-                                            area,
-                                            context,
-                                            section,
-                                            wrap,
-                                            &mut OrphanedRenderState {
-                                                all_comments,
-                                                thread_positions,
-                                                emitted_threads: &mut emitted_threads,
-                                                last_line_num: &mut last_line_num,
-                                            },
-                                        );
-                                    }
-                                }
-                                section_idx = section_idx.saturating_add(1);
-                            }
-                            let show_thread_bar = match display_line {
-                                DisplayLine::Diff(line) => line_in_thread_ranges(
-                                    line.new_line.map(i64::from),
-                                    &thread_ranges,
-                                ),
-                                DisplayLine::HunkHeader => false,
-                            };
-                            let anchor = anchor_map.get(&idx).copied();
-                            if let Some(anchor) = anchor {
-                                thread_positions
-                                    .borrow_mut()
-                                    .entry(anchor.thread_id.clone())
-                                    .or_insert(cursor.stream_row);
-                            }
-                            match display_line {
-                                DisplayLine::HunkHeader => {
-                                    cursor.emit(|buf, y, theme| {
-                                        render_unified_diff_line_block(
-                                            buf,
-                                            y,
-                                            display_line,
-                                            theme,
-                                            &LineRenderCtx { area: line_area, anchor, show_thread_bar },
-                                            entry.highlighted_lines.get(idx),
-                                        );
-                                    });
-                                }
-                                DisplayLine::Diff(line) => {
-                                    if wrap {
-                                        let thread_col_width = THREAD_COL_WIDTH;
-                                        let line_num_width = UNIFIED_LINE_NUM_WIDTH;
-                                        let content_width = diff_content_width(line_area)
-                                            .saturating_sub(thread_col_width + line_num_width);
-                                        let max_content = content_width.saturating_sub(2) as usize;
-                                        let wrapped = wrap_content(
-                                            entry.highlighted_lines.get(idx),
-                                            &line.content,
-                                            max_content,
-                                        );
-                                        let rows = wrapped.len().max(1);
-                                        cursor.emit_rows(rows, |buf, y, theme, row| {
-                                            render_unified_diff_line_wrapped_row(
-                                                buf,
-                                                y,
-                                                line,
-                                                theme,
-                                                &LineRenderCtx { area: line_area, anchor, show_thread_bar },
-                                                &wrapped,
-                                                row,
-                                            );
-                                        });
-                                    } else {
-                                        cursor.emit(|buf, y, theme| {
-                                            render_unified_diff_line_block(
-                                                buf,
-                                                y,
-                                                display_line,
-                                                theme,
-                                                &LineRenderCtx { area: line_area, anchor, show_thread_bar },
-                                                entry.highlighted_lines.get(idx),
-                                            );
-                                        });
-                                    }
-                                }
-                            }
-
-                            // Emit comment block after the last line of the thread range
-                            if let Some(comment_anchor) = comment_map.get(&idx) {
-                                thread_positions
-                                    .borrow_mut()
-                                    .entry(comment_anchor.thread_id.clone())
-                                    .or_insert(cursor.stream_row);
-                                if let Some(thread) = file_threads
-                                    .iter()
-                                    .find(|t| t.thread_id == comment_anchor.thread_id)
-                                {
-                                    if let Some(comments) =
-                                        all_comments.get(&comment_anchor.thread_id)
-                                    {
-                                        emit_comment_block(&mut cursor, area, thread, comments);
-                                    }
-                                }
-                            }
-                        }
-                        if let Some(context) = &orphaned_context {
-                            if let Some(section) = context.sections.get(section_idx) {
-                                emit_orphaned_context_section(
-                                    &mut cursor,
-                                    line_area,
-                                    area,
-                                    context,
-                                    section,
-                                    wrap,
-                                    &mut OrphanedRenderState {
-                                        all_comments,
-                                        thread_positions,
-                                        emitted_threads: &mut emitted_threads,
-                                        last_line_num: &mut last_line_num,
-                                    },
-                                );
-                            }
-                        }
-                    }
-                    crate::model::DiffViewMode::SideBySide => {
-                        let sbs_lines = build_side_by_side_lines(diff);
-
-                        let mut sbs_anchor_map: std::collections::HashMap<usize, &ThreadAnchor> =
-                            std::collections::HashMap::new();
-                        let mut sbs_comment_map: std::collections::HashMap<usize, &ThreadAnchor> =
-                            std::collections::HashMap::new();
-                        for anchor in &anchors {
-                            if let Some(thread) = file_threads
-                                .iter()
-                                .find(|t| t.thread_id == anchor.thread_id)
-                            {
-                                let start = thread.selection_start as u32;
-                                let end =
-                                    thread.selection_end.unwrap_or(thread.selection_start) as u32;
-                                for (si, sl) in sbs_lines.iter().enumerate() {
-                                    if sl.right.as_ref().is_some_and(|l| l.line_num == start) {
-                                        sbs_anchor_map.insert(si, anchor);
-                                    }
-                                    if sl.right.as_ref().is_some_and(|l| l.line_num == end) {
-                                        sbs_comment_map.insert(si, anchor);
-                                    }
-                                }
-                            }
-                        }
-
-                        let mut section_idx = 0usize;
-                        for (idx, sbs_line) in sbs_lines.iter().enumerate() {
-                            if sbs_line.is_header {
-                                if let Some(context) = &orphaned_context {
-                                    if let Some(section) = context.sections.get(section_idx) {
-                                        emit_orphaned_context_section(
-                                            &mut cursor,
-                                            line_area,
-                                            area,
-                                            context,
-                                            section,
-                                            wrap,
-                                            &mut OrphanedRenderState {
-                                                all_comments,
-                                                thread_positions,
-                                                emitted_threads: &mut emitted_threads,
-                                                last_line_num: &mut last_line_num,
-                                            },
-                                        );
-                                    }
-                                }
-                                section_idx = section_idx.saturating_add(1);
-                            }
-                            let show_thread_bar = if sbs_line.is_header {
-                                false
-                            } else {
-                                line_in_thread_ranges(
-                                    sbs_line.right.as_ref().map(|line| i64::from(line.line_num)),
-                                    &thread_ranges,
-                                )
-                            };
-                            let anchor = sbs_anchor_map.get(&idx).copied();
-                            if let Some(anchor) = anchor {
-                                thread_positions
-                                    .borrow_mut()
-                                    .entry(anchor.thread_id.clone())
-                                    .or_insert(cursor.stream_row);
-                            }
-                            if wrap && !sbs_line.is_header {
-                                let thread_col_width = THREAD_COL_WIDTH;
-                                let divider_width: u32 = 1;
-                                let line_num_width = SBS_LINE_NUM_WIDTH;
-                                let available = diff_content_width(line_area)
-                                    .saturating_sub(thread_col_width + divider_width);
-                                let half_width = available / 2;
-                                let left_width = half_width.saturating_sub(line_num_width) as usize;
-                                let right_width =
-                                    half_width.saturating_sub(line_num_width) as usize;
-
-                                let left_highlights = sbs_line.left.as_ref().and_then(|line| {
-                                    entry.highlighted_lines.get(line.display_index)
-                                });
-                                let right_highlights = sbs_line.right.as_ref().and_then(|line| {
-                                    entry.highlighted_lines.get(line.display_index)
-                                });
-
-                                let left_wrapped = sbs_line.left.as_ref().map(|line| {
-                                    wrap_content(left_highlights, &line.content, left_width)
-                                });
-                                let right_wrapped = sbs_line.right.as_ref().map(|line| {
-                                    wrap_content(right_highlights, &line.content, right_width)
-                                });
-
-                                let left_rows =
-                                    left_wrapped.as_ref().map_or(1, Vec::len);
-                                let right_rows =
-                                    right_wrapped.as_ref().map_or(1, Vec::len);
-                                let rows = left_rows.max(right_rows);
-
-                                cursor.emit_rows(rows, |buf, y, theme, row| {
-                                    render_side_by_side_line_wrapped_row(
-                                        buf,
-                                        y,
-                                        sbs_line,
-                                        theme,
-                                        &LineRenderCtx { area: line_area, anchor, show_thread_bar },
-                                        (left_wrapped.as_ref(), right_wrapped.as_ref()),
-                                        row,
-                                    );
-                                });
-                            } else {
-                                cursor.emit(|buf, y, theme| {
-                                    render_side_by_side_line_block(
-                                        buf,
-                                        y,
-                                        sbs_line,
-                                        theme,
-                                        &LineRenderCtx { area: line_area, anchor, show_thread_bar },
-                                        entry.highlighted_lines.as_slice(),
-                                    );
-                                });
-                            }
-
-                            // Emit comment block after the last line of the thread range
-                            if let Some(comment_anchor) = sbs_comment_map.get(&idx) {
-                                thread_positions
-                                    .borrow_mut()
-                                    .entry(comment_anchor.thread_id.clone())
-                                    .or_insert(cursor.stream_row);
-                                if let Some(thread) = file_threads
-                                    .iter()
-                                    .find(|t| t.thread_id == comment_anchor.thread_id)
-                                {
-                                    if let Some(comments) =
-                                        all_comments.get(&comment_anchor.thread_id)
-                                    {
-                                        emit_comment_block(&mut cursor, area, thread, comments);
-                                    }
-                                }
-                            }
-                        }
-                        if let Some(context) = &orphaned_context {
-                            if let Some(section) = context.sections.get(section_idx) {
-                                emit_orphaned_context_section(
-                                    &mut cursor,
-                                    line_area,
-                                    area,
-                                    context,
-                                    section,
-                                    wrap,
-                                    &mut OrphanedRenderState {
-                                        all_comments,
-                                        thread_positions,
-                                        emitted_threads: &mut emitted_threads,
-                                        last_line_num: &mut last_line_num,
-                                    },
-                                );
-                            }
-                        }
-                    }
-                }
-
-                if let Some(context) = &orphaned_context {
-                    emit_remaining_orphaned_comments(
-                        &mut cursor,
-                        area,
-                        context,
-                        all_comments,
-                        thread_positions,
-                        &emitted_threads,
-                    );
-                } else if !orphaned_threads.is_empty() {
-                    let mut orphaned_sorted = orphaned_threads.clone();
-                    orphaned_sorted.sort_by_key(|t| t.selection_start);
-                    for thread in &orphaned_sorted {
-                        thread_positions
-                            .borrow_mut()
-                            .insert(thread.thread_id.clone(), cursor.stream_row);
-                        if let Some(comments) = all_comments.get(&thread.thread_id) {
-                            emit_comment_block(&mut cursor, area, thread, comments);
-                        }
-                    }
-                }
+                render_file_with_diff(
+                    &mut cursor,
+                    area,
+                    diff,
+                    entry,
+                    &file_threads,
+                    view_mode,
+                    wrap,
+                    all_comments,
+                    thread_positions,
+                );
             } else if let Some(content) = &entry.file_content {
-                let line_area = diff_margin_area(area);
-                let display_items =
-                    build_context_items(content.lines.as_slice(), &file_threads, &[]);
-                for item in display_items {
-                    let show_thread_bar = match &item {
-                        DisplayItem::Line { line_num, .. } => {
-                            line_in_thread_ranges(Some(*line_num), &thread_ranges)
-                        }
-                        DisplayItem::Separator(_) => false,
-                    };
-                    match &item {
-                        DisplayItem::Separator(_) => {
-                            cursor.emit(|buf, y, theme| {
-                                render_context_item_block(
-                                    buf,
-                                    line_area,
-                                    y,
-                                    &item,
-                                    theme,
-                                    show_thread_bar,
-                                    entry.highlighted_lines.as_slice(),
-                                );
-                            });
-                        }
-                        DisplayItem::Line { line_num, content } => {
-                            if wrap {
-                                let line_index = (*line_num).saturating_sub(1) as usize;
-                                let highlight = entry.highlighted_lines.get(line_index);
-                                let line_num_width = SBS_LINE_NUM_WIDTH;
-                                let content_width = diff_content_width(line_area)
-                                    .saturating_sub(line_num_width)
-                                    as usize;
-                                let wrapped = wrap_content(highlight, content, content_width);
-                                let rows = wrapped.len().max(1);
-                                cursor.emit_rows(rows, |buf, y, theme, row| {
-                                    render_context_line_wrapped_row(
-                                        buf,
-                                        y,
-                                        *line_num,
-                                        theme,
-                                        &LineRenderCtx { area: line_area, anchor: None, show_thread_bar },
-                                        &wrapped,
-                                        row,
-                                    );
-                                });
-                            } else {
-                                cursor.emit(|buf, y, theme| {
-                                    render_context_item_block(
-                                        buf,
-                                        line_area,
-                                        y,
-                                        &item,
-                                        theme,
-                                        show_thread_bar,
-                                        entry.highlighted_lines.as_slice(),
-                                    );
-                                });
-                            }
-                        }
-                    }
-
-                    if let DisplayItem::Line { line_num, .. } = &item {
-                        if let Some(thread) = file_threads.iter().find(|t| {
-                            let end = t.selection_end.unwrap_or(t.selection_start);
-                            end == *line_num
-                        }) {
-                            thread_positions
-                                .borrow_mut()
-                                .insert(thread.thread_id.clone(), cursor.stream_row);
-                            if let Some(comments) = all_comments.get(&thread.thread_id) {
-                                emit_comment_block(&mut cursor, area, thread, comments);
-                            }
-                        }
-                    }
-                }
+                render_file_content_no_diff(
+                    &mut cursor,
+                    area,
+                    content,
+                    &file_threads,
+                    &entry.highlighted_lines,
+                    wrap,
+                    all_comments,
+                    thread_positions,
+                );
             } else {
                 cursor.emit(|buf, y, theme| {
                     draw_block_text_line(

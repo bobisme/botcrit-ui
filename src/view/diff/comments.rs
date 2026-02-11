@@ -22,20 +22,11 @@ pub(super) struct CommentLine {
     pub kind: CommentLineKind,
 }
 
-pub(super) fn emit_comment_block(
-    cursor: &mut StreamCursor<'_>,
-    area: Rect,
+fn build_comment_lines(
     thread: &ThreadSummary,
     comments: &[crate::db::Comment],
-) {
-    if comments.is_empty() {
-        return;
-    }
-
-    // Layout: area → block (margined) → padded content
-    let block = comment_block_area(area);
-    let padded = comment_content_area(block);
-    let content_width = padded.width as usize;
+    content_width: usize,
+) -> Vec<CommentLine> {
     let mut content_lines: Vec<CommentLine> = Vec::new();
 
     let line_range = thread.selection_end.map_or_else(
@@ -90,6 +81,25 @@ pub(super) fn emit_comment_block(
             });
         }
     }
+
+    content_lines
+}
+
+pub(super) fn emit_comment_block(
+    cursor: &mut StreamCursor<'_>,
+    area: Rect,
+    thread: &ThreadSummary,
+    comments: &[crate::db::Comment],
+) {
+    if comments.is_empty() {
+        return;
+    }
+
+    // Layout: area → block (margined) → padded content
+    let block = comment_block_area(area);
+    let padded = comment_content_area(block);
+    let content_width = padded.width as usize;
+    let content_lines = build_comment_lines(thread, comments, content_width);
 
     let top_margin = 0usize;
     let bottom_margin = BLOCK_MARGIN;

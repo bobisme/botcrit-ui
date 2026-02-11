@@ -339,29 +339,64 @@ pub fn draw_help_bar(
     theme: &Theme,
     hints: &[HotkeyHint],
 ) {
+    draw_help_bar_ext(buffer, area, theme, hints, theme.background, "");
+}
+
+/// Draw a help bar with a custom background color.
+pub fn draw_help_bar_with_bg(
+    buffer: &mut OptimizedBuffer,
+    area: Rect,
+    theme: &Theme,
+    hints: &[HotkeyHint],
+    bg: Rgba,
+) {
+    draw_help_bar_ext(buffer, area, theme, hints, bg, "");
+}
+
+/// Draw a help bar with custom bg and an optional left-aligned label.
+pub fn draw_help_bar_ext(
+    buffer: &mut OptimizedBuffer,
+    area: Rect,
+    theme: &Theme,
+    hints: &[HotkeyHint],
+    bg: Rgba,
+    left_label: &str,
+) {
     let y = area.y + area.height.saturating_sub(2);
     let bottom_y = area.y + area.height.saturating_sub(1);
-    buffer.fill_rect(area.x, bottom_y, area.width, 1, theme.background);
-    buffer.fill_rect(area.x, y, area.width, 1, theme.background);
-
-    if hints.is_empty() || area.width == 0 {
-        return;
-    }
-
-    let separator = "  ";
-    let sep_len = separator.len();
-    let total_width: usize = hints
-        .iter()
-        .map(HotkeyHint::width)
-        .sum::<usize>()
-        + hints.len().saturating_sub(1) * sep_len;
+    buffer.fill_rect(area.x, bottom_y, area.width, 1, bg);
+    buffer.fill_rect(area.x, y, area.width, 1, bg);
 
     let padding: u32 = 2;
-    let x_start = if (total_width as u32) + padding <= area.width {
-        area.x + area.width - total_width as u32 - padding
+
+    // Right-aligned hints
+    let separator = "  ";
+    let sep_len = separator.len();
+    let total_width: usize = if hints.is_empty() {
+        0
     } else {
-        area.x + padding.min(area.width)
+        hints.iter().map(HotkeyHint::width).sum::<usize>()
+            + hints.len().saturating_sub(1) * sep_len
     };
+
+    let x_start = if area.width > 0 && !hints.is_empty() {
+        if (total_width as u32) + padding <= area.width {
+            area.x + area.width - total_width as u32 - padding
+        } else {
+            area.x + padding.min(area.width)
+        }
+    } else {
+        area.x + area.width
+    };
+
+    // Left label (truncated to not overlap with hints)
+    if !left_label.is_empty() {
+        let label_x = area.x + padding;
+        let max_width = x_start.saturating_sub(label_x + 1);
+        if max_width > 0 {
+            draw_text_truncated(buffer, label_x, y, left_label, max_width, theme.style_muted());
+        }
+    }
 
     let dim = theme.style_muted();
     let bright = theme.style_foreground();

@@ -3,7 +3,7 @@
 use opentui::{OptimizedBuffer, Style};
 
 use super::components::{
-    draw_block, draw_help_bar, draw_text_truncated, BlockLine, HotkeyHint, Rect,
+    draw_block, draw_help_bar_ext, draw_text_truncated, BlockLine, HotkeyHint, Rect,
 };
 use crate::model::{Model, ReviewFilter};
 
@@ -213,6 +213,7 @@ fn format_thread_label(total: i64, open: i64) -> String {
 }
 
 fn render_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
+    let version = concat!("crit-ui v", env!("CARGO_PKG_VERSION"));
     let filter_hint = HotkeyHint::new(
         match model.filter {
             ReviewFilter::All => "Status (All)",
@@ -230,15 +231,14 @@ fn render_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
             HotkeyHint::new("Clear", "Esc"),
             HotkeyHint::new("Quit", "ctrl+c"),
         ];
-        draw_help_bar(buffer, area, &model.theme, hints);
+        draw_help_bar_ext(buffer, area, &model.theme, hints, model.theme.background, version);
     } else {
         let hints = &[
             HotkeyHint::new("Commands", "ctrl+p"),
             HotkeyHint::new("Select", "Enter"),
             filter_hint,
-            HotkeyHint::new("Search", "/"),
             HotkeyHint::new("Quit", "q"),
         ];
-        draw_help_bar(buffer, area, &model.theme, hints);
+        draw_help_bar_ext(buffer, area, &model.theme, hints, model.theme.background, version);
     }
 }

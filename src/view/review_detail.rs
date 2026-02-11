@@ -1,8 +1,8 @@
 //! Review detail screen rendering
 
-use opentui::{OptimizedBuffer, Style};
+use opentui::{OptimizedBuffer, Rgba, Style};
 
-use super::components::{dim_rect, draw_help_bar, draw_text_truncated, truncate_path, HotkeyHint, Rect};
+use super::components::{dim_rect, draw_help_bar, draw_help_bar_with_bg, draw_text_truncated, truncate_path, HotkeyHint, Rect};
 use super::diff::{diff_change_counts, render_diff_stream, render_pinned_header_block, DiffStreamParams};
 use crate::model::{Focus, LayoutMode, Model, SidebarItem};
 use crate::layout::{BLOCK_MARGIN, BLOCK_PADDING, DIFF_MARGIN};
@@ -472,5 +472,12 @@ fn render_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     }
 
     let footer = Rect::new(footer_x, area.y, footer_width, area.height);
-    draw_help_bar(buffer, footer, &model.theme, &all_hints);
+    if model.focus == Focus::FileSidebar {
+        let scale = 0.7;
+        let bg = &model.theme.background;
+        let dimmed_bg = Rgba::new(bg.r * scale, bg.g * scale, bg.b * scale, bg.a);
+        draw_help_bar_with_bg(buffer, footer, &model.theme, &all_hints, dimmed_bg);
+    } else {
+        draw_help_bar(buffer, footer, &model.theme, &all_hints);
+    }
 }

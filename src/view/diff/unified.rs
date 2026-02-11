@@ -7,7 +7,7 @@ use crate::layout::{THREAD_COL_WIDTH, UNIFIED_LINE_NUM_WIDTH};
 use crate::syntax::HighlightSpan;
 use crate::theme::Theme;
 
-use super::helpers::{diff_content_width, diff_content_x, draw_diff_base_line, draw_thread_range_bar};
+use super::helpers::{diff_content_width, diff_content_x, draw_cursor_bar, draw_diff_base_line, draw_thread_range_bar};
 use super::text_util::{draw_highlighted_text, draw_wrapped_line, HighlightContent, WrappedLine};
 use super::{DisplayLine, LineRenderCtx};
 
@@ -39,7 +39,9 @@ pub(super) fn render_unified_diff_line_block(
             let thread_x = diff_content_x(ctx.area);
             let thread_col_width = THREAD_COL_WIDTH;
             let _ = ctx.anchor;
-            if ctx.show_thread_bar {
+            if ctx.is_cursor {
+                draw_cursor_bar(buffer, thread_x, y, line_bg, theme);
+            } else if ctx.show_thread_bar {
                 draw_thread_range_bar(buffer, thread_x, y, theme.panel_bg, theme);
             } else {
                 buffer.fill_rect(thread_x, y, thread_col_width, 1, line_bg);
@@ -98,7 +100,9 @@ pub(super) fn render_unified_diff_line_wrapped_row(
     let thread_x = diff_content_x(ctx.area);
     let thread_col_width = THREAD_COL_WIDTH;
     let _ = (ctx.anchor, row);
-    if ctx.show_thread_bar {
+    if ctx.is_cursor {
+        draw_cursor_bar(buffer, thread_x, y, bg, theme);
+    } else if ctx.show_thread_bar {
         draw_thread_range_bar(buffer, thread_x, y, theme.panel_bg, theme);
     } else {
         buffer.fill_rect(thread_x, y, thread_col_width, 1, bg);

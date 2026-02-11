@@ -11,8 +11,8 @@ use crate::view::components::Rect;
 use super::analysis::{build_thread_ranges, line_in_thread_ranges};
 use super::comments::emit_comment_block;
 use super::helpers::{
-    diff_content_x, draw_diff_base_line, draw_thread_range_bar, orphaned_context_width,
-    orphaned_context_x,
+    diff_content_x, draw_cursor_bar, draw_diff_base_line, draw_thread_range_bar,
+    orphaned_context_width, orphaned_context_x,
 };
 use super::text_util::{draw_highlighted_text, draw_wrapped_line, wrap_content, HighlightContent, WrappedLine};
 use super::{DisplayItem, LineRange, LineRenderCtx, OrphanedContext, StreamCursor};
@@ -220,10 +220,14 @@ pub(super) fn emit_orphaned_context_section(
             }
             DisplayItem::Separator(_) => false,
         };
+        let is_landable = matches!(item, DisplayItem::Line { .. });
+        if is_landable {
+            cursor.mark_landable();
+        }
         match item {
             DisplayItem::Separator(_) => {
                 cursor.emit(|buf, y, theme| {
-                    render_context_item_block(buf, area, y, item, theme, show_thread_bar, context.highlights);
+                    render_context_item_block(buf, area, y, item, theme, show_thread_bar, context.highlights, false);
                 });
             }
             DisplayItem::Line {
@@ -237,17 +241,19 @@ pub(super) fn emit_orphaned_context_section(
                     let cw = orphaned_context_width(area).saturating_sub(line_num_width) as usize;
                     let wrapped = wrap_content(highlight, line_content, cw);
                     let rows = wrapped.len().max(1);
+                    let is_cursor = cursor.is_cursor_at(rows);
                     cursor.emit_rows(rows, |buf, y, theme, row| {
                         render_context_line_wrapped_row(
                             buf, y, *line_num, theme,
-                            &LineRenderCtx { area, anchor: None, show_thread_bar },
+                            &LineRenderCtx { area, anchor: None, show_thread_bar, is_cursor },
                             &wrapped, row,
                         );
                     });
                 } else {
+                    let is_cursor = cursor.is_cursor_at(1);
                     cursor.emit(|buf, y, theme| {
                         render_context_item_block(
-                            buf, area, y, item, theme, show_thread_bar, context.highlights,
+                            buf, area, y, item, theme, show_thread_bar, context.highlights, is_cursor,
                         );
                     });
                 }
@@ -295,6 +301,7 @@ pub(super) fn emit_remaining_orphaned_comments(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn render_context_item_block(
     buffer: &mut OptimizedBuffer,
     area: Rect,
@@ -303,6 +310,7 @@ pub(super) fn render_context_item_block(
     theme: &Theme,
     show_thread_bar: bool,
     highlighted_lines: &[Vec<HighlightSpan>],
+    is_cursor: bool,
 ) {
     let dt = &theme.diff;
     match item {
@@ -327,8 +335,11 @@ pub(super) fn render_context_item_block(
         }
         DisplayItem::Line { line_num, content } => {
             draw_diff_base_line(buffer, area, y, dt.context_bg);
-            if show_thread_bar {
-                draw_thread_range_bar(buffer, diff_content_x(area), y, theme.panel_bg, theme);
+            let thread_x = diff_content_x(area);
+            if is_cursor {
+                draw_cursor_bar(buffer, thread_x, y, dt.context_bg, theme);
+            } else if show_thread_bar {
+                draw_thread_range_bar(buffer, thread_x, y, theme.panel_bg, theme);
             }
 
             let ln_str = format!("{line_num:5} ");
@@ -370,8 +381,11 @@ pub(super) fn render_context_line_wrapped_row(
 ) {
     let dt = &theme.diff;
     draw_diff_base_line(buffer, ctx.area, y, dt.context_bg);
-    if ctx.show_thread_bar {
-        draw_thread_range_bar(buffer, diff_content_x(ctx.area), y, theme.panel_bg, theme);
+    let thread_x = diff_content_x(ctx.area);
+    if ctx.is_cursor {
+        draw_cursor_bar(buffer, thread_x, y, dt.context_bg, theme);
+    } else if ctx.show_thread_bar {
+        draw_thread_range_bar(buffer, thread_x, y, theme.panel_bg, theme);
     }
 
     let ln_str = format!("{line_num:5} ");

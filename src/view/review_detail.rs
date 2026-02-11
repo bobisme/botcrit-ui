@@ -379,10 +379,12 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
             threads: &model.threads,
             all_comments: &model.all_comments,
             scroll: model.diff_scroll,
+            diff_cursor: model.diff_cursor,
             theme,
             view_mode: model.diff_view_mode,
             wrap: model.diff_wrap,
             thread_positions: &model.thread_positions,
+            landable_rows: &model.landable_rows,
             description,
         },
     );

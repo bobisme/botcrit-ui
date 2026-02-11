@@ -70,21 +70,115 @@ fn update_list_nav(model: &mut Model, msg: &Message) {
     }
 }
 
+fn update_cursor(model: &mut Model, msg: &Message) {
+    {
+        let rows = model.landable_rows.borrow();
+        if rows.is_empty() {
+            drop(rows);
+            // No landable rows yet — fall back to scroll behavior
+            match msg {
+                Message::CursorDown => {
+                    model.diff_scroll += 1;
+                    clamp_diff_scroll(model);
+                }
+                Message::CursorUp => {
+                    model.diff_scroll = model.diff_scroll.saturating_sub(1);
+                }
+                Message::CursorTop => {
+                    model.diff_scroll = 0;
+                    model.diff_cursor = 0;
+                }
+                Message::CursorBottom => {
+                    let layout = stream_layout(model);
+                    let visible = model.height.saturating_sub(2) as usize;
+                    model.diff_scroll = layout.total_lines.saturating_sub(visible);
+                }
+                _ => {}
+            }
+            update_active_file_from_scroll(model);
+            return;
+        }
+
+        let new_cursor = match msg {
+            Message::CursorDown => {
+                rows.iter().find(|&&r| r > model.diff_cursor).copied()
+            }
+            Message::CursorUp => {
+                rows.iter().rev().find(|&&r| r < model.diff_cursor).copied()
+            }
+            Message::CursorTop => {
+                rows.first().copied()
+            }
+            Message::CursorBottom => {
+                rows.last().copied()
+            }
+            _ => None,
+        };
+
+        if let Some(cursor_row) = new_cursor {
+            model.diff_cursor = cursor_row;
+        }
+    } // drop borrow
+
+    ensure_cursor_visible(model);
+    update_active_file_from_scroll(model);
+}
+
+/// Ensure the cursor is visible on screen, adjusting scroll if needed.
+const fn ensure_cursor_visible(model: &mut Model) {
+    let visible = model.height.saturating_sub(2) as usize;
+    if visible == 0 {
+        return;
+    }
+    // If cursor is above the viewport, scroll up
+    if model.diff_cursor < model.diff_scroll {
+        model.diff_scroll = model.diff_cursor;
+    }
+    // If cursor is below the viewport, scroll down
+    else if model.diff_cursor >= model.diff_scroll + visible {
+        model.diff_scroll = model.diff_cursor.saturating_sub(visible.saturating_sub(1));
+    }
+}
+
+/// After a scroll operation, snap cursor to the nearest visible landable row.
+fn snap_cursor_to_visible(model: &mut Model) {
+    let rows = model.landable_rows.borrow();
+    if rows.is_empty() {
+        return;
+    }
+    let visible = model.height.saturating_sub(2) as usize;
+    let view_start = model.diff_scroll;
+    let view_end = model.diff_scroll + visible;
+
+    // If cursor is already visible, keep it
+    if model.diff_cursor >= view_start && model.diff_cursor < view_end {
+        return;
+    }
+
+    // Find nearest visible landable row
+    if let Some(&row) = rows.iter().find(|&&r| r >= view_start && r < view_end) {
+        model.diff_cursor = row;
+    }
+}
+
 fn update_scroll(model: &mut Model, msg: &Message) {
     match msg {
         Message::ScrollUp => {
             model.diff_scroll = model.diff_scroll.saturating_sub(1);
+            snap_cursor_to_visible(model);
             update_active_file_from_scroll(model);
         }
 
         Message::ScrollDown => {
             model.diff_scroll += 1;
             clamp_diff_scroll(model);
+            snap_cursor_to_visible(model);
             update_active_file_from_scroll(model);
         }
 
         Message::ScrollTop => {
             model.diff_scroll = 0;
+            snap_cursor_to_visible(model);
             update_active_file_from_scroll(model);
         }
 
@@ -92,6 +186,7 @@ fn update_scroll(model: &mut Model, msg: &Message) {
             let layout = stream_layout(model);
             let visible = model.height.saturating_sub(2) as usize;
             model.diff_scroll = layout.total_lines.saturating_sub(visible);
+            snap_cursor_to_visible(model);
             update_active_file_from_scroll(model);
         }
 
@@ -99,6 +194,7 @@ fn update_scroll(model: &mut Model, msg: &Message) {
             let page = model.height.saturating_sub(2) as usize;
             let half = page.max(1) / 2;
             model.diff_scroll = model.diff_scroll.saturating_sub(half.max(1));
+            snap_cursor_to_visible(model);
             update_active_file_from_scroll(model);
         }
 
@@ -107,23 +203,27 @@ fn update_scroll(model: &mut Model, msg: &Message) {
             let half = page.max(1) / 2;
             model.diff_scroll += half.max(1);
             clamp_diff_scroll(model);
+            snap_cursor_to_visible(model);
             update_active_file_from_scroll(model);
         }
 
         Message::ScrollTenUp => {
             model.diff_scroll = model.diff_scroll.saturating_sub(10);
+            snap_cursor_to_visible(model);
             update_active_file_from_scroll(model);
         }
 
         Message::ScrollTenDown => {
             model.diff_scroll += 10;
             clamp_diff_scroll(model);
+            snap_cursor_to_visible(model);
             update_active_file_from_scroll(model);
         }
 
         Message::PageUp => {
             let page = model.height.saturating_sub(2) as usize;
             model.diff_scroll = model.diff_scroll.saturating_sub(page);
+            snap_cursor_to_visible(model);
             update_active_file_from_scroll(model);
         }
 
@@ -131,6 +231,7 @@ fn update_scroll(model: &mut Model, msg: &Message) {
             let page = model.height.saturating_sub(2) as usize;
             model.diff_scroll += page;
             clamp_diff_scroll(model);
+            snap_cursor_to_visible(model);
             update_active_file_from_scroll(model);
         }
         _ => {}
@@ -460,6 +561,7 @@ fn update_navigation(model: &mut Model, msg: &Message) {
             model.sidebar_scroll = 0;
             model.collapsed_files.clear();
             model.diff_scroll = 0;
+            model.diff_cursor = 0;
             model.expanded_thread = None;
             model.current_review = None; // Clear to trigger reload
             model.current_diff = None;
@@ -605,6 +707,10 @@ pub fn update(model: &mut Model, msg: Message) {
         Message::ListUp | Message::ListDown | Message::ListPageUp | Message::ListPageDown
         | Message::ListTop | Message::ListBottom => {
             update_list_nav(model, &msg);
+        }
+
+        Message::CursorUp | Message::CursorDown | Message::CursorTop | Message::CursorBottom => {
+            update_cursor(model, &msg);
         }
 
         Message::ScrollUp | Message::ScrollDown | Message::ScrollTop | Message::ScrollBottom
@@ -869,6 +975,7 @@ fn center_on_thread(model: &mut Model) {
     let positions = model.thread_positions.borrow();
     if let Some(&stream_row) = positions.get(&thread_id) {
         drop(positions);
+        model.diff_cursor = stream_row;
         let view_height = model.height.saturating_sub(2) as usize;
         let center = view_height / 2;
         model.diff_scroll = stream_row.saturating_sub(center);

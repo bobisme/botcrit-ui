@@ -105,6 +105,7 @@ struct LineRenderCtx<'a> {
     area: Rect,
     anchor: Option<&'a ThreadAnchor>,
     show_thread_bar: bool,
+    is_cursor: bool,
 }
 
 /// Display item for file context view
@@ -126,7 +127,9 @@ struct StreamCursor<'a> {
     scroll: usize,
     screen_row: usize,
     stream_row: usize,
+    diff_cursor: usize,
     theme: &'a Theme,
+    landable_rows: &'a std::cell::RefCell<Vec<usize>>,
 }
 
 struct OrphanedContext<'a> {
@@ -183,6 +186,16 @@ impl StreamCursor<'_> {
             }
             self.stream_row += 1;
         }
+    }
+
+    /// Record the current `stream_row` as a landable position.
+    fn mark_landable(&self) {
+        self.landable_rows.borrow_mut().push(self.stream_row);
+    }
+
+    /// Check if the diff cursor is at or within [`stream_row`, `stream_row` + rows).
+    const fn is_cursor_at(&self, rows: usize) -> bool {
+        self.diff_cursor >= self.stream_row && self.diff_cursor < self.stream_row + rows
     }
 
     const fn remaining_rows(&self) -> usize {
@@ -305,13 +318,17 @@ pub fn render_pinned_header_block(
         return 0;
     }
 
+    // Pinned header doesn't participate in cursor/landable tracking
+    let dummy_landable = std::cell::RefCell::new(Vec::new());
     let mut cursor = StreamCursor {
         buffer,
         area: Rect::new(area.x, area.y, area.width, height),
         scroll: 0,
         screen_row: 0,
         stream_row: 0,
+        diff_cursor: usize::MAX,
         theme,
+        landable_rows: &dummy_landable,
     };
 
     for _ in 0..BLOCK_MARGIN {
@@ -393,10 +410,12 @@ pub struct DiffStreamParams<'a> {
     pub threads: &'a [ThreadSummary],
     pub all_comments: &'a std::collections::HashMap<String, Vec<crate::db::Comment>>,
     pub scroll: usize,
+    pub diff_cursor: usize,
     pub theme: &'a Theme,
     pub view_mode: crate::model::DiffViewMode,
     pub wrap: bool,
     pub thread_positions: &'a std::cell::RefCell<std::collections::HashMap<String, usize>>,
+    pub landable_rows: &'a std::cell::RefCell<Vec<usize>>,
     pub description: Option<&'a str>,
 }
 
@@ -514,6 +533,10 @@ fn render_file_content_no_diff(
             }
             DisplayItem::Separator(_) => false,
         };
+        let is_landable = matches!(&item, DisplayItem::Line { .. });
+        if is_landable {
+            cursor.mark_landable();
+        }
         match &item {
             DisplayItem::Separator(_) => {
                 cursor.emit(|buf, y, theme| {
@@ -525,6 +548,7 @@ fn render_file_content_no_diff(
                         theme,
                         show_thread_bar,
                         file_highlights,
+                        false,
                     );
                 });
             }
@@ -538,18 +562,20 @@ fn render_file_content_no_diff(
                         as usize;
                     let wrapped = wrap_content(highlight, content, content_width);
                     let rows = wrapped.len().max(1);
+                    let is_cursor = cursor.is_cursor_at(rows);
                     cursor.emit_rows(rows, |buf, y, theme, row| {
                         render_context_line_wrapped_row(
                             buf,
                             y,
                             *line_num,
                             theme,
-                            &LineRenderCtx { area: line_area, anchor: None, show_thread_bar },
+                            &LineRenderCtx { area: line_area, anchor: None, show_thread_bar, is_cursor },
                             &wrapped,
                             row,
                         );
                     });
                 } else {
+                    let is_cursor = cursor.is_cursor_at(1);
                     cursor.emit(|buf, y, theme| {
                         render_context_item_block(
                             buf,
@@ -559,6 +585,7 @@ fn render_file_content_no_diff(
                             theme,
                             show_thread_bar,
                             file_highlights,
+                            is_cursor,
                         );
                     });
                 }
@@ -741,12 +768,13 @@ fn render_unified_display_items(
                         y,
                         display_line,
                         theme,
-                        &LineRenderCtx { area: ctx.line_area, anchor, show_thread_bar },
+                        &LineRenderCtx { area: ctx.line_area, anchor, show_thread_bar, is_cursor: false },
                         ctx.file_highlights.get(idx),
                     );
                 });
             }
             DisplayLine::Diff(line) => {
+                cursor.mark_landable();
                 if ctx.wrap {
                     let thread_col_width = THREAD_COL_WIDTH;
                     let line_num_width = UNIFIED_LINE_NUM_WIDTH;
@@ -759,25 +787,27 @@ fn render_unified_display_items(
                         max_content,
                     );
                     let rows = wrapped.len().max(1);
+                    let is_cursor = cursor.is_cursor_at(rows);
                     cursor.emit_rows(rows, |buf, y, theme, row| {
                         render_unified_diff_line_wrapped_row(
                             buf,
                             y,
                             line,
                             theme,
-                            &LineRenderCtx { area: ctx.line_area, anchor, show_thread_bar },
+                            &LineRenderCtx { area: ctx.line_area, anchor, show_thread_bar, is_cursor },
                             &wrapped,
                             row,
                         );
                     });
                 } else {
+                    let is_cursor = cursor.is_cursor_at(1);
                     cursor.emit(|buf, y, theme| {
                         render_unified_diff_line_block(
                             buf,
                             y,
                             display_line,
                             theme,
-                            &LineRenderCtx { area: ctx.line_area, anchor, show_thread_bar },
+                            &LineRenderCtx { area: ctx.line_area, anchor, show_thread_bar, is_cursor },
                             ctx.file_highlights.get(idx),
                         );
                     });
@@ -871,10 +901,8 @@ fn build_sbs_anchor_maps<'a>(
 /// Render a single SBS line with wrapping support.
 fn render_sbs_line(
     cursor: &mut StreamCursor<'_>,
-    line_area: Rect,
     sbs_line: &SideBySideLine,
-    anchor: Option<&ThreadAnchor>,
-    show_thread_bar: bool,
+    ctx: &LineRenderCtx<'_>,
     wrap: bool,
     file_highlights: &[Vec<HighlightSpan>],
 ) {
@@ -882,7 +910,7 @@ fn render_sbs_line(
         let thread_col_width = THREAD_COL_WIDTH;
         let divider_width: u32 = 1;
         let line_num_width = SBS_LINE_NUM_WIDTH;
-        let available = diff_content_width(line_area)
+        let available = diff_content_width(ctx.area)
             .saturating_sub(thread_col_width + divider_width);
         let half_width = available / 2;
         let left_width = half_width.saturating_sub(line_num_width) as usize;
@@ -915,7 +943,7 @@ fn render_sbs_line(
                 y,
                 sbs_line,
                 theme,
-                &LineRenderCtx { area: line_area, anchor, show_thread_bar },
+                ctx,
                 (left_wrapped.as_ref(), right_wrapped.as_ref()),
                 row,
             );
@@ -927,13 +955,14 @@ fn render_sbs_line(
                 y,
                 sbs_line,
                 theme,
-                &LineRenderCtx { area: line_area, anchor, show_thread_bar },
+                ctx,
                 file_highlights,
             );
         });
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn render_file_diff_sbs(
     cursor: &mut StreamCursor<'_>,
     sbs_lines: &[SideBySideLine],
@@ -990,12 +1019,15 @@ fn render_file_diff_sbs(
                     .or_insert(cursor.stream_row);
             }
         }
+        let is_landable = !sbs_line.is_header;
+        if is_landable {
+            cursor.mark_landable();
+        }
+        let is_cursor = is_landable && cursor.is_cursor_at(1);
         render_sbs_line(
             cursor,
-            ctx.line_area,
             sbs_line,
-            anchor,
-            show_thread_bar,
+            &LineRenderCtx { area: ctx.line_area, anchor, show_thread_bar, is_cursor },
             ctx.wrap,
             ctx.file_highlights,
         );
@@ -1048,13 +1080,16 @@ pub fn render_diff_stream(
     params: &DiffStreamParams<'_>,
 ) {
     params.thread_positions.borrow_mut().clear();
+    params.landable_rows.borrow_mut().clear();
     let mut cursor = StreamCursor {
         buffer,
         area,
         scroll: params.scroll,
         screen_row: 0,
         stream_row: 0,
+        diff_cursor: params.diff_cursor,
         theme: params.theme,
+        landable_rows: params.landable_rows,
     };
 
     // Render description block if present

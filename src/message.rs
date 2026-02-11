@@ -40,6 +40,14 @@ pub enum Message {
     SidebarSelect,
 
     // === Diff/Content Pane ===
+    /// Move cursor up one landable row
+    CursorUp,
+    /// Move cursor down one landable row
+    CursorDown,
+    /// Move cursor to first landable row
+    CursorTop,
+    /// Move cursor to last landable row
+    CursorBottom,
     /// Scroll content up
     ScrollUp,
     /// Scroll content down

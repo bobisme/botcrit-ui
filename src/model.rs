@@ -157,6 +157,8 @@ pub struct Model {
     pub collapsed_files: HashSet<String>,
     /// Scroll offset in diff pane
     pub diff_scroll: usize,
+    /// Line cursor position in diff pane (stream row index)
+    pub diff_cursor: usize,
     /// Currently expanded thread ID
     pub expanded_thread: Option<String>,
     /// Review list filter
@@ -194,6 +196,8 @@ pub struct Model {
     // === Render-computed data ===
     /// Thread positions captured during rendering (`thread_id` → `stream_row`)
     pub thread_positions: RefCell<HashMap<String, usize>>,
+    /// Landable stream rows captured during rendering (diff/context lines, not headers)
+    pub landable_rows: RefCell<Vec<usize>>,
 
     // === Review list search ===
     pub search_input: String,
@@ -242,6 +246,7 @@ impl Model {
             sidebar_scroll: 0,
             collapsed_files: HashSet::new(),
             diff_scroll: 0,
+            diff_cursor: 0,
             expanded_thread: None,
             filter: ReviewFilter::default(),
             sidebar_visible: true,
@@ -261,6 +266,7 @@ impl Model {
             pre_palette_theme: None,
             config,
             thread_positions: RefCell::new(HashMap::new()),
+            landable_rows: RefCell::new(Vec::new()),
             search_input: String::new(),
             search_active: false,
             repo_path: None,

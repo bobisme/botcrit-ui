@@ -143,6 +143,17 @@ pub(super) fn draw_thread_range_bar(
     buffer.draw_text(x, y, "┃", Style::fg(theme.background).with_bg(bg));
 }
 
+pub(super) fn draw_cursor_bar(
+    buffer: &mut OptimizedBuffer,
+    x: u32,
+    y: u32,
+    bg: Rgba,
+    theme: &Theme,
+) {
+    buffer.fill_rect(x, y, 2, 1, bg);
+    buffer.draw_text(x, y, "┃", Style::fg(theme.primary).with_bg(bg));
+}
+
 /// The comment block area inset by the horizontal margin (bar goes here).
 pub(super) const fn comment_block_area(area: Rect) -> Rect {
     Rect {

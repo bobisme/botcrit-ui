@@ -25,7 +25,9 @@ use opentui::{
 use botcrit_ui::config::{load_ui_config, save_ui_config};
 use botcrit_ui::input::map_event_to_message;
 use botcrit_ui::model::{DiffViewMode, EditorRequest};
-use botcrit_ui::stream::{compute_stream_layout, file_scroll_offset, SIDE_BY_SIDE_MIN_WIDTH};
+use botcrit_ui::stream::{
+    compute_stream_layout, file_scroll_offset, StreamLayoutParams, SIDE_BY_SIDE_MIN_WIDTH,
+};
 use botcrit_ui::theme::{load_built_in_theme, load_theme_from_path};
 use botcrit_ui::{
     update, vcs, view, CliClient, CritClient, Focus, Highlighter, LayoutMode, Message, Model,
@@ -222,13 +224,15 @@ fn main() -> Result<()> {
                                 process_event(
                                     &event,
                                     &mut model,
-                                    &mut renderer,
-                                    &mut raw_guard,
-                                    &mut wrap_guard,
-                                    &mut cursor_guard,
-                                    &client,
-                                    repo_path.as_deref(),
-                                    options,
+                                    &mut EventContext {
+                                        renderer: &mut renderer,
+                                        raw_guard: &mut raw_guard,
+                                        wrap_guard: &mut wrap_guard,
+                                        cursor_guard: &mut cursor_guard,
+                                        client: &client,
+                                        repo_path: repo_path.as_deref(),
+                                        options,
+                                    },
                                 )?;
                             }
                             Err(ParseError::Empty | ParseError::Incomplete) => {
@@ -255,13 +259,15 @@ fn main() -> Result<()> {
                                 process_event(
                                     &event,
                                     &mut model,
-                                    &mut renderer,
-                                    &mut raw_guard,
-                                    &mut wrap_guard,
-                                    &mut cursor_guard,
-                                    &client,
-                                    repo_path.as_deref(),
-                                    options,
+                                    &mut EventContext {
+                                        renderer: &mut renderer,
+                                        raw_guard: &mut raw_guard,
+                                        wrap_guard: &mut wrap_guard,
+                                        cursor_guard: &mut cursor_guard,
+                                        client: &client,
+                                        repo_path: repo_path.as_deref(),
+                                        options,
+                                    },
                                 )?;
                             }
                             Err(ParseError::Empty | ParseError::Incomplete) => {
@@ -284,13 +290,15 @@ fn main() -> Result<()> {
                 process_event(
                     &esc_event,
                     &mut model,
-                    &mut renderer,
-                    &mut raw_guard,
-                    &mut wrap_guard,
-                    &mut cursor_guard,
-                    &client,
-                    repo_path.as_deref(),
-                    options,
+                    &mut EventContext {
+                        renderer: &mut renderer,
+                        raw_guard: &mut raw_guard,
+                        wrap_guard: &mut wrap_guard,
+                        cursor_guard: &mut cursor_guard,
+                        client: &client,
+                        repo_path: repo_path.as_deref(),
+                        options,
+                    },
                 )?;
             }
         } else if pending_esc {
@@ -300,13 +308,15 @@ fn main() -> Result<()> {
             process_event(
                 &esc_event,
                 &mut model,
-                &mut renderer,
-                &mut raw_guard,
-                &mut wrap_guard,
-                &mut cursor_guard,
-                &client,
-                repo_path.as_deref(),
-                options,
+                &mut EventContext {
+                    renderer: &mut renderer,
+                    raw_guard: &mut raw_guard,
+                    wrap_guard: &mut wrap_guard,
+                    cursor_guard: &mut cursor_guard,
+                    client: &client,
+                    repo_path: repo_path.as_deref(),
+                    options,
+                },
             )?;
         }
     }
@@ -314,18 +324,18 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments, clippy::ref_option)]
-fn process_event(
-    event: &Event,
-    model: &mut Model,
-    renderer: &mut Renderer,
-    raw_guard: &mut Option<opentui::RawModeGuard>,
-    wrap_guard: &mut Option<AutoWrapGuard>,
-    cursor_guard: &mut Option<CursorGuard>,
-    _client: &Option<Box<dyn CritClient>>,
-    repo_path: Option<&Path>,
+struct EventContext<'a> {
+    renderer: &'a mut Renderer,
+    raw_guard: &'a mut Option<opentui::RawModeGuard>,
+    wrap_guard: &'a mut Option<AutoWrapGuard>,
+    cursor_guard: &'a mut Option<CursorGuard>,
+    client: &'a Option<Box<dyn CritClient>>,
+    repo_path: Option<&'a Path>,
     options: RendererOptions,
-) -> Result<()> {
+}
+
+fn process_event(event: &Event, model: &mut Model, ctx: &mut EventContext<'_>) -> Result<()> {
+    let _ = ctx.client; // reserved for future use
     let msg = map_event_to_message(model, event);
     let resize = if let Message::Resize { width, height } = &msg {
         Some((*width, *height))
@@ -335,36 +345,36 @@ fn process_event(
     update(model, msg);
 
     if let Some((width, height)) = resize {
-        renderer
+        ctx.renderer
             .resize(width.into(), height.into())
             .context("Failed to resize renderer")?;
         model.needs_redraw = true;
     }
 
     if let Some(request) = model.pending_editor_request.take() {
-        let (prev_width, prev_height) = renderer.size();
+        let (prev_width, prev_height) = ctx.renderer.size();
         let prev_width = prev_width as u16;
         let prev_height = prev_height as u16;
         drop(std::mem::replace(
-            renderer,
-            Renderer::new_with_options(1, 1, options).unwrap(),
+            ctx.renderer,
+            Renderer::new_with_options(1, 1, ctx.options).unwrap(),
         ));
-        raw_guard.take();
-        wrap_guard.take();
-        cursor_guard.take();
+        ctx.raw_guard.take();
+        ctx.wrap_guard.take();
+        ctx.cursor_guard.take();
 
-        let _ = open_file_in_editor(repo_path, request);
+        let _ = open_file_in_editor(ctx.repo_path, request);
 
-        *raw_guard = Some(enable_raw_mode().context("Failed to enable raw mode")?);
+        *ctx.raw_guard = Some(enable_raw_mode().context("Failed to enable raw mode")?);
         let (width, height) = terminal_size().unwrap_or((prev_width, prev_height));
-        *renderer = Renderer::new_with_options(width.into(), height.into(), options)
+        *ctx.renderer = Renderer::new_with_options(width.into(), height.into(), ctx.options)
             .context("Failed to initialize renderer")?;
-        renderer.set_background(model.theme.background);
-        *wrap_guard = Some(AutoWrapGuard::new().context("Failed to disable line wrap")?);
-        *cursor_guard = Some(CursorGuard::new().context("Failed to hide cursor")?);
+        ctx.renderer.set_background(model.theme.background);
+        *ctx.wrap_guard = Some(AutoWrapGuard::new().context("Failed to disable line wrap")?);
+        *ctx.cursor_guard = Some(CursorGuard::new().context("Failed to hide cursor")?);
         model.resize(width, height);
         model.needs_redraw = true;
-        renderer.invalidate();
+        ctx.renderer.invalidate();
     }
 
     Ok(())
@@ -708,16 +718,16 @@ fn nav_stream_layout(model: &Model) -> botcrit_ui::stream::StreamLayout {
         .current_review
         .as_ref()
         .and_then(|r| r.description.as_deref());
-    compute_stream_layout(
-        &files,
-        &model.file_cache,
-        &model.threads,
-        &model.all_comments,
-        model.diff_view_mode,
-        model.diff_wrap,
-        width,
+    compute_stream_layout(&StreamLayoutParams {
+        files: &files,
+        file_cache: &model.file_cache,
+        threads: &model.threads,
+        all_comments: &model.all_comments,
+        view_mode: model.diff_view_mode,
+        wrap: model.diff_wrap,
+        content_width: width,
         description,
-    )
+    })
 }
 
 fn handle_demo_data_loading(model: &mut Model) {

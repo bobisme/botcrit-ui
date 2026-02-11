@@ -21,6 +21,18 @@ pub struct StreamLayout {
     pub total_lines: usize,
 }
 
+/// Parameters for [`compute_stream_layout`].
+pub struct StreamLayoutParams<'a> {
+    pub files: &'a [FileEntry],
+    pub file_cache: &'a HashMap<String, FileCacheEntry>,
+    pub threads: &'a [ThreadSummary],
+    pub all_comments: &'a HashMap<String, Vec<Comment>>,
+    pub view_mode: DiffViewMode,
+    pub wrap: bool,
+    pub content_width: u32,
+    pub description: Option<&'a str>,
+}
+
 /// Inner width for description/comment block content.
 const fn block_wrap_width(pane_width: u32) -> usize {
     layout::block_inner_width(pane_width) as usize
@@ -76,17 +88,18 @@ fn wrap_line_count(text: &str, max_width: usize) -> usize {
 
 #[must_use]
 #[allow(clippy::implicit_hasher)] // internal fn, always uses default hasher
-#[allow(clippy::too_many_arguments)]
-pub fn compute_stream_layout(
-    files: &[FileEntry],
-    file_cache: &HashMap<String, FileCacheEntry>,
-    threads: &[ThreadSummary],
-    all_comments: &HashMap<String, Vec<Comment>>,
-    view_mode: DiffViewMode,
-    wrap: bool,
-    content_width: u32,
-    description: Option<&str>,
-) -> StreamLayout {
+pub fn compute_stream_layout(params: &StreamLayoutParams<'_>) -> StreamLayout {
+    let StreamLayoutParams {
+        files,
+        file_cache,
+        threads,
+        all_comments,
+        view_mode,
+        wrap,
+        content_width,
+        description,
+    } = *params;
+
     let description_lines = description_block_height(description, content_width);
     let mut file_offsets = Vec::with_capacity(files.len());
     let mut total = description_lines;

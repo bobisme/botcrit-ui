@@ -3,7 +3,7 @@
 use crate::command::{command_id_to_message, get_commands};
 use crate::message::Message;
 use crate::model::{DiffViewMode, EditorRequest, Focus, Model, PaletteMode, ReviewFilter, Screen};
-use crate::stream::{active_file_index, compute_stream_layout, file_scroll_offset};
+use crate::stream::{active_file_index, compute_stream_layout, file_scroll_offset, StreamLayoutParams};
 use crate::{config, theme, Highlighter};
 
 fn update_list_nav(model: &mut Model, msg: &Message) {
@@ -857,16 +857,16 @@ fn stream_layout(model: &Model) -> crate::stream::StreamLayout {
         .current_review
         .as_ref()
         .and_then(|r| r.description.as_deref());
-    compute_stream_layout(
-        &files,
-        &model.file_cache,
-        &model.threads,
-        &model.all_comments,
-        model.diff_view_mode,
-        model.diff_wrap,
-        width,
+    compute_stream_layout(&StreamLayoutParams {
+        files: &files,
+        file_cache: &model.file_cache,
+        threads: &model.threads,
+        all_comments: &model.all_comments,
+        view_mode: model.diff_view_mode,
+        wrap: model.diff_wrap,
+        content_width: width,
         description,
-    )
+    })
 }
 
 fn clamp_diff_scroll(model: &mut Model) {

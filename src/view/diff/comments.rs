@@ -38,11 +38,10 @@ pub(super) fn emit_comment_block(
     let content_width = padded.width as usize;
     let mut content_lines: Vec<CommentLine> = Vec::new();
 
-    let line_range = if let Some(end) = thread.selection_end {
-        format!("{}-{}", thread.selection_start, end)
-    } else {
-        format!("{}", thread.selection_start)
-    };
+    let line_range = thread.selection_end.map_or_else(
+        || format!("{}", thread.selection_start),
+        |end| format!("{}-{}", thread.selection_start, end),
+    );
     let mut right_text = format!("{}:{}", thread.file_path, line_range);
     let right_max = content_width.saturating_sub(thread.thread_id.len().saturating_add(1));
     if right_max > 0 && right_text.len() > right_max {

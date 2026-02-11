@@ -11,6 +11,11 @@ pub struct UiConfig {
     pub default_diff_view: Option<String>,
 }
 
+/// Load UI configuration from the user's config directory.
+///
+/// # Errors
+///
+/// Returns an error if the config file exists but cannot be read or parsed.
 pub fn load_ui_config() -> anyhow::Result<Option<UiConfig>> {
     let Some(path) = config_path() else {
         return Ok(None);
@@ -26,6 +31,11 @@ pub fn load_ui_config() -> anyhow::Result<Option<UiConfig>> {
     Ok(Some(config))
 }
 
+/// Save UI configuration to the user's config directory.
+///
+/// # Errors
+///
+/// Returns an error if the config directory cannot be created or the file cannot be written.
 pub fn save_ui_config(config: &UiConfig) -> anyhow::Result<()> {
     let Some(path) = config_path() else {
         return Ok(());

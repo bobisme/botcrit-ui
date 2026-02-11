@@ -56,11 +56,9 @@ fn map_review_list_key(key: KeyCode, model: &Model) -> Message {
         KeyCode::Enter | KeyCode::Char('l') => {
             // Select the current review
             let reviews = model.filtered_reviews();
-            if let Some(review) = reviews.get(model.list_index) {
+            reviews.get(model.list_index).map_or(Message::Noop, |review| {
                 Message::SelectReview(review.review_id.clone())
-            } else {
-                Message::Noop
-            }
+            })
         }
         KeyCode::Char('o') => Message::FilterOpen,
         KeyCode::Char('a') => Message::FilterAll,
@@ -131,8 +129,8 @@ fn map_review_detail_mouse(model: &mut Model, mouse: opentui::MouseEvent) -> Mes
                 Some((
                     0u32,
                     0u32,
-                    model.layout_mode.sidebar_width() as u32,
-                    model.height as u32,
+                    u32::from(model.layout_mode.sidebar_width()),
+                    u32::from(model.height),
                 ))
             } else {
                 None
@@ -142,7 +140,7 @@ fn map_review_detail_mouse(model: &mut Model, mouse: opentui::MouseEvent) -> Mes
             if !model.sidebar_visible || !matches!(model.focus, Focus::FileSidebar) {
                 None
             } else {
-                Some((0u32, 0u32, model.width as u32, model.height as u32))
+                Some((0u32, 0u32, u32::from(model.width), u32::from(model.height)))
             }
         }
     };
@@ -271,12 +269,10 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
             KeyCode::Char('s') => Message::ToggleSidebar,
             KeyCode::Enter => {
                 // Expand the current thread (if one is selected via n/p)
-                if let Some(id) = &model.expanded_thread {
-                    Message::ExpandThread(id.clone())
-                } else {
-                    // Select first thread
-                    Message::NextThread
-                }
+                model.expanded_thread.as_ref().map_or(
+                    Message::NextThread,
+                    |id| Message::ExpandThread(id.clone()),
+                )
             }
             KeyCode::Char('[') => Message::PrevFile,
             KeyCode::Char(']') => Message::NextFile,
@@ -289,11 +285,9 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
             KeyCode::Char('g') | KeyCode::Home => Message::ScrollTop,
             KeyCode::Char('G') | KeyCode::End => Message::ScrollBottom,
             KeyCode::Char('r' | 'R') => {
-                if let Some(id) = &model.expanded_thread {
+                model.expanded_thread.as_ref().map_or(Message::Noop, |id| {
                     Message::ResolveThread(id.clone())
-                } else {
-                    Message::Noop
-                }
+                })
             }
             _ => Message::Noop,
         },

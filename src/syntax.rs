@@ -26,7 +26,11 @@ pub struct Highlighter {
 }
 
 impl Highlighter {
-    /// Create a new highlighter with the default theme
+    /// Create a new highlighter with the default theme.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the bundled syntect theme set contains no themes.
     #[must_use]
     pub fn new() -> Self {
         let syntax_set = SyntaxSet::load_defaults_newlines();
@@ -42,7 +46,11 @@ impl Highlighter {
         Self { syntax_set, theme }
     }
 
-    /// Create a highlighter with a specific syntect theme name
+    /// Create a highlighter with a specific syntect theme name.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the bundled syntect theme set contains no themes.
     #[must_use]
     pub fn with_theme(theme_name: &str) -> Self {
         let syntax_set = SyntaxSet::load_defaults_newlines();
@@ -159,23 +167,29 @@ pub struct FileHighlighter<'a> {
 impl FileHighlighter<'_> {
     /// Highlight the next line, maintaining state from previous lines
     pub fn highlight_line(&mut self, line: &str) -> Vec<HighlightSpan> {
-        match self.highlighter.highlight_line(line, self.syntax_set) {
-            Ok(ranges) => ranges
-                .into_iter()
-                .map(|(style, text)| HighlightSpan {
-                    text: text.to_string(),
-                    fg: syntect_color_to_rgba(style.foreground),
-                    bold: style.font_style.contains(FontStyle::BOLD),
-                    italic: style.font_style.contains(FontStyle::ITALIC),
-                })
-                .collect(),
-            Err(_) => vec![HighlightSpan {
-                text: line.to_string(),
-                fg: Rgba::WHITE,
-                bold: false,
-                italic: false,
-            }],
-        }
+        self.highlighter
+            .highlight_line(line, self.syntax_set)
+            .map_or_else(
+                |_| {
+                    vec![HighlightSpan {
+                        text: line.to_string(),
+                        fg: Rgba::WHITE,
+                        bold: false,
+                        italic: false,
+                    }]
+                },
+                |ranges| {
+                    ranges
+                        .into_iter()
+                        .map(|(style, text)| HighlightSpan {
+                            text: text.to_string(),
+                            fg: syntect_color_to_rgba(style.foreground),
+                            bold: style.font_style.contains(FontStyle::BOLD),
+                            italic: style.font_style.contains(FontStyle::ITALIC),
+                        })
+                        .collect()
+                },
+            )
     }
 }
 

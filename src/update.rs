@@ -636,14 +636,12 @@ fn update_active_file_from_scroll(model: &mut Model) {
 
 fn sync_sidebar_from_active(model: &mut Model) {
     let items = model.sidebar_items();
-    let mut target = if let Some(thread_id) = active_thread_from_scroll(model) {
+    let mut target = active_thread_from_scroll(model).and_then(|thread_id| {
         items.iter().position(|item| match item {
             crate::model::SidebarItem::Thread { thread_id: id, .. } => id == &thread_id,
             crate::model::SidebarItem::File { .. } => false,
         })
-    } else {
-        None
-    };
+    });
 
     if target.is_none() {
         if let Some(thread_id) = &model.expanded_thread {
@@ -807,13 +805,13 @@ fn clamp_diff_scroll(model: &mut Model) {
 fn diff_content_width(model: &Model) -> u32 {
     /// Must match `DIFF_MARGIN` in diff.rs.
     const DIFF_MARGIN: u32 = 2;
-    let total_width = model.width as u32;
+    let total_width = u32::from(model.width);
     let pane_width = match model.layout_mode {
         crate::model::LayoutMode::Full
         | crate::model::LayoutMode::Compact
         | crate::model::LayoutMode::Overlay => {
             if model.sidebar_visible {
-                total_width.saturating_sub(model.layout_mode.sidebar_width() as u32)
+                total_width.saturating_sub(u32::from(model.layout_mode.sidebar_width()))
             } else {
                 total_width
             }

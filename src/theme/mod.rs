@@ -183,6 +183,10 @@ pub struct ThemeOverrides {
 
 impl Theme {
     /// Build a complete theme from 7 seed colors, deriving everything else.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any seed or override color string fails to parse.
     pub fn from_seeds(
         name: String,
         seeds: &ThemeSeeds,
@@ -284,7 +288,11 @@ impl Theme {
         })
     }
 
-    /// Default dark theme (Tokyo Night inspired)
+    /// Default dark theme (Tokyo Night inspired).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the built-in dark theme seed colors are invalid.
     #[must_use]
     pub fn dark() -> Self {
         Self::from_seeds(
@@ -316,7 +324,11 @@ impl Theme {
         .expect("built-in dark theme seeds are valid")
     }
 
-    /// Light theme variant
+    /// Light theme variant.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the built-in light theme seed colors are invalid.
     #[must_use]
     pub fn light() -> Self {
         Self::from_seeds(
@@ -524,11 +536,21 @@ const BUILTIN_THEMES: &[(&str, &str)] = &[
     ("vesper", include_str!("../../themes/vesper.json")),
 ];
 
+/// Load a theme from a JSON file on disk.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be read or contains invalid theme JSON.
 pub fn load_theme_from_path(path: &Path) -> anyhow::Result<ThemeLoadResult> {
     let json = std::fs::read_to_string(path)?;
     load_theme_from_str(&json)
 }
 
+/// Parse a theme from a JSON string (seed or legacy format).
+///
+/// # Errors
+///
+/// Returns an error if the JSON is malformed or contains invalid color values.
 pub fn load_theme_from_str(json: &str) -> anyhow::Result<ThemeLoadResult> {
     // Detect format: "seeds" key → new seed format, "colors" key → legacy
     let value: serde_json::Value = serde_json::from_str(json)?;

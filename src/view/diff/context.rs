@@ -304,7 +304,7 @@ pub(super) fn render_context_item_block(
                 draw_thread_range_bar(buffer, diff_content_x(area), y, theme.panel_bg, theme);
             }
             let sep_text = if *gap > 0 {
-                format!("··· {} lines ···", gap)
+                format!("··· {gap} lines ···")
             } else {
                 "···".to_string()
             };
@@ -323,7 +323,7 @@ pub(super) fn render_context_item_block(
                 draw_thread_range_bar(buffer, diff_content_x(area), y, theme.panel_bg, theme);
             }
 
-            let ln_str = format!("{:5} ", line_num);
+            let ln_str = format!("{line_num:5} ");
             let line_num_width = SBS_LINE_NUM_WIDTH;
             let ln_x = orphaned_context_x(area);
             buffer.fill_rect(ln_x, y, line_num_width, 1, dt.context_bg);
@@ -362,7 +362,7 @@ pub(super) fn render_context_line_wrapped_row(
         draw_thread_range_bar(buffer, diff_content_x(area), y, theme.panel_bg, theme);
     }
 
-    let ln_str = format!("{:5} ", line_num);
+    let ln_str = format!("{line_num:5} ");
     let line_num_width = SBS_LINE_NUM_WIDTH;
     let ln_x = orphaned_context_x(area);
     buffer.fill_rect(ln_x, y, line_num_width, 1, dt.context_bg);

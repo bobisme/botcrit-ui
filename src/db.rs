@@ -83,6 +83,17 @@ pub struct ReviewData {
 
 /// Trait for loading review data from any backend.
 pub trait CritClient {
+    /// List reviews, optionally filtered by status.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the backend query fails.
     fn list_reviews(&self, status: Option<&str>) -> Result<Vec<ReviewSummary>>;
+
+    /// Load full review data (detail, threads, comments) for a review.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the backend query fails.
     fn load_review_data(&self, review_id: &str) -> Result<Option<ReviewData>>;
 }

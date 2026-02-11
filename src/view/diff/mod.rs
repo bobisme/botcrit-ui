@@ -65,7 +65,7 @@ pub struct ThreadAnchor {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct ChangeCounts {
+pub struct ChangeCounts {
     pub(super) added: usize,
     pub(super) removed: usize,
 }
@@ -496,7 +496,7 @@ pub fn render_diff_stream(
                             }
                             let show_thread_bar = match display_line {
                                 DisplayLine::Diff(line) => line_in_thread_ranges(
-                                    line.new_line.map(|n| n as i64),
+                                    line.new_line.map(i64::from),
                                     &thread_ranges,
                                 ),
                                 DisplayLine::HunkHeader => false,
@@ -652,7 +652,7 @@ pub fn render_diff_stream(
                                 false
                             } else {
                                 line_in_thread_ranges(
-                                    sbs_line.right.as_ref().map(|line| line.line_num as i64),
+                                    sbs_line.right.as_ref().map(|line| i64::from(line.line_num)),
                                     &thread_ranges,
                                 )
                             };
@@ -689,9 +689,9 @@ pub fn render_diff_stream(
                                 });
 
                                 let left_rows =
-                                    left_wrapped.as_ref().map(Vec::len).unwrap_or(1);
+                                    left_wrapped.as_ref().map_or(1, Vec::len);
                                 let right_rows =
-                                    right_wrapped.as_ref().map(Vec::len).unwrap_or(1);
+                                    right_wrapped.as_ref().map_or(1, Vec::len);
                                 let rows = left_rows.max(right_rows);
 
                                 cursor.emit_rows(rows, |buf, y, theme, row| {

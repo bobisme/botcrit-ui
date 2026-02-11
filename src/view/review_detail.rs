@@ -24,7 +24,7 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
     match model.layout_mode {
         LayoutMode::Full | LayoutMode::Compact | LayoutMode::Overlay => {
             if model.sidebar_visible {
-                let sidebar_width = model.layout_mode.sidebar_width() as u32;
+                let sidebar_width = u32::from(model.layout_mode.sidebar_width());
                 let (sidebar_area, diff_area) = inner.split_left(sidebar_width);
 
                 draw_file_sidebar(model, buffer, sidebar_area);
@@ -103,7 +103,7 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
                 .as_deref()
                 .unwrap_or(&review.initial_commit),
         );
-        let commit_range = format!("@{} -> @{}", from, to);
+        let commit_range = format!("@{from} -> @{to}");
         draw_text_truncated(
             buffer,
             text_x,
@@ -223,7 +223,7 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
                 let thread_x = inner.x + left_pad + indent;
 
                 // Right-aligned comment count indicator
-                let count_text = format!("{}", comment_count);
+                let count_text = format!("{comment_count}");
                 let count_len = count_text.chars().count() as u32;
                 let count_color = if status == "open" {
                     theme.warning
@@ -374,7 +374,7 @@ fn render_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     let mut footer_x = area.x;
     let mut footer_width = area.width;
     if model.sidebar_visible {
-        let sidebar_width = model.layout_mode.sidebar_width() as u32;
+        let sidebar_width = u32::from(model.layout_mode.sidebar_width());
         if sidebar_width < area.width
             && matches!(
                 model.layout_mode,

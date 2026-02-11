@@ -98,56 +98,60 @@ pub fn compute_stream_layout(
                 .iter()
                 .filter(|t| t.file_path == file.path)
                 .collect();
-            let diff_lines = if let Some(diff) = &entry.diff {
-                let anchors = crate::view::map_threads_to_diff(diff, &file_threads);
-                let anchored_ids: std::collections::HashSet<&str> =
-                    anchors.iter().map(|a| a.thread_id.as_str()).collect();
-                let anchored_threads: Vec<&ThreadSummary> = file_threads
-                    .iter()
-                    .filter(|t| anchored_ids.contains(t.thread_id.as_str()))
-                    .copied()
-                    .collect();
-                let orphaned_threads: Vec<&ThreadSummary> = file_threads
-                    .iter()
-                    .filter(|t| !anchored_ids.contains(t.thread_id.as_str()))
-                    .copied()
-                    .collect();
-
-                let mut count = diff_line_count_for_view(diff, view_mode, wrap, content_width)
-                    + threads_comment_height(&anchored_threads, all_comments, content_width);
-
-                if !orphaned_threads.is_empty() {
-                    if let Some(content) = &entry.file_content {
-                        let hunk_ranges =
-                            crate::diff::hunk_exclusion_ranges(&diff.hunks);
-                        count += orphaned_context_display_count(
+            let diff_lines = entry.diff.as_ref().map_or_else(
+                || {
+                    entry.file_content.as_ref().map_or(0, |content| {
+                        context_display_count(
                             content.lines.as_slice(),
-                            &orphaned_threads,
-                            &hunk_ranges,
+                            threads,
+                            &file.path,
                             wrap,
                             content_width,
-                        );
-                    }
-                    count += threads_comment_height(&orphaned_threads, all_comments, content_width);
-                }
+                        ) + all_context_extra_lines(
+                            content.lines.len(),
+                            &file_threads,
+                            all_comments,
+                            content_width,
+                        )
+                    })
+                },
+                |diff| {
+                    let anchors = crate::view::map_threads_to_diff(diff, &file_threads);
+                    let anchored_ids: std::collections::HashSet<&str> =
+                        anchors.iter().map(|a| a.thread_id.as_str()).collect();
+                    let anchored_threads: Vec<&ThreadSummary> = file_threads
+                        .iter()
+                        .filter(|t| anchored_ids.contains(t.thread_id.as_str()))
+                        .copied()
+                        .collect();
+                    let orphaned_threads: Vec<&ThreadSummary> = file_threads
+                        .iter()
+                        .filter(|t| !anchored_ids.contains(t.thread_id.as_str()))
+                        .copied()
+                        .collect();
 
-                count
-            } else if let Some(content) = &entry.file_content {
-                context_display_count(
-                    content.lines.as_slice(),
-                    threads,
-                    &file.path,
-                    wrap,
-                    content_width,
-                ) + all_context_extra_lines(
-                    content.lines.len(),
-                    &file_threads,
-                    all_comments,
-                    content_width,
-                )
-            } else {
-                0
-            };
+                    let mut count = diff_line_count_for_view(diff, view_mode, wrap, content_width)
+                        + threads_comment_height(&anchored_threads, all_comments, content_width);
+
+                    if !orphaned_threads.is_empty() {
+                        if let Some(content) = &entry.file_content {
+                            let hunk_ranges =
+                                crate::diff::hunk_exclusion_ranges(&diff.hunks);
+                            count += orphaned_context_display_count(
+                                content.lines.as_slice(),
+                                &orphaned_threads,
+                                &hunk_ranges,
+                                wrap,
+                                content_width,
+                            );
+                        }
+                        count +=
+                            threads_comment_height(&orphaned_threads, all_comments, content_width);
+                    }
+
+                    count
+                },
+            );
 
             total += diff_lines.max(1);
         } else {
@@ -282,12 +286,10 @@ fn side_by_side_line_count_wrapped(
                     for idx in 0..max_len {
                         let left_lines = removals
                             .get(idx)
-                            .map(|line| wrap_line_count(&line.content, left_width))
-                            .unwrap_or(1);
+                            .map_or(1, |line| wrap_line_count(&line.content, left_width));
                         let right_lines = additions
                             .get(idx)
-                            .map(|line| wrap_line_count(&line.content, right_width))
-                            .unwrap_or(1);
+                            .map_or(1, |line| wrap_line_count(&line.content, right_width));
                         count += left_lines.max(right_lines);
                     }
                 }

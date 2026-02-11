@@ -102,6 +102,9 @@ fn main() -> Result<()> {
 
     apply_default_diff_view(&mut model);
 
+    // Store repo path for display in header
+    model.repo_path = repo_path.as_ref().map(|p| p.display().to_string());
+
     // Store pending CLI navigation targets
     model.pending_review = args.review;
     model.pending_file = args.file;
@@ -803,6 +806,7 @@ fn load_demo_data(model: &mut Model) {
             status: "open".to_string(),
             thread_count: 3,
             open_thread_count: 2,
+            reviewers: vec!["security-reviewer".to_string()],
         },
         ReviewSummary {
             review_id: "cr-2f8".to_string(),
@@ -811,6 +815,7 @@ fn load_demo_data(model: &mut Model) {
             status: "open".to_string(),
             thread_count: 1,
             open_thread_count: 1,
+            reviewers: Vec::new(),
         },
         ReviewSummary {
             review_id: "cr-4a1".to_string(),
@@ -819,6 +824,7 @@ fn load_demo_data(model: &mut Model) {
             status: "open".to_string(),
             thread_count: 0,
             open_thread_count: 0,
+            reviewers: Vec::new(),
         },
         ReviewSummary {
             review_id: "cr-0b2".to_string(),
@@ -827,6 +833,7 @@ fn load_demo_data(model: &mut Model) {
             status: "merged".to_string(),
             thread_count: 2,
             open_thread_count: 0,
+            reviewers: vec!["api-reviewer".to_string(), "security-reviewer".to_string()],
         },
         ReviewSummary {
             review_id: "cr-1c9".to_string(),
@@ -835,6 +842,7 @@ fn load_demo_data(model: &mut Model) {
             status: "abandoned".to_string(),
             thread_count: 0,
             open_thread_count: 0,
+            reviewers: Vec::new(),
         },
     ];
 

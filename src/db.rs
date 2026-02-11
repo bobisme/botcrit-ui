@@ -14,6 +14,8 @@ pub struct ReviewSummary {
     pub status: String,
     pub thread_count: i64,
     pub open_thread_count: i64,
+    #[serde(default)]
+    pub reviewers: Vec<String>,
 }
 
 /// Full details of a review.

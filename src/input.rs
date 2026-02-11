@@ -45,6 +45,23 @@ pub fn map_event_to_message(model: &mut Model, event: &Event) -> Message {
 }
 
 fn map_review_list_key(key: KeyCode, model: &Model) -> Message {
+    // When search is active, route chars to search input
+    if model.search_active {
+        return match key {
+            KeyCode::Esc => Message::SearchClear,
+            KeyCode::Backspace => Message::SearchBackspace,
+            KeyCode::Enter => {
+                // Select current review from filtered results
+                let reviews = model.filtered_reviews();
+                reviews.get(model.list_index).map_or(Message::Noop, |review| {
+                    Message::SelectReview(review.review_id.clone())
+                })
+            }
+            KeyCode::Char(c) => Message::SearchInput(c.to_string()),
+            _ => Message::Noop,
+        };
+    }
+
     match key {
         KeyCode::Char('q') => Message::Quit,
         KeyCode::Char('j') | KeyCode::Down => Message::ListDown,
@@ -54,14 +71,13 @@ fn map_review_list_key(key: KeyCode, model: &Model) -> Message {
         KeyCode::PageUp => Message::ListPageUp,
         KeyCode::PageDown => Message::ListPageDown,
         KeyCode::Enter | KeyCode::Char('l') => {
-            // Select the current review
             let reviews = model.filtered_reviews();
             reviews.get(model.list_index).map_or(Message::Noop, |review| {
                 Message::SelectReview(review.review_id.clone())
             })
         }
-        KeyCode::Char('o') => Message::FilterOpen,
-        KeyCode::Char('a') => Message::FilterAll,
+        KeyCode::Char('s') => Message::CycleStatusFilter,
+        KeyCode::Char('/') => Message::SearchActivate,
         _ => Message::Noop,
     }
 }

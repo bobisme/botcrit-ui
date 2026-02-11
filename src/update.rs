@@ -486,15 +486,12 @@ fn update_navigation(model: &mut Model, msg: &Message) {
 
 fn update_view_filter(model: &mut Model, msg: &Message) {
     match msg {
-        Message::FilterOpen => {
-            model.filter = ReviewFilter::Open;
-            model.list_index = 0;
-            model.list_scroll = 0;
-            model.needs_redraw = true;
-        }
-
-        Message::FilterAll => {
-            model.filter = ReviewFilter::All;
+        Message::CycleStatusFilter => {
+            model.filter = match model.filter {
+                ReviewFilter::All => ReviewFilter::Open,
+                ReviewFilter::Open => ReviewFilter::Closed,
+                ReviewFilter::Closed => ReviewFilter::All,
+            };
             model.list_index = 0;
             model.list_scroll = 0;
             model.needs_redraw = true;
@@ -645,9 +642,33 @@ pub fn update(model: &mut Model, msg: Message) {
             // TODO: Write to event log
         }
 
-        Message::FilterOpen | Message::FilterAll | Message::ToggleDiffView
+        Message::CycleStatusFilter | Message::ToggleDiffView
         | Message::ToggleSidebar | Message::ToggleDiffWrap | Message::OpenFileInEditor => {
             update_view_filter(model, &msg);
+        }
+
+        Message::SearchActivate => {
+            model.search_active = true;
+            model.needs_redraw = true;
+        }
+        Message::SearchInput(ref text) => {
+            model.search_input.push_str(text);
+            model.list_index = 0;
+            model.list_scroll = 0;
+            model.needs_redraw = true;
+        }
+        Message::SearchBackspace => {
+            model.search_input.pop();
+            model.list_index = 0;
+            model.list_scroll = 0;
+            model.needs_redraw = true;
+        }
+        Message::SearchClear => {
+            model.search_input.clear();
+            model.search_active = false;
+            model.list_index = 0;
+            model.list_scroll = 0;
+            model.needs_redraw = true;
         }
 
         Message::Resize { .. } | Message::Quit | Message::ShowThemePicker

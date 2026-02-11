@@ -114,6 +114,7 @@ pub enum ReviewFilter {
     #[default]
     All,
     Open,
+    Closed,
 }
 
 /// Application state
@@ -194,6 +195,13 @@ pub struct Model {
     /// Thread positions captured during rendering (`thread_id` → `stream_row`)
     pub thread_positions: RefCell<HashMap<String, usize>>,
 
+    // === Review list search ===
+    pub search_input: String,
+    pub search_active: bool,
+
+    // === Repo path for display ===
+    pub repo_path: Option<String>,
+
     // === Control ===
     pub should_quit: bool,
     /// Flag indicating the view needs a full redraw
@@ -253,6 +261,9 @@ impl Model {
             pre_palette_theme: None,
             config,
             thread_positions: RefCell::new(HashMap::new()),
+            search_input: String::new(),
+            search_active: false,
+            repo_path: None,
             should_quit: false,
             needs_redraw: true,
             last_list_scroll: None,
@@ -263,13 +274,30 @@ impl Model {
         }
     }
 
-    /// Get filtered reviews based on current filter
+    /// Get filtered reviews based on current filter and search query
     #[must_use]
     pub fn filtered_reviews(&self) -> Vec<&ReviewSummary> {
-        match self.filter {
+        let status_filtered: Vec<&ReviewSummary> = match self.filter {
             ReviewFilter::All => self.reviews.iter().collect(),
             ReviewFilter::Open => self.reviews.iter().filter(|r| r.status == "open").collect(),
+            ReviewFilter::Closed => self
+                .reviews
+                .iter()
+                .filter(|r| r.status != "open")
+                .collect(),
+        };
+        if self.search_input.is_empty() {
+            return status_filtered;
         }
+        let query = self.search_input.to_lowercase();
+        status_filtered
+            .into_iter()
+            .filter(|r| {
+                r.title.to_lowercase().contains(&query)
+                    || r.review_id.to_lowercase().contains(&query)
+                    || r.author.to_lowercase().contains(&query)
+            })
+            .collect()
     }
 
     /// Get unique files from threads for the sidebar
@@ -376,8 +404,10 @@ impl Model {
     /// Get the visible height for the review list (accounting for chrome)
     #[must_use]
     pub const fn list_visible_height(&self) -> usize {
-        // Account for header (1) + status bar (1)
-        self.height.saturating_sub(2) as usize
+        // Account for header block (5) + search bar (2) + help bar (2)
+        // Each item is 2 lines tall
+        let available = self.height.saturating_sub(9) as usize;
+        available / 2
     }
 
     /// Sync current file fields from the file cache

@@ -80,10 +80,16 @@ pub enum Message {
     ReopenThread(String),
 
     // === Filter/View ===
-    /// Filter to open reviews only
-    FilterOpen,
-    /// Filter to all reviews
-    FilterAll,
+    /// Cycle review list status filter (All → Open → Closed → All)
+    CycleStatusFilter,
+    /// Activate search input on review list
+    SearchActivate,
+    /// Append character to search input
+    SearchInput(String),
+    /// Delete last character from search input
+    SearchBackspace,
+    /// Clear and deactivate search
+    SearchClear,
     /// Toggle between unified and side-by-side diff view
     ToggleDiffView,
     /// Toggle file sidebar visibility

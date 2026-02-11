@@ -189,6 +189,106 @@ pub fn truncate_path(path: &str, max_width: usize) -> String {
     format!("{truncated}…")
 }
 
+/// A line of content within a block.
+pub struct BlockLine<'a> {
+    pub text: &'a str,
+    pub style: Style,
+}
+
+impl<'a> BlockLine<'a> {
+    #[must_use]
+    pub const fn new(text: &'a str, style: Style) -> Self {
+        Self { text, style }
+    }
+}
+
+/// Draw a block with vertical bar, margins, padding, and content lines.
+///
+/// Layout per row:
+/// ```text
+/// [side_margin bg] [bar ┃] [left_pad] content [right_pad] [side_margin bg]
+/// ```
+///
+/// Returns total height consumed.
+pub fn draw_block(
+    buffer: &mut OptimizedBuffer,
+    area: Rect,
+    theme: &Theme,
+    bg: Rgba,
+    lines: &[BlockLine<'_>],
+) -> u32 {
+    use crate::layout::{BLOCK_LEFT_PAD, BLOCK_MARGIN, BLOCK_PADDING, BLOCK_RIGHT_PAD, BLOCK_SIDE_MARGIN};
+
+    let total_height =
+        (BLOCK_MARGIN * 2 + BLOCK_PADDING * 2 + lines.len()) as u32;
+    if area.height < total_height {
+        return 0;
+    }
+
+    let mut y = area.y;
+
+    let draw_margin_line = |buf: &mut OptimizedBuffer, y: u32| {
+        buf.fill_rect(area.x, y, area.width, 1, theme.background);
+    };
+
+    let draw_bar_line = |buf: &mut OptimizedBuffer, y: u32| {
+        // Side margins
+        if BLOCK_SIDE_MARGIN > 0 {
+            buf.fill_rect(area.x, y, BLOCK_SIDE_MARGIN, 1, theme.background);
+            buf.fill_rect(
+                area.x + area.width.saturating_sub(BLOCK_SIDE_MARGIN),
+                y,
+                BLOCK_SIDE_MARGIN,
+                1,
+                theme.background,
+            );
+        }
+        // Content area fill
+        let content_x = area.x + BLOCK_SIDE_MARGIN;
+        let content_width = area.width.saturating_sub(BLOCK_SIDE_MARGIN * 2);
+        buf.fill_rect(content_x, y, content_width, 1, bg);
+        // Bar character
+        buf.draw_text(
+            content_x,
+            y,
+            "\u{2503}",
+            theme.style_muted_on(bg),
+        );
+    };
+
+    // Top margin
+    for _ in 0..BLOCK_MARGIN {
+        draw_margin_line(buffer, y);
+        y += 1;
+    }
+    // Top padding
+    for _ in 0..BLOCK_PADDING {
+        draw_bar_line(buffer, y);
+        y += 1;
+    }
+    // Content lines
+    let inner_x = area.x + BLOCK_SIDE_MARGIN + 1 + BLOCK_LEFT_PAD;
+    let inner_width =
+        area.width.saturating_sub(BLOCK_SIDE_MARGIN * 2 + 1 + BLOCK_LEFT_PAD + BLOCK_RIGHT_PAD);
+    for line in lines {
+        draw_bar_line(buffer, y);
+        draw_text_truncated(buffer, inner_x, y, line.text, inner_width, line.style.with_bg(bg));
+        y += 1;
+    }
+    // Bottom padding
+    for _ in 0..BLOCK_PADDING {
+        draw_bar_line(buffer, y);
+        y += 1;
+    }
+    // Bottom margin
+    for _ in 0..BLOCK_MARGIN {
+        draw_margin_line(buffer, y);
+        y += 1;
+    }
+
+    total_height
+}
+
 /// Dim the cells in `area` by scaling both fg and bg colors.
 pub fn dim_rect(buffer: &mut OptimizedBuffer, area: Rect, scale: f32) {
     for row in area.y..area.y + area.height {

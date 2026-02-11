@@ -2,42 +2,57 @@
 
 use opentui::{OptimizedBuffer, Style};
 
-use super::components::{draw_help_bar, format_thread_count, HotkeyHint, Rect};
-use crate::model::Model;
+use super::components::{
+    draw_block, draw_help_bar, draw_text_truncated, BlockLine, HotkeyHint, Rect,
+};
+use crate::model::{Model, ReviewFilter};
+
+/// Height of the header block (margin + padding + 1 content line + padding + margin)
+const HEADER_HEIGHT: u32 = 5;
+/// Height of the search bar area (prompt line + blank line below)
+const SEARCH_HEIGHT: u32 = 2;
+/// Lines per review item
+const ITEM_HEIGHT: u32 = 2;
 
 /// Render the review list screen
 pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
     let theme = &model.theme;
     let area = Rect::from_size(model.width, model.height);
-    let safe_width = area.width;
 
-    buffer.fill_rect(area.x, area.y, safe_width, 1, theme.background);
-    buffer.draw_text(
-        area.x + 2,
-        area.y,
-        "Reviews",
-        Style::fg(theme.foreground).with_bold(),
+    // Fill background
+    buffer.fill_rect(area.x, area.y, area.width, area.height, theme.background);
+
+    // Header block
+    let header_text = model.repo_path.as_ref().map_or_else(
+        || "Reviews".to_string(),
+        |path| format!("Reviews for {path}"),
+    );
+    draw_block(
+        buffer,
+        Rect::new(area.x, area.y, area.width, HEADER_HEIGHT),
+        theme,
+        theme.panel_bg,
+        &[BlockLine::new(
+            &header_text,
+            Style::fg(theme.foreground).with_bold(),
+        )],
     );
 
-    let inner = Rect::new(
-        area.x,
-        area.y + 1,
-        safe_width,
-        area.height.saturating_sub(3),
-    );
-    buffer.fill_rect(
-        inner.x,
-        inner.y,
-        inner.width,
-        inner.height,
-        theme.background,
-    );
+    // Search bar
+    let search_y = area.y + HEADER_HEIGHT;
+    draw_search_bar(model, buffer, area.x, search_y, area.width);
+
+    // List area
+    let list_y = search_y + SEARCH_HEIGHT;
+    let list_height = area.height.saturating_sub(HEADER_HEIGHT + SEARCH_HEIGHT + 2); // 2 for help bar
+    let list_area = Rect::new(area.x, list_y, area.width, list_height);
+
     let reviews = model.filtered_reviews();
 
     if reviews.is_empty() {
         buffer.draw_text(
-            inner.x + 2,
-            inner.y + 1,
+            list_area.x + 2,
+            list_area.y,
             "No reviews found",
             theme.style_muted(),
         );
@@ -45,25 +60,39 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
         return;
     }
 
+    let visible_items = (list_height / ITEM_HEIGHT) as usize;
     let start = model.list_scroll.min(reviews.len());
-    let visible = inner.height as usize;
-    let end = (start + visible).min(reviews.len());
+    let end = (start + visible_items).min(reviews.len());
 
     for (row, review) in reviews[start..end].iter().enumerate() {
         let idx = start + row;
-        let y = inner.y + row as u32;
-        draw_review_row(model, buffer, inner, y, review, idx == model.list_index);
+        let y = list_area.y + (row as u32) * ITEM_HEIGHT;
+        draw_review_item(model, buffer, list_area, y, review, idx == model.list_index);
     }
 
-    // Help bar at bottom
-    render_help_bar(
-        model,
-        buffer,
-        Rect::new(area.x, area.y, safe_width, area.height),
-    );
+    render_help_bar(model, buffer, area);
 }
 
-fn draw_review_row(
+fn draw_search_bar(
+    model: &Model,
+    buffer: &mut OptimizedBuffer,
+    x: u32,
+    y: u32,
+    width: u32,
+) {
+    let theme = &model.theme;
+    buffer.fill_rect(x, y, width, SEARCH_HEIGHT, theme.background);
+
+    let text_x = x + 2;
+    if model.search_active {
+        let prompt = format!("/ {}\u{2588}", model.search_input);
+        buffer.draw_text(text_x, y, &prompt, theme.style_foreground());
+    } else {
+        buffer.draw_text(text_x, y, "Press / to search", theme.style_muted());
+    }
+}
+
+fn draw_review_item(
     model: &Model,
     buffer: &mut OptimizedBuffer,
     area: Rect,
@@ -72,201 +101,134 @@ fn draw_review_row(
     selected: bool,
 ) {
     let theme = &model.theme;
-
     let bg = if selected {
         theme.selection_bg
     } else {
         theme.background
     };
 
-    // Selection indicator and background
-    let (prefix, style) = if selected {
-        (
-            "> ",
-            Style::fg(theme.selection_fg).with_bg(theme.selection_bg),
-        )
-    } else {
-        ("  ", theme.style_foreground_on(bg))
-    };
+    // Fill both lines
+    buffer.fill_rect(area.x, y, area.width, ITEM_HEIGHT, bg);
 
-    let row_width = area.width;
-    // Fill row background (avoid last column to prevent terminal wrap)
-    buffer.fill_rect(area.x, y, row_width, 1, bg);
+    let pad: u32 = 2;
+    let mut x = area.x + pad;
+    let right_edge = area.x + area.width.saturating_sub(pad);
 
-    let mut x = area.x;
+    // === Line 1: [>] id  title ...    N th ===
 
     // Selection indicator
-    buffer.draw_text(x, y, prefix, style);
-    x += 2;
-
-    let mut remaining = row_width.saturating_sub(x - area.x);
-    if remaining == 0 {
-        return;
+    if selected {
+        buffer.draw_text(
+            area.x,
+            y,
+            "> ",
+            Style::fg(theme.selection_fg).with_bg(bg),
+        );
     }
 
     // Review ID
-    let id_style = if selected {
-        Style::fg(theme.primary).with_bg(theme.selection_bg)
-    } else {
-        Style::fg(theme.primary).with_bg(bg)
-    };
-    let id_text = if review.review_id.len() > 8 {
-        &review.review_id[..8]
-    } else {
-        &review.review_id
-    };
-    let id_width = draw_segment(buffer, x, y, id_text, remaining, id_style);
-    x += id_width.min(8);
-    if id_width < 8 && remaining >= 8 {
-        x += 8 - id_width;
-    }
+    let id_style = Style::fg(theme.primary).with_bg(bg);
+    let id_len = review.review_id.len() as u32;
+    buffer.draw_text(x, y, &review.review_id, id_style);
+    x += id_len + 2;
 
-    remaining = row_width.saturating_sub(x - area.x);
-    if remaining == 0 {
-        return;
-    }
-
-    // Status badge for closed reviews
-    x += draw_status_badge(buffer, theme, x, y, review, remaining, bg);
-
-    // Title (truncated to fit)
-    let remaining = row_width.saturating_sub(x - area.x);
-    if remaining == 0 {
-        return;
-    }
-    let title_width = remaining.saturating_sub(25).max(10).min(remaining);
-    let used = draw_segment(buffer, x, y, &review.title, title_width, style);
-    x += used;
-    if remaining > used {
-        x += 1;
-    }
-
-    // Author
-    let remaining = row_width.saturating_sub(x - area.x);
-    x += draw_author(buffer, theme, x, y, review, remaining, bg);
-
-    // Thread count
-    let remaining = row_width.saturating_sub(x - area.x);
-    if remaining > 0 {
-        draw_thread_count(buffer, theme, x, y, review, remaining, bg);
-    }
-}
-
-fn draw_author(
-    buffer: &mut OptimizedBuffer,
-    theme: &crate::theme::Theme,
-    x: u32,
-    y: u32,
-    review: &crate::db::ReviewSummary,
-    remaining: u32,
-    bg: opentui::Rgba,
-) -> u32 {
-    let author_width = 12.min(remaining.saturating_sub(12));
-    if author_width > 0 {
-        let used = draw_segment(
-            buffer,
-            x,
-            y,
-            &review.author,
-            author_width,
-            theme.style_muted_on(bg),
-        );
-        used + u32::from(remaining > used)
-    } else {
-        0
-    }
-}
-
-fn draw_thread_count(
-    buffer: &mut OptimizedBuffer,
-    theme: &crate::theme::Theme,
-    x: u32,
-    y: u32,
-    review: &crate::db::ReviewSummary,
-    remaining: u32,
-    bg: opentui::Rgba,
-) {
-    let thread_str = format_thread_count(review.thread_count, review.open_thread_count);
+    // Thread count (right-aligned): "N th"
+    let thread_text = format_thread_label(review.thread_count, review.open_thread_count);
+    let thread_len = thread_text.len() as u32;
+    let thread_x = right_edge.saturating_sub(thread_len);
     let thread_color = if review.open_thread_count > 0 {
         theme.warning
     } else {
         theme.muted
     };
-    let threads_label = format!("{thread_str} threads");
-    draw_segment(
-        buffer,
-        x,
+    buffer.draw_text(
+        thread_x,
         y,
-        &threads_label,
-        remaining,
+        &thread_text,
         Style::fg(thread_color).with_bg(bg),
+    );
+
+    // Title (fills space between ID and thread count)
+    let title_width = thread_x.saturating_sub(x + 1);
+    let title_style = if selected {
+        Style::fg(theme.selection_fg).with_bg(bg)
+    } else {
+        Style::fg(theme.foreground).with_bg(bg)
+    };
+    draw_text_truncated(buffer, x, y, &review.title, title_width, title_style);
+
+    // === Line 2: [status]  @author ===
+    let y2 = y + 1;
+    let indent = pad + 2;
+    let mut x2 = area.x + indent;
+
+    // Status badge
+    let badge = format!("[{}]", review.status);
+    let badge_color = match review.status.as_str() {
+        "open" | "merged" => theme.success,
+        "abandoned" => theme.muted,
+        "approved" => theme.warning,
+        _ => theme.foreground,
+    };
+    buffer.draw_text(x2, y2, &badge, Style::fg(badge_color).with_bg(bg));
+    x2 += badge.len() as u32 + 2;
+
+    // Author -> Reviewers
+    let people = if review.reviewers.is_empty() {
+        format!("@{}", review.author)
+    } else {
+        let reviewers: Vec<String> = review.reviewers.iter().map(|r| format!("@{r}")).collect();
+        format!("@{} -> {}", review.author, reviewers.join(", "))
+    };
+    let people_width = right_edge.saturating_sub(x2);
+    draw_text_truncated(
+        buffer,
+        x2,
+        y2,
+        &people,
+        people_width,
+        Style::fg(theme.muted).with_bg(bg),
     );
 }
 
-fn draw_status_badge(
-    buffer: &mut OptimizedBuffer,
-    theme: &crate::theme::Theme,
-    x: u32,
-    y: u32,
-    review: &crate::db::ReviewSummary,
-    remaining: u32,
-    bg: opentui::Rgba,
-) -> u32 {
-    if review.status != "open" && remaining > 0 {
-        let badge = format!("[{}]", review.status);
-        let badge_color = match review.status.as_str() {
-            "merged" => theme.success,
-            "abandoned" => theme.muted,
-            "approved" => theme.warning,
-            _ => theme.foreground,
-        };
-        let used = draw_segment(
-            buffer,
-            x,
-            y,
-            &badge,
-            remaining,
-            Style::fg(badge_color).with_bg(bg),
-        );
-        used + u32::from(remaining > used)
-    } else {
-        0
+fn format_thread_label(total: i64, open: i64) -> String {
+    if total == 0 {
+        return String::new();
     }
-}
-
-fn draw_segment(
-    buffer: &mut OptimizedBuffer,
-    x: u32,
-    y: u32,
-    text: &str,
-    max_width: u32,
-    style: Style,
-) -> u32 {
-    if max_width == 0 {
-        return 0;
-    }
-    let max_width_usize = max_width as usize;
-    let display = if text.len() > max_width_usize {
-        if max_width_usize <= 3 {
-            text[..max_width_usize].to_string()
-        } else {
-            format!("{}...", &text[..max_width_usize - 3])
-        }
+    if open > 0 {
+        format!("{open}/{total} th")
     } else {
-        text.to_string()
-    };
-    buffer.draw_text(x, y, &display, style);
-    display.len() as u32
+        format!("{total} th")
+    }
 }
 
 fn render_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
-    let hints = &[
-        HotkeyHint::new("Commands", "ctrl+p"),
-        HotkeyHint::new("Navigate", "j/k"),
-        HotkeyHint::new("Select", "Enter"),
-        HotkeyHint::new("Open Only", "o"),
-        HotkeyHint::new("All", "a"),
-        HotkeyHint::new("Quit", "q"),
-    ];
-    draw_help_bar(buffer, area, &model.theme, hints);
+    let filter_hint = HotkeyHint::new(
+        match model.filter {
+            ReviewFilter::All => "Status (All)",
+            ReviewFilter::Open => "Status (Open)",
+            ReviewFilter::Closed => "Status (Closed)",
+        },
+        "s",
+    );
+
+    if model.search_active {
+        let hints = &[
+            HotkeyHint::new("Commands", "ctrl+p"),
+            HotkeyHint::new("Select", "Enter"),
+            filter_hint,
+            HotkeyHint::new("Clear", "Esc"),
+            HotkeyHint::new("Quit", "ctrl+c"),
+        ];
+        draw_help_bar(buffer, area, &model.theme, hints);
+    } else {
+        let hints = &[
+            HotkeyHint::new("Commands", "ctrl+p"),
+            HotkeyHint::new("Select", "Enter"),
+            filter_hint,
+            HotkeyHint::new("Search", "/"),
+            HotkeyHint::new("Quit", "q"),
+        ];
+        draw_help_bar(buffer, area, &model.theme, hints);
+    }
 }

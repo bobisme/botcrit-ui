@@ -261,7 +261,6 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
             KeyCode::Char('v') => Message::ToggleDiffView,
             KeyCode::Char('w') => Message::ToggleDiffWrap,
             KeyCode::Char('o') => Message::OpenFileInEditor,
-            KeyCode::Char('c') => Message::EnterCommentMode,
             KeyCode::Char('u') => Message::ScrollHalfPageUp,
             KeyCode::Char('d') => Message::ScrollHalfPageDown,
             KeyCode::Char('b') | KeyCode::PageUp => Message::PageUp,

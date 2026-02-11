@@ -51,7 +51,7 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
 
     if reviews.is_empty() {
         buffer.draw_text(
-            list_area.x + 2,
+            list_area.x + 3,
             list_area.y,
             "No reviews found",
             theme.style_muted(),
@@ -83,9 +83,15 @@ fn draw_search_bar(
     let theme = &model.theme;
     buffer.fill_rect(x, y, width, SEARCH_HEIGHT, theme.background);
 
-    let text_x = x + 2;
+    let text_x = x + 3;
     if model.search_active {
-        let prompt = format!("/ {}\u{2588}", model.search_input);
+        let max_chars = width.saturating_sub(6) as usize; // 3 margin + "/ " + cursor
+        let visible = if model.search_input.len() > max_chars {
+            &model.search_input[model.search_input.len() - max_chars..]
+        } else {
+            &model.search_input
+        };
+        let prompt = format!("/ {visible}\u{2588}");
         buffer.draw_text(text_x, y, &prompt, theme.style_foreground());
     } else {
         buffer.draw_text(text_x, y, "Press / to search", theme.style_muted());
@@ -107,24 +113,17 @@ fn draw_review_item(
         theme.background
     };
 
-    // Fill both lines
-    buffer.fill_rect(area.x, y, area.width, ITEM_HEIGHT, bg);
+    // Fill both lines with 2-space margin on each side
+    let margin: u32 = 2;
+    let item_x = area.x + margin;
+    let item_width = area.width.saturating_sub(margin * 2);
+    buffer.fill_rect(item_x, y, item_width, ITEM_HEIGHT, bg);
 
-    let pad: u32 = 2;
-    let mut x = area.x + pad;
-    let right_edge = area.x + area.width.saturating_sub(pad);
+    let inner_pad: u32 = 1;
+    let mut x = item_x + inner_pad;
+    let right_edge = item_x + item_width.saturating_sub(inner_pad);
 
-    // === Line 1: [>] id  title ...    N th ===
-
-    // Selection indicator
-    if selected {
-        buffer.draw_text(
-            area.x,
-            y,
-            "> ",
-            Style::fg(theme.selection_fg).with_bg(bg),
-        );
-    }
+    // === Line 1: id  title ...    N th ===
 
     // Review ID
     let id_style = Style::fg(theme.primary).with_bg(bg);
@@ -159,8 +158,7 @@ fn draw_review_item(
 
     // === Line 2: [status]  @author ===
     let y2 = y + 1;
-    let indent = pad + 2;
-    let mut x2 = area.x + indent;
+    let mut x2 = item_x + inner_pad;
 
     // Status badge
     let badge = format!("[{}]", review.status);

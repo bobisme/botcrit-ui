@@ -51,7 +51,7 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
 
     if reviews.is_empty() {
         buffer.draw_text(
-            list_area.x + 3,
+            list_area.x + 4,
             list_area.y,
             "No reviews found",
             theme.style_muted(),
@@ -83,9 +83,9 @@ fn draw_search_bar(
     let theme = &model.theme;
     buffer.fill_rect(x, y, width, SEARCH_HEIGHT, theme.background);
 
-    let text_x = x + 3;
+    let text_x = x + 5;
     if model.search_active {
-        let max_chars = width.saturating_sub(6) as usize; // 3 margin + "/ " + cursor
+        let max_chars = width.saturating_sub(8) as usize; // 5 margin + "/ " + cursor
         let visible = if model.search_input.len() > max_chars {
             &model.search_input[model.search_input.len() - max_chars..]
         } else {
@@ -119,9 +119,10 @@ fn draw_review_item(
     let item_width = area.width.saturating_sub(margin * 2);
     buffer.fill_rect(item_x, y, item_width, ITEM_HEIGHT, bg);
 
-    let inner_pad: u32 = 1;
-    let mut x = item_x + inner_pad;
-    let right_edge = item_x + item_width.saturating_sub(inner_pad);
+    let left_pad: u32 = 2;
+    let right_pad: u32 = 1;
+    let mut x = item_x + left_pad;
+    let right_edge = item_x + item_width.saturating_sub(right_pad);
 
     // === Line 1: id  title ...    N th ===
 
@@ -158,7 +159,7 @@ fn draw_review_item(
 
     // === Line 2: [status]  @author ===
     let y2 = y + 1;
-    let mut x2 = item_x + inner_pad;
+    let mut x2 = item_x + left_pad;
 
     // Status badge
     let badge = format!("[{}]", review.status);

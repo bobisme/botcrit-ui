@@ -730,7 +730,7 @@ fn ensure_sidebar_visible(model: &mut Model) {
     }
 }
 
-fn sidebar_visible_rows(model: &Model) -> usize {
+const fn sidebar_visible_rows(model: &Model) -> usize {
     let mut start = 1usize;
     if model.current_review.is_some() {
         start = start.saturating_add(5);

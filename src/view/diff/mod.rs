@@ -149,7 +149,7 @@ impl StreamCursor<'_> {
         }
     }
 
-    fn remaining_rows(&self) -> usize {
+    const fn remaining_rows(&self) -> usize {
         self.area.height.saturating_sub(self.screen_row as u32) as usize
     }
 }

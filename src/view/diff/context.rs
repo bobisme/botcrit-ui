@@ -37,6 +37,7 @@ pub(super) fn calculate_context_ranges(
             let thread_end = t.selection_end.unwrap_or(t.selection_start);
             LineRange {
                 start: (t.selection_start - CONTEXT_LINES).max(1),
+                #[allow(clippy::cast_possible_wrap)]
                 end: (thread_end + CONTEXT_LINES).min(total_lines as i64),
             }
         })

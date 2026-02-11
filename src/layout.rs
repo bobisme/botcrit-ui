@@ -40,7 +40,7 @@ pub const CONTEXT_LINES: i64 = 5;
 // --- Block height ---
 
 #[must_use] 
-pub fn block_height(content_lines: usize) -> usize {
+pub const fn block_height(content_lines: usize) -> usize {
     content_lines + (BLOCK_MARGIN * 2) + (BLOCK_PADDING * 2)
 }
 
@@ -48,13 +48,13 @@ pub fn block_height(content_lines: usize) -> usize {
 
 /// Inner width for diff content (no block bar/margins, just horizontal padding).
 #[must_use] 
-pub fn diff_inner_width(pane_width: u32) -> u32 {
+pub const fn diff_inner_width(pane_width: u32) -> u32 {
     pane_width.saturating_sub(DIFF_H_PAD * 2)
 }
 
 /// Inner width for block content (file headers, comment blocks, description).
 /// Accounts for: side margins, bar character, and internal padding.
 #[must_use] 
-pub fn block_inner_width(pane_width: u32) -> u32 {
+pub const fn block_inner_width(pane_width: u32) -> u32 {
     pane_width.saturating_sub(BLOCK_SIDE_MARGIN * 2 + 1 + BLOCK_LEFT_PAD + BLOCK_RIGHT_PAD)
 }

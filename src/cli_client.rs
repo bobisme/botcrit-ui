@@ -139,6 +139,7 @@ impl CritClient for CliClient {
         let mut comments: HashMap<String, Vec<Comment>> = HashMap::new();
 
         for t in resp.threads {
+            #[allow(clippy::cast_possible_wrap)]
             let comment_count = t.comments.len() as i64;
             if !t.comments.is_empty() {
                 comments.insert(

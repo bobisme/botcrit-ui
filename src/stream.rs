@@ -22,7 +22,7 @@ pub struct StreamLayout {
 }
 
 /// Inner width for description/comment block content.
-fn block_wrap_width(pane_width: u32) -> usize {
+const fn block_wrap_width(pane_width: u32) -> usize {
     layout::block_inner_width(pane_width) as usize
 }
 
@@ -41,22 +41,22 @@ pub fn description_block_height(description: Option<&str>, pane_width: u32) -> u
 }
 
 /// Inner width for diff content (no block bar/margins, just horizontal padding).
-fn diff_inner_width(pane_width: u32) -> u32 {
+const fn diff_inner_width(pane_width: u32) -> u32 {
     layout::diff_inner_width(pane_width)
 }
 
-fn unified_wrap_width(pane_width: u32) -> usize {
+const fn unified_wrap_width(pane_width: u32) -> usize {
     let content_width = diff_inner_width(pane_width)
         .saturating_sub(layout::THREAD_COL_WIDTH + layout::UNIFIED_LINE_NUM_WIDTH);
     let max_content = content_width.saturating_sub(2);
     max_content as usize
 }
 
-fn context_wrap_width(pane_width: u32) -> usize {
+const fn context_wrap_width(pane_width: u32) -> usize {
     diff_inner_width(pane_width).saturating_sub(layout::CONTEXT_LINE_NUM_WIDTH) as usize
 }
 
-fn side_by_side_wrap_widths(pane_width: u32) -> (usize, usize) {
+const fn side_by_side_wrap_widths(pane_width: u32) -> (usize, usize) {
     let divider_width: u32 = 0;
     let available = diff_inner_width(pane_width)
         .saturating_sub(layout::THREAD_COL_WIDTH + divider_width);
@@ -332,6 +332,7 @@ fn context_display_count(
     for thread in threads.iter().filter(|t| t.file_path == file_path) {
         let thread_end = thread.selection_end.unwrap_or(thread.selection_start);
         let start = (thread.selection_start - layout::CONTEXT_LINES).max(1);
+        #[allow(clippy::cast_possible_wrap)]
         let end = (thread_end + layout::CONTEXT_LINES).min(total_lines as i64);
         ranges.push((start, end));
     }
@@ -395,6 +396,7 @@ fn orphaned_context_display_count(
         .map(|t| {
             let thread_end = t.selection_end.unwrap_or(t.selection_start);
             let start = (t.selection_start - layout::CONTEXT_LINES).max(1);
+            #[allow(clippy::cast_possible_wrap)]
             let end = (thread_end + layout::CONTEXT_LINES).min(total_lines as i64);
             (start, end)
         })

@@ -224,7 +224,7 @@ impl HotkeyHint {
     }
 
     #[must_use]
-    pub fn width(&self) -> usize {
+    pub const fn width(&self) -> usize {
         self.label.len() + 1 + self.key.len()
     }
 }

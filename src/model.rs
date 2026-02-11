@@ -358,7 +358,7 @@ impl Model {
     }
 
     /// Handle terminal resize
-    pub fn resize(&mut self, width: u16, height: u16) {
+    pub const fn resize(&mut self, width: u16, height: u16) {
         self.width = width;
         self.height = height;
         self.layout_mode = LayoutMode::from_width(width);

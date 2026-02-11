@@ -5,9 +5,7 @@
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::too_many_arguments)]
-#![allow(clippy::missing_const_for_fn)]
 #![allow(clippy::too_many_lines)]
-#![allow(clippy::cast_possible_wrap)]
 
 pub mod cli_client;
 pub mod command;

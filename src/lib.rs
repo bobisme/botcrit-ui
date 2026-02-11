@@ -1,15 +1,13 @@
 //! botcrit-ui - GitHub-style code review TUI for botcrit
 //!
-//! Uses Elm Architecture (Model/Message/Update/View) with opentui_rust rendering.
+//! Uses Elm Architecture (Model/Message/Update/View) with `opentui_rust` rendering.
 
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::too_many_arguments)]
-#![allow(clippy::must_use_candidate)]
 #![allow(clippy::missing_const_for_fn)]
-#![allow(clippy::doc_markdown)]
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::missing_panics_doc)]
 #![allow(clippy::too_many_lines)]

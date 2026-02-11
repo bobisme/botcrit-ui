@@ -805,7 +805,7 @@ fn clamp_diff_scroll(model: &mut Model) {
 }
 
 fn diff_content_width(model: &Model) -> u32 {
-    /// Must match DIFF_MARGIN in diff.rs.
+    /// Must match `DIFF_MARGIN` in diff.rs.
     const DIFF_MARGIN: u32 = 2;
     let total_width = model.width as u32;
     let pane_width = match model.layout_mode {

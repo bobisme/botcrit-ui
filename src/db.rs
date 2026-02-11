@@ -1,4 +1,4 @@
-//! Shared types for review data and the CritClient trait.
+//! Shared types for review data and the `CritClient` trait.
 
 use std::collections::HashMap;
 

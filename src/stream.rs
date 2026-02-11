@@ -27,6 +27,7 @@ fn block_wrap_width(pane_width: u32) -> usize {
 }
 
 /// Compute height of description block (if present).
+#[must_use] 
 pub fn description_block_height(description: Option<&str>, pane_width: u32) -> usize {
     let Some(desc) = description else {
         return 0;
@@ -73,6 +74,7 @@ fn wrap_line_count(text: &str, max_width: usize) -> usize {
     lines.len().max(1)
 }
 
+#[must_use] 
 pub fn compute_stream_layout(
     files: &[FileEntry],
     file_cache: &HashMap<String, FileCacheEntry>,
@@ -160,6 +162,7 @@ pub fn compute_stream_layout(
     }
 }
 
+#[must_use] 
 pub fn active_file_index(layout: &StreamLayout, scroll: usize) -> usize {
     let mut idx = 0;
     for (i, offset) in layout.file_offsets.iter().enumerate() {
@@ -172,6 +175,7 @@ pub fn active_file_index(layout: &StreamLayout, scroll: usize) -> usize {
     idx
 }
 
+#[must_use] 
 pub fn file_scroll_offset(layout: &StreamLayout, index: usize) -> usize {
     layout.file_offsets.get(index).copied().unwrap_or(0)
 }

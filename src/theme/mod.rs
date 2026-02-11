@@ -1,7 +1,7 @@
 //! Theme system for botcrit-ui
 //!
 //! Themes are defined by 7 seed colors. All other colors are derived
-//! automatically using lerp/blend_over. Individual derived colors can
+//! automatically using `lerp/blend_over`. Individual derived colors can
 //! be overridden for fine-tuning.
 
 use std::path::Path;
@@ -90,26 +90,31 @@ use opentui::Style;
 
 impl Theme {
     /// `Style::fg(self.muted)`
+    #[must_use] 
     pub fn style_muted(&self) -> Style {
         Style::fg(self.muted)
     }
 
     /// `Style::fg(self.muted).with_bg(bg)`
+    #[must_use] 
     pub fn style_muted_on(&self, bg: Rgba) -> Style {
         Style::fg(self.muted).with_bg(bg)
     }
 
     /// `Style::fg(self.foreground)`
+    #[must_use] 
     pub fn style_foreground(&self) -> Style {
         Style::fg(self.foreground)
     }
 
     /// `Style::fg(self.foreground).with_bg(bg)`
+    #[must_use] 
     pub fn style_foreground_on(&self, bg: Rgba) -> Style {
         Style::fg(self.foreground).with_bg(bg)
     }
 
     /// `Style::fg(self.primary)`
+    #[must_use] 
     pub fn style_primary(&self) -> Style {
         Style::fg(self.primary)
     }
@@ -117,6 +122,7 @@ impl Theme {
 
 impl DiffTheme {
     /// `Style::fg(self.line_number).with_bg(bg)`
+    #[must_use] 
     pub fn style_line_number(&self, bg: Rgba) -> Style {
         Style::fg(self.line_number).with_bg(bg)
     }
@@ -550,6 +556,7 @@ pub fn load_theme_from_str(json: &str) -> anyhow::Result<ThemeLoadResult> {
     }
 }
 
+#[must_use] 
 pub fn load_built_in_theme(name: &str) -> Option<ThemeLoadResult> {
     BUILTIN_THEMES
         .iter()
@@ -557,6 +564,7 @@ pub fn load_built_in_theme(name: &str) -> Option<ThemeLoadResult> {
         .and_then(|(_, json)| load_theme_from_str(json).ok())
 }
 
+#[must_use] 
 pub fn built_in_theme_names() -> Vec<&'static str> {
     BUILTIN_THEMES.iter().map(|(name, _)| *name).collect()
 }

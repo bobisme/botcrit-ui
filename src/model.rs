@@ -190,7 +190,7 @@ pub struct Model {
     pub config: UiConfig,
 
     // === Render-computed data ===
-    /// Thread positions captured during rendering (thread_id → stream_row)
+    /// Thread positions captured during rendering (`thread_id` → `stream_row`)
     pub thread_positions: RefCell<HashMap<String, usize>>,
 
     // === Control ===
@@ -405,7 +405,7 @@ pub struct FileEntry {
 pub enum SidebarItem {
     File {
         entry: FileEntry,
-        /// Index into files_with_threads() for selection matching
+        /// Index into `files_with_threads()` for selection matching
         file_idx: usize,
         /// Whether this file's threads are collapsed
         collapsed: bool,

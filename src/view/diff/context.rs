@@ -1,4 +1,4 @@
-//! Orphaned context building, rendering, and calculate_context_ranges.
+//! Orphaned context building, rendering, and `calculate_context_ranges`.
 
 use opentui::OptimizedBuffer;
 

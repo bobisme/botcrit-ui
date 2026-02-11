@@ -58,7 +58,7 @@ pub(super) fn draw_block_base_line(
     draw_block_bar(buffer, content_x, y, bg, theme);
 }
 
-/// Like draw_block_base_line but uses comment bar color (theme.background)
+/// Like `draw_block_base_line` but uses comment bar color (theme.background)
 pub(super) fn draw_comment_block_base_line(
     buffer: &mut OptimizedBuffer,
     area: Rect,
@@ -178,7 +178,7 @@ pub(super) fn draw_block_text_line(
     buffer.draw_text(content_x, y, display_text, style.with_bg(bg));
 }
 
-/// Like draw_block_text_line but uses comment bar color (theme.background)
+/// Like `draw_block_text_line` but uses comment bar color (theme.background)
 pub(super) fn draw_comment_block_text_line(
     buffer: &mut OptimizedBuffer,
     area: Rect,

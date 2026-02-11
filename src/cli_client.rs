@@ -1,4 +1,4 @@
-//! CritClient implementation that shells out to the `crit` CLI with `--format json`.
+//! `CritClient` implementation that shells out to the `crit` CLI with `--format json`.
 
 use std::collections::HashMap;
 use std::path::PathBuf;

@@ -7,7 +7,7 @@
 //! - Search field with placeholder
 //! - Categorized, selectable list items with bullet indicator
 //!
-//! Supports two modes via PaletteMode:
+//! Supports two modes via `PaletteMode`:
 //! - Commands: shows categorized command list
 //! - Themes: shows flat theme name list with current theme highlighted
 
@@ -32,7 +32,7 @@ const BULLET_GAP: u32 = 1;
 const TRAIL_PAD: u32 = 3;
 
 /// Total left offset from modal edge to content text.
-/// = OUTER_PAD + INNER_PAD + BULLET_W + BULLET_GAP
+/// = `OUTER_PAD` + `INNER_PAD` + `BULLET_W` + `BULLET_GAP`
 const TEXT_INDENT: u32 = OUTER_PAD + INNER_PAD + BULLET_W + BULLET_GAP;
 
 pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {

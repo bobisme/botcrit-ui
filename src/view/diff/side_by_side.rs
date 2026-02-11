@@ -68,14 +68,14 @@ pub(super) fn render_side_by_side_line_block(
 
     render_side_line(
         buffer, left_ln_x, left_content_x, y, left_content_width,
-        &sbs_line.left, dt, dt.line_number, left_highlights,
+        sbs_line.left.as_ref(), dt, dt.line_number, left_highlights,
     );
 
     buffer.fill_rect(divider_x, y, divider_width, 1, base_bg);
 
     render_side_line(
         buffer, right_ln_x, right_content_x, y, right_content_width,
-        &sbs_line.right, dt, theme.muted, right_highlights,
+        sbs_line.right.as_ref(), dt, theme.muted, right_highlights,
     );
 }
 
@@ -119,14 +119,14 @@ pub(super) fn render_side_by_side_line_wrapped_row(
 
     render_side_line_wrapped_row(
         buffer, left_ln_x, left_content_x, y, left_content_width,
-        &sbs_line.left, dt, dt.line_number, left_wrapped, row,
+        sbs_line.left.as_ref(), dt, dt.line_number, left_wrapped, row,
     );
 
     buffer.fill_rect(divider_x, y, divider_width, 1, base_bg);
 
     render_side_line_wrapped_row(
         buffer, right_ln_x, right_content_x, y, right_content_width,
-        &sbs_line.right, dt, theme.muted, right_wrapped, row,
+        sbs_line.right.as_ref(), dt, theme.muted, right_wrapped, row,
     );
 }
 
@@ -136,7 +136,7 @@ fn render_side_line_wrapped_row(
     content_x: u32,
     y: u32,
     content_width: u32,
-    side: &Option<SideLine>,
+    side: Option<&SideLine>,
     dt: &crate::theme::DiffTheme,
     line_number_color: Rgba,
     wrapped: Option<&Vec<WrappedLine>>,
@@ -176,7 +176,7 @@ fn render_side_line(
     content_x: u32,
     y: u32,
     content_width: u32,
-    side: &Option<SideLine>,
+    side: Option<&SideLine>,
     dt: &crate::theme::DiffTheme,
     line_number_color: Rgba,
     highlights: Option<&Vec<HighlightSpan>>,

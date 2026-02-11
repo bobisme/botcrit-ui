@@ -117,6 +117,7 @@ pub enum ReviewFilter {
 }
 
 /// Application state
+#[allow(clippy::struct_excessive_bools)] // TUI state inherently needs many boolean flags
 pub struct Model {
     // === Screen state ===
     pub screen: Screen,

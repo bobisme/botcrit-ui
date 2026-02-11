@@ -2,19 +2,12 @@
 //!
 //! Uses Elm Architecture (Model/Message/Update/View) with `opentui_rust` rendering.
 
-#![allow(clippy::module_name_repetitions)]
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::missing_const_for_fn)]
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::cast_possible_wrap)]
-#![allow(clippy::similar_names)]
-#![allow(clippy::ref_option)]
-#![allow(clippy::needless_pass_by_value)]
-#![allow(clippy::question_mark_used)]
-#![allow(clippy::implicit_hasher)]
-#![allow(clippy::struct_excessive_bools)]
 
 pub mod cli_client;
 pub mod command;
@@ -33,7 +26,6 @@ pub mod update;
 pub mod vcs;
 pub mod view;
 
-// Re-exports
 pub use cli_client::CliClient;
 pub use db::CritClient;
 pub use message::Message;

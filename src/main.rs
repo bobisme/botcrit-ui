@@ -326,7 +326,7 @@ fn process_event(
     repo_path: Option<&Path>,
     options: RendererOptions,
 ) -> Result<()> {
-    let msg = map_event_to_message(model, event.clone());
+    let msg = map_event_to_message(model, event);
     let resize = if let Message::Resize { width, height } = &msg {
         Some((*width, *height))
     } else {

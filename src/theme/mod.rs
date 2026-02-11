@@ -187,6 +187,7 @@ impl Theme {
     /// # Errors
     ///
     /// Returns an error if any seed or override color string fails to parse.
+    #[allow(clippy::similar_names)]
     pub fn from_seeds(
         name: String,
         seeds: &ThemeSeeds,
@@ -235,37 +236,37 @@ impl Theme {
 
         // --- Apply overrides ---
         if let Some(ov) = overrides {
-            apply_override(&mut panel_bg, &ov.panel_bg)?;
-            apply_override(&mut selection_bg, &ov.selection_bg)?;
-            apply_override(&mut selection_fg, &ov.selection_fg)?;
-            apply_override(&mut border, &ov.border)?;
-            apply_override(&mut border_focused, &ov.border_focused)?;
-            apply_override(&mut cursor, &ov.cursor)?;
+            apply_override(&mut panel_bg, ov.panel_bg.as_ref())?;
+            apply_override(&mut selection_bg, ov.selection_bg.as_ref())?;
+            apply_override(&mut selection_fg, ov.selection_fg.as_ref())?;
+            apply_override(&mut border, ov.border.as_ref())?;
+            apply_override(&mut border_focused, ov.border_focused.as_ref())?;
+            apply_override(&mut cursor, ov.cursor.as_ref())?;
 
-            apply_override(&mut diff.added, &ov.diff_added)?;
-            apply_override(&mut diff.removed, &ov.diff_removed)?;
-            apply_override(&mut diff.context, &ov.diff_context)?;
-            apply_override(&mut diff.hunk_header, &ov.diff_hunk_header)?;
-            apply_override(&mut diff.highlight_added, &ov.diff_highlight_added)?;
-            apply_override(&mut diff.highlight_removed, &ov.diff_highlight_removed)?;
-            apply_override(&mut diff.added_bg, &ov.diff_added_bg)?;
-            apply_override(&mut diff.removed_bg, &ov.diff_removed_bg)?;
-            apply_override(&mut diff.context_bg, &ov.diff_context_bg)?;
-            apply_override(&mut diff.line_number, &ov.diff_line_number)?;
-            apply_override(&mut diff.added_line_number_bg, &ov.diff_added_line_number_bg)?;
-            apply_override(&mut diff.removed_line_number_bg, &ov.diff_removed_line_number_bg)?;
+            apply_override(&mut diff.added, ov.diff_added.as_ref())?;
+            apply_override(&mut diff.removed, ov.diff_removed.as_ref())?;
+            apply_override(&mut diff.context, ov.diff_context.as_ref())?;
+            apply_override(&mut diff.hunk_header, ov.diff_hunk_header.as_ref())?;
+            apply_override(&mut diff.highlight_added, ov.diff_highlight_added.as_ref())?;
+            apply_override(&mut diff.highlight_removed, ov.diff_highlight_removed.as_ref())?;
+            apply_override(&mut diff.added_bg, ov.diff_added_bg.as_ref())?;
+            apply_override(&mut diff.removed_bg, ov.diff_removed_bg.as_ref())?;
+            apply_override(&mut diff.context_bg, ov.diff_context_bg.as_ref())?;
+            apply_override(&mut diff.line_number, ov.diff_line_number.as_ref())?;
+            apply_override(&mut diff.added_line_number_bg, ov.diff_added_line_number_bg.as_ref())?;
+            apply_override(&mut diff.removed_line_number_bg, ov.diff_removed_line_number_bg.as_ref())?;
 
-            apply_override(&mut syntax.keyword, &ov.syntax_keyword)?;
-            apply_override(&mut syntax.function, &ov.syntax_function)?;
-            apply_override(&mut syntax.type_name, &ov.syntax_type_name)?;
-            apply_override(&mut syntax.string, &ov.syntax_string)?;
-            apply_override(&mut syntax.number, &ov.syntax_number)?;
-            apply_override(&mut syntax.comment, &ov.syntax_comment)?;
-            apply_override(&mut syntax.operator, &ov.syntax_operator)?;
-            apply_override(&mut syntax.punctuation, &ov.syntax_punctuation)?;
-            apply_override(&mut syntax.variable, &ov.syntax_variable)?;
-            apply_override(&mut syntax.constant, &ov.syntax_constant)?;
-            apply_override(&mut syntax.attribute, &ov.syntax_attribute)?;
+            apply_override(&mut syntax.keyword, ov.syntax_keyword.as_ref())?;
+            apply_override(&mut syntax.function, ov.syntax_function.as_ref())?;
+            apply_override(&mut syntax.type_name, ov.syntax_type_name.as_ref())?;
+            apply_override(&mut syntax.string, ov.syntax_string.as_ref())?;
+            apply_override(&mut syntax.number, ov.syntax_number.as_ref())?;
+            apply_override(&mut syntax.comment, ov.syntax_comment.as_ref())?;
+            apply_override(&mut syntax.operator, ov.syntax_operator.as_ref())?;
+            apply_override(&mut syntax.punctuation, ov.syntax_punctuation.as_ref())?;
+            apply_override(&mut syntax.variable, ov.syntax_variable.as_ref())?;
+            apply_override(&mut syntax.constant, ov.syntax_constant.as_ref())?;
+            apply_override(&mut syntax.attribute, ov.syntax_attribute.as_ref())?;
         }
 
         Ok(Self {
@@ -441,17 +442,17 @@ impl TryFrom<ThemeFile> for Theme {
         } else {
             SyntaxColors::tokyo_night()
         };
-        apply_override(&mut syntax.keyword, &c.syntax_keyword)?;
-        apply_override(&mut syntax.function, &c.syntax_function)?;
-        apply_override(&mut syntax.type_name, &c.syntax_type_name)?;
-        apply_override(&mut syntax.string, &c.syntax_string)?;
-        apply_override(&mut syntax.number, &c.syntax_number)?;
-        apply_override(&mut syntax.comment, &c.syntax_comment)?;
-        apply_override(&mut syntax.operator, &c.syntax_operator)?;
-        apply_override(&mut syntax.punctuation, &c.syntax_punctuation)?;
-        apply_override(&mut syntax.variable, &c.syntax_variable)?;
-        apply_override(&mut syntax.constant, &c.syntax_constant)?;
-        apply_override(&mut syntax.attribute, &c.syntax_attribute)?;
+        apply_override(&mut syntax.keyword, c.syntax_keyword.as_ref())?;
+        apply_override(&mut syntax.function, c.syntax_function.as_ref())?;
+        apply_override(&mut syntax.type_name, c.syntax_type_name.as_ref())?;
+        apply_override(&mut syntax.string, c.syntax_string.as_ref())?;
+        apply_override(&mut syntax.number, c.syntax_number.as_ref())?;
+        apply_override(&mut syntax.comment, c.syntax_comment.as_ref())?;
+        apply_override(&mut syntax.operator, c.syntax_operator.as_ref())?;
+        apply_override(&mut syntax.punctuation, c.syntax_punctuation.as_ref())?;
+        apply_override(&mut syntax.variable, c.syntax_variable.as_ref())?;
+        apply_override(&mut syntax.constant, c.syntax_constant.as_ref())?;
+        apply_override(&mut syntax.attribute, c.syntax_attribute.as_ref())?;
         Ok(Self {
             name: file.name,
             background: parse_color(&c.background)?,
@@ -494,7 +495,7 @@ fn parse_color(hex: &str) -> anyhow::Result<Rgba> {
     Rgba::from_hex(hex).ok_or_else(|| anyhow::anyhow!("Invalid hex color: {hex}"))
 }
 
-fn apply_override(target: &mut Rgba, source: &Option<String>) -> anyhow::Result<()> {
+fn apply_override(target: &mut Rgba, source: Option<&String>) -> anyhow::Result<()> {
     if let Some(hex) = source {
         *target = parse_color(hex)?;
     }

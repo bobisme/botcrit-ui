@@ -11,7 +11,7 @@ use opentui::{Event, KeyCode, KeyModifiers};
 use crate::model::{Focus, LayoutMode, Model, Screen};
 use crate::message::Message;
 
-pub fn map_event_to_message(model: &mut Model, event: Event) -> Message {
+pub fn map_event_to_message(model: &mut Model, event: &Event) -> Message {
     match event {
         Event::Key(key) => {
             // Check for Ctrl+C to quit
@@ -37,8 +37,8 @@ pub fn map_event_to_message(model: &mut Model, event: Event) -> Message {
             height: resize.height,
         },
         Event::Mouse(mouse) => match model.screen {
-            Screen::ReviewList => map_review_list_mouse(model, mouse),
-            Screen::ReviewDetail => map_review_detail_mouse(model, mouse),
+            Screen::ReviewList => map_review_list_mouse(model, *mouse),
+            Screen::ReviewDetail => map_review_detail_mouse(model, *mouse),
         },
         Event::Paste(_) | Event::FocusGained | Event::FocusLost => Message::Noop,
     }

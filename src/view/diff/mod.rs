@@ -47,6 +47,9 @@ use side_by_side::{render_side_by_side_line_block, render_side_by_side_line_wrap
 use text_util::wrap_content;
 use unified::{render_unified_diff_line_block, render_unified_diff_line_wrapped_row};
 
+/// Map from display-line index to the anchors at that position.
+type AnchorMap<'a> = std::collections::HashMap<usize, Vec<&'a ThreadAnchor>>;
+
 // ---------------------------------------------------------------------------
 // Shared types
 // ---------------------------------------------------------------------------
@@ -563,13 +566,14 @@ fn render_file_content_no_diff(
         }
 
         if let DisplayItem::Line { line_num, .. } = &item {
-            if let Some(thread) = file_threads.iter().find(|t| {
+            for thread in file_threads.iter().filter(|t| {
                 let end = t.selection_end.unwrap_or(t.selection_start);
                 end == *line_num
             }) {
                 sctx.thread_positions
                     .borrow_mut()
-                    .insert(thread.thread_id.clone(), cursor.stream_row);
+                    .entry(thread.thread_id.clone())
+                    .or_insert(cursor.stream_row);
                 if let Some(comments) = sctx.all_comments.get(&thread.thread_id) {
                     emit_comment_block(cursor, area, thread, comments);
                 }
@@ -616,8 +620,8 @@ fn render_file_header(
 
 struct UnifiedDisplayData<'a> {
     display_lines: Vec<DisplayLine>,
-    anchor_map: std::collections::HashMap<usize, &'a ThreadAnchor>,
-    comment_map: std::collections::HashMap<usize, &'a ThreadAnchor>,
+    anchor_map: AnchorMap<'a>,
+    comment_map: AnchorMap<'a>,
     thread_ranges: Vec<(i64, i64)>,
 }
 
@@ -626,13 +630,13 @@ fn build_unified_display_data<'a>(
     threads: &[&ThreadSummary],
     anchors: &'a [ThreadAnchor],
 ) -> UnifiedDisplayData<'a> {
-    let mut anchor_map: std::collections::HashMap<usize, &ThreadAnchor> =
+    let mut anchor_map: AnchorMap<'_> =
         std::collections::HashMap::new();
-    let mut comment_map: std::collections::HashMap<usize, &ThreadAnchor> =
+    let mut comment_map: AnchorMap<'_> =
         std::collections::HashMap::new();
     for anchor in anchors {
-        anchor_map.insert(anchor.display_line, anchor);
-        comment_map.insert(anchor.comment_after_line, anchor);
+        anchor_map.entry(anchor.display_line).or_default().push(anchor);
+        comment_map.entry(anchor.comment_after_line).or_default().push(anchor);
     }
 
     let thread_ranges = build_thread_ranges(threads);
@@ -653,29 +657,31 @@ fn build_unified_display_data<'a>(
     }
 }
 
-/// Emit a comment block after the last line of a thread range, if applicable.
+/// Emit comment blocks after the last line of thread ranges ending at `idx`.
 fn try_emit_line_comment(
     cursor: &mut StreamCursor<'_>,
     idx: usize,
     display_data: &UnifiedDisplayData<'_>,
     ctx: &DiffRenderCtx<'_>,
 ) {
-    let Some(comment_anchor) = display_data.comment_map.get(&idx) else {
+    let Some(anchors) = display_data.comment_map.get(&idx) else {
         return;
     };
-    ctx.thread_positions
-        .borrow_mut()
-        .entry(comment_anchor.thread_id.clone())
-        .or_insert(cursor.stream_row);
-    let Some(thread) = ctx
-        .threads
-        .iter()
-        .find(|t| t.thread_id == comment_anchor.thread_id)
-    else {
-        return;
-    };
-    if let Some(comments) = ctx.all_comments.get(&comment_anchor.thread_id) {
-        emit_comment_block(cursor, ctx.area, thread, comments);
+    for comment_anchor in anchors {
+        ctx.thread_positions
+            .borrow_mut()
+            .entry(comment_anchor.thread_id.clone())
+            .or_insert(cursor.stream_row);
+        let Some(thread) = ctx
+            .threads
+            .iter()
+            .find(|t| t.thread_id == comment_anchor.thread_id)
+        else {
+            continue;
+        };
+        if let Some(comments) = ctx.all_comments.get(&comment_anchor.thread_id) {
+            emit_comment_block(cursor, ctx.area, thread, comments);
+        }
     }
 }
 
@@ -717,12 +723,15 @@ fn render_unified_display_items(
             ),
             DisplayLine::HunkHeader => false,
         };
-        let anchor = display_data.anchor_map.get(&idx).copied();
-        if let Some(anchor) = anchor {
-            ctx.thread_positions
-                .borrow_mut()
-                .entry(anchor.thread_id.clone())
-                .or_insert(cursor.stream_row);
+        let anchors_at_line = display_data.anchor_map.get(&idx);
+        let anchor = anchors_at_line.and_then(|v: &Vec<&ThreadAnchor>| v.first().copied());
+        if let Some(anchors) = anchors_at_line {
+            for a in anchors {
+                ctx.thread_positions
+                    .borrow_mut()
+                    .entry(a.thread_id.clone())
+                    .or_insert(cursor.stream_row);
+            }
         }
         match display_line {
             DisplayLine::HunkHeader => {
@@ -831,12 +840,12 @@ fn build_sbs_anchor_maps<'a>(
     threads: &[&ThreadSummary],
     sbs_lines: &[SideBySideLine],
 ) -> (
-    std::collections::HashMap<usize, &'a ThreadAnchor>,
-    std::collections::HashMap<usize, &'a ThreadAnchor>,
+    AnchorMap<'a>,
+    AnchorMap<'a>,
 ) {
-    let mut sbs_anchor_map: std::collections::HashMap<usize, &ThreadAnchor> =
+    let mut sbs_anchor_map: AnchorMap<'_> =
         std::collections::HashMap::new();
-    let mut sbs_comment_map: std::collections::HashMap<usize, &ThreadAnchor> =
+    let mut sbs_comment_map: AnchorMap<'_> =
         std::collections::HashMap::new();
     for anchor in anchors {
         if let Some(thread) = threads
@@ -848,10 +857,10 @@ fn build_sbs_anchor_maps<'a>(
                 thread.selection_end.unwrap_or(thread.selection_start) as u32;
             for (si, sl) in sbs_lines.iter().enumerate() {
                 if sl.right.as_ref().is_some_and(|l| l.line_num == start) {
-                    sbs_anchor_map.insert(si, anchor);
+                    sbs_anchor_map.entry(si).or_default().push(anchor);
                 }
                 if sl.right.as_ref().is_some_and(|l| l.line_num == end) {
-                    sbs_comment_map.insert(si, anchor);
+                    sbs_comment_map.entry(si).or_default().push(anchor);
                 }
             }
         }
@@ -971,12 +980,15 @@ fn render_file_diff_sbs(
                 &thread_ranges,
             )
         };
-        let anchor = sbs_anchor_map.get(&idx).copied();
-        if let Some(anchor) = anchor {
-            ctx.thread_positions
-                .borrow_mut()
-                .entry(anchor.thread_id.clone())
-                .or_insert(cursor.stream_row);
+        let anchors_at_line = sbs_anchor_map.get(&idx);
+        let anchor = anchors_at_line.and_then(|v: &Vec<&ThreadAnchor>| v.first().copied());
+        if let Some(anchors) = anchors_at_line {
+            for a in anchors {
+                ctx.thread_positions
+                    .borrow_mut()
+                    .entry(a.thread_id.clone())
+                    .or_insert(cursor.stream_row);
+            }
         }
         render_sbs_line(
             cursor,
@@ -988,21 +1000,23 @@ fn render_file_diff_sbs(
             ctx.file_highlights,
         );
 
-        // Emit comment block after the last line of the thread range
-        if let Some(comment_anchor) = sbs_comment_map.get(&idx) {
-            ctx.thread_positions
-                .borrow_mut()
-                .entry(comment_anchor.thread_id.clone())
-                .or_insert(cursor.stream_row);
-            if let Some(thread) = ctx
-                .threads
-                .iter()
-                .find(|t| t.thread_id == comment_anchor.thread_id)
-            {
-                if let Some(comments) =
-                    ctx.all_comments.get(&comment_anchor.thread_id)
+        // Emit comment blocks after the last line of the thread range
+        if let Some(comment_anchors) = sbs_comment_map.get(&idx) {
+            for comment_anchor in comment_anchors {
+                ctx.thread_positions
+                    .borrow_mut()
+                    .entry(comment_anchor.thread_id.clone())
+                    .or_insert(cursor.stream_row);
+                if let Some(thread) = ctx
+                    .threads
+                    .iter()
+                    .find(|t| t.thread_id == comment_anchor.thread_id)
                 {
-                    emit_comment_block(cursor, ctx.area, thread, comments);
+                    if let Some(comments) =
+                        ctx.all_comments.get(&comment_anchor.thread_id)
+                    {
+                        emit_comment_block(cursor, ctx.area, thread, comments);
+                    }
                 }
             }
         }

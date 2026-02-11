@@ -14,8 +14,8 @@ use super::helpers::{
     diff_content_x, draw_diff_base_line, draw_thread_range_bar, orphaned_context_width,
     orphaned_context_x,
 };
-use super::text_util::{draw_highlighted_text, draw_wrapped_line, wrap_content, WrappedLine};
-use super::{DisplayItem, LineRange, OrphanedContext, StreamCursor};
+use super::text_util::{draw_highlighted_text, draw_wrapped_line, wrap_content, HighlightContent, WrappedLine};
+use super::{DisplayItem, LineRange, LineRenderCtx, OrphanedContext, StreamCursor};
 
 // --- Context range calculation ---
 
@@ -165,6 +165,14 @@ pub(super) fn group_context_ranges_by_hunks(
 
 // --- Context rendering ---
 
+/// Shared mutable state for orphaned context rendering across sections.
+pub(super) struct OrphanedRenderState<'a> {
+    pub all_comments: &'a std::collections::HashMap<String, Vec<crate::db::Comment>>,
+    pub thread_positions: &'a std::cell::RefCell<std::collections::HashMap<String, usize>>,
+    pub emitted_threads: &'a mut std::collections::HashSet<String>,
+    pub last_line_num: &'a mut Option<i64>,
+}
+
 pub(super) fn emit_orphaned_context_section(
     cursor: &mut StreamCursor<'_>,
     area: Rect,
@@ -172,10 +180,7 @@ pub(super) fn emit_orphaned_context_section(
     context: &OrphanedContext<'_>,
     ranges: &[LineRange],
     wrap: bool,
-    all_comments: &std::collections::HashMap<String, Vec<crate::db::Comment>>,
-    thread_positions: &std::cell::RefCell<std::collections::HashMap<String, usize>>,
-    emitted_threads: &mut std::collections::HashSet<String>,
-    last_line_num: &mut Option<i64>,
+    state: &mut OrphanedRenderState<'_>,
 ) {
     if ranges.is_empty() {
         return;
@@ -190,18 +195,18 @@ pub(super) fn emit_orphaned_context_section(
     let display_items = build_context_items_from_ranges(context.lines, ranges);
     for item in &display_items {
         if let DisplayItem::Line { line_num, .. } = item {
-            if let Some(prev) = last_line_num {
+            if let Some(prev) = state.last_line_num.as_ref() {
                 for thread in &context.threads {
                     let end = thread.selection_end.unwrap_or(thread.selection_start);
-                    if !emitted_threads.contains(thread.thread_id.as_str())
+                    if !state.emitted_threads.contains(thread.thread_id.as_str())
                         && end > *prev
                         && end < *line_num
                     {
-                        emitted_threads.insert(thread.thread_id.clone());
-                        thread_positions
+                        state.emitted_threads.insert(thread.thread_id.clone());
+                        state.thread_positions
                             .borrow_mut()
                             .insert(thread.thread_id.clone(), cursor.stream_row);
-                        if let Some(comments) = all_comments.get(&thread.thread_id) {
+                        if let Some(comments) = state.all_comments.get(&thread.thread_id) {
                             emit_comment_block(cursor, comment_area, thread, comments);
                         }
                     }
@@ -234,7 +239,9 @@ pub(super) fn emit_orphaned_context_section(
                     let rows = wrapped.len().max(1);
                     cursor.emit_rows(rows, |buf, y, theme, row| {
                         render_context_line_wrapped_row(
-                            buf, area, y, *line_num, theme, &wrapped, row, show_thread_bar,
+                            buf, y, *line_num, theme,
+                            &LineRenderCtx { area, anchor: None, show_thread_bar },
+                            &wrapped, row,
                         );
                     });
                 } else {
@@ -247,18 +254,18 @@ pub(super) fn emit_orphaned_context_section(
 
                 let end_match = context.threads.iter().find(|t| {
                     let end = t.selection_end.unwrap_or(t.selection_start);
-                    end == *line_num && !emitted_threads.contains(t.thread_id.as_str())
+                    end == *line_num && !state.emitted_threads.contains(t.thread_id.as_str())
                 });
                 if let Some(thread) = end_match {
-                    emitted_threads.insert(thread.thread_id.clone());
-                    thread_positions
+                    state.emitted_threads.insert(thread.thread_id.clone());
+                    state.thread_positions
                         .borrow_mut()
                         .insert(thread.thread_id.clone(), cursor.stream_row);
-                    if let Some(comments) = all_comments.get(&thread.thread_id) {
+                    if let Some(comments) = state.all_comments.get(&thread.thread_id) {
                         emit_comment_block(cursor, comment_area, thread, comments);
                     }
                 }
-                *last_line_num = Some(*line_num);
+                *state.last_line_num = Some(*line_num);
             }
         }
     }
@@ -341,7 +348,12 @@ pub(super) fn render_context_item_block(
             let highlight = highlighted_lines.get((*line_num as usize).saturating_sub(1));
             draw_highlighted_text(
                 buffer, content_x, y, content_width,
-                highlight, content, dt.context, dt.context_bg,
+                &HighlightContent {
+                    spans: highlight,
+                    fallback_text: content,
+                    fallback_fg: dt.context,
+                    bg: dt.context_bg,
+                },
             );
         }
     }
@@ -349,23 +361,22 @@ pub(super) fn render_context_item_block(
 
 pub(super) fn render_context_line_wrapped_row(
     buffer: &mut OptimizedBuffer,
-    area: Rect,
     y: u32,
     line_num: i64,
     theme: &Theme,
+    ctx: &LineRenderCtx<'_>,
     wrapped: &[WrappedLine],
     row: usize,
-    show_thread_bar: bool,
 ) {
     let dt = &theme.diff;
-    draw_diff_base_line(buffer, area, y, dt.context_bg);
-    if show_thread_bar {
-        draw_thread_range_bar(buffer, diff_content_x(area), y, theme.panel_bg, theme);
+    draw_diff_base_line(buffer, ctx.area, y, dt.context_bg);
+    if ctx.show_thread_bar {
+        draw_thread_range_bar(buffer, diff_content_x(ctx.area), y, theme.panel_bg, theme);
     }
 
     let ln_str = format!("{line_num:5} ");
     let line_num_width = SBS_LINE_NUM_WIDTH;
-    let ln_x = orphaned_context_x(area);
+    let ln_x = orphaned_context_x(ctx.area);
     buffer.fill_rect(ln_x, y, line_num_width, 1, dt.context_bg);
     if row == 0 {
         buffer.draw_text(
@@ -375,7 +386,7 @@ pub(super) fn render_context_line_wrapped_row(
     }
 
     let content_x = ln_x + line_num_width;
-    let content_width = orphaned_context_width(area).saturating_sub(line_num_width);
+    let content_width = orphaned_context_width(ctx.area).saturating_sub(line_num_width);
     buffer.fill_rect(content_x, y, content_width, 1, dt.context_bg);
     if let Some(line_content) = wrapped.get(row) {
         draw_wrapped_line(

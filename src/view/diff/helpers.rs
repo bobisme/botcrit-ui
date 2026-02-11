@@ -195,20 +195,25 @@ pub(super) fn draw_comment_block_text_line(
     buffer.draw_text(content_x, y, display_text, style.with_bg(bg));
 }
 
+/// Content for a line with left-aligned and optional right-aligned text.
+pub(super) struct PlainLineContent<'a> {
+    pub left: &'a str,
+    pub right: Option<&'a str>,
+    pub left_style: Style,
+    pub right_style: Style,
+}
+
 /// Draw left/right text directly in the area without block formatting.
 pub(super) fn draw_plain_line_with_right(
     buffer: &mut OptimizedBuffer,
     area: Rect,
     y: u32,
     bg: Rgba,
-    left: &str,
-    right: Option<&str>,
-    left_style: Style,
-    right_style: Style,
+    content: &PlainLineContent<'_>,
 ) {
     let content_x = area.x;
     let content_width = area.width as usize;
-    let right_text = right.unwrap_or("");
+    let right_text = content.right.unwrap_or("");
     let right_len = right_text.chars().count();
     let left_max = if right_len > 0 {
         content_width.saturating_sub(right_len + 1)
@@ -219,14 +224,14 @@ pub(super) fn draw_plain_line_with_right(
     let left_text = if left_max == 0 {
         ""
     } else {
-        truncate_chars(left, left_max)
+        truncate_chars(content.left, left_max)
     };
 
-    buffer.draw_text(content_x, y, left_text, left_style.with_bg(bg));
+    buffer.draw_text(content_x, y, left_text, content.left_style.with_bg(bg));
 
     if right_len > 0 && right_len <= content_width {
         let right_x = content_x + content_width as u32 - right_len as u32;
-        buffer.draw_text(right_x, y, right_text, right_style.with_bg(bg));
+        buffer.draw_text(right_x, y, right_text, content.right_style.with_bg(bg));
     }
 }
 

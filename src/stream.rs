@@ -76,6 +76,7 @@ fn wrap_line_count(text: &str, max_width: usize) -> usize {
 
 #[must_use]
 #[allow(clippy::implicit_hasher)] // internal fn, always uses default hasher
+#[allow(clippy::too_many_arguments)]
 pub fn compute_stream_layout(
     files: &[FileEntry],
     file_cache: &HashMap<String, FileCacheEntry>,

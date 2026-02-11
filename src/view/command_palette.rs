@@ -160,7 +160,7 @@ fn render_themes(model: &Model, buffer: &mut OptimizedBuffer, screen: Rect) {
         }
         let selected = idx == model.command_palette_selection;
         let is_current = *name == model.theme.name;
-        render_theme_row(buffer, modal_x, y, modal_width, name, selected, is_current, model);
+        render_theme_row(buffer, &ModalLayout { x: modal_x, width: modal_width }, y, name, selected, is_current, model);
         y += 1;
     }
 }
@@ -236,18 +236,22 @@ fn render_item_row(
 
 /// Render a single theme item row.
 /// Uses bullet (●) if this is the currently active theme.
+struct ModalLayout {
+    x: u32,
+    width: u32,
+}
+
 fn render_theme_row(
     buffer: &mut OptimizedBuffer,
-    modal_x: u32,
+    layout: &ModalLayout,
     y: u32,
-    modal_width: u32,
     name: &str,
     selected: bool,
     is_current: bool,
     model: &Model,
 ) {
-    let highlight_x = modal_x + OUTER_PAD;
-    let highlight_width = modal_width - (OUTER_PAD * 2);
+    let highlight_x = layout.x + OUTER_PAD;
+    let highlight_width = layout.width - (OUTER_PAD * 2);
 
     let (bg, fg) = if selected {
         (model.theme.selection_bg, model.theme.selection_fg)

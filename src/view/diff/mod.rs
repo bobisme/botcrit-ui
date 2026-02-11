@@ -37,7 +37,7 @@ use comments::emit_comment_block;
 use context::{
     build_context_items, calculate_context_ranges, emit_orphaned_context_section,
     emit_remaining_orphaned_comments, group_context_ranges_by_hunks, render_context_item_block,
-    render_context_line_wrapped_row,
+    render_context_line_wrapped_row, OrphanedRenderState,
 };
 use helpers::{
     diff_content_width, diff_margin_area, draw_block_base_line, draw_block_text_line,
@@ -91,6 +91,17 @@ struct SideLine {
     content: String,
     kind: DiffLineKind,
     display_index: usize,
+}
+
+/// Shared rendering context for diff line render functions.
+///
+/// Bundles the outer-scope parameters that are constant across all lines in a
+/// rendering pass, keeping the per-line closure params (`buffer`, `y`, `theme`)
+/// separate.
+struct LineRenderCtx<'a> {
+    area: Rect,
+    anchor: Option<&'a ThreadAnchor>,
+    show_thread_bar: bool,
 }
 
 /// Display item for file context view
@@ -350,36 +361,50 @@ fn render_description_block(
     }
 }
 
+/// Parameters for rendering a diff stream.
+pub struct DiffStreamParams<'a> {
+    pub files: &'a [crate::model::FileEntry],
+    pub file_cache: &'a std::collections::HashMap<String, crate::model::FileCacheEntry>,
+    pub threads: &'a [ThreadSummary],
+    pub all_comments: &'a std::collections::HashMap<String, Vec<crate::db::Comment>>,
+    pub scroll: usize,
+    pub theme: &'a Theme,
+    pub view_mode: crate::model::DiffViewMode,
+    pub wrap: bool,
+    pub thread_positions: &'a std::cell::RefCell<std::collections::HashMap<String, usize>>,
+    pub description: Option<&'a str>,
+}
+
 pub fn render_diff_stream(
     buffer: &mut OptimizedBuffer,
     area: Rect,
-    files: &[crate::model::FileEntry],
-    file_cache: &std::collections::HashMap<String, crate::model::FileCacheEntry>,
-    threads: &[ThreadSummary],
-    all_comments: &std::collections::HashMap<String, Vec<crate::db::Comment>>,
-    scroll: usize,
-    theme: &Theme,
-    view_mode: crate::model::DiffViewMode,
-    wrap: bool,
-    thread_positions: &std::cell::RefCell<std::collections::HashMap<String, usize>>,
-    description: Option<&str>,
+    params: &DiffStreamParams<'_>,
 ) {
-    thread_positions.borrow_mut().clear();
+    params.thread_positions.borrow_mut().clear();
     let mut cursor = StreamCursor {
         buffer,
         area,
-        scroll,
+        scroll: params.scroll,
         screen_row: 0,
         stream_row: 0,
-        theme,
+        theme: params.theme,
     };
 
     // Render description block if present
-    if let Some(desc) = description {
+    if let Some(desc) = params.description {
         if !desc.trim().is_empty() {
-            render_description_block(&mut cursor, area, desc, theme);
+            render_description_block(&mut cursor, area, desc, params.theme);
         }
     }
+
+    let files = params.files;
+    let file_cache = params.file_cache;
+    let threads = params.threads;
+    let all_comments = params.all_comments;
+    let theme = params.theme;
+    let view_mode = params.view_mode;
+    let wrap = params.wrap;
+    let thread_positions = params.thread_positions;
 
     for file in files {
         // File header block
@@ -485,10 +510,12 @@ pub fn render_diff_stream(
                                             context,
                                             section,
                                             wrap,
-                                            all_comments,
-                                            thread_positions,
-                                            &mut emitted_threads,
-                                            &mut last_line_num,
+                                            &mut OrphanedRenderState {
+                                                all_comments,
+                                                thread_positions,
+                                                emitted_threads: &mut emitted_threads,
+                                                last_line_num: &mut last_line_num,
+                                            },
                                         );
                                     }
                                 }
@@ -513,12 +540,10 @@ pub fn render_diff_stream(
                                     cursor.emit(|buf, y, theme| {
                                         render_unified_diff_line_block(
                                             buf,
-                                            line_area,
                                             y,
                                             display_line,
                                             theme,
-                                            anchor,
-                                            show_thread_bar,
+                                            &LineRenderCtx { area: line_area, anchor, show_thread_bar },
                                             entry.highlighted_lines.get(idx),
                                         );
                                     });
@@ -539,12 +564,10 @@ pub fn render_diff_stream(
                                         cursor.emit_rows(rows, |buf, y, theme, row| {
                                             render_unified_diff_line_wrapped_row(
                                                 buf,
-                                                line_area,
                                                 y,
                                                 line,
                                                 theme,
-                                                anchor,
-                                                show_thread_bar,
+                                                &LineRenderCtx { area: line_area, anchor, show_thread_bar },
                                                 &wrapped,
                                                 row,
                                             );
@@ -553,12 +576,10 @@ pub fn render_diff_stream(
                                         cursor.emit(|buf, y, theme| {
                                             render_unified_diff_line_block(
                                                 buf,
-                                                line_area,
                                                 y,
                                                 display_line,
                                                 theme,
-                                                anchor,
-                                                show_thread_bar,
+                                                &LineRenderCtx { area: line_area, anchor, show_thread_bar },
                                                 entry.highlighted_lines.get(idx),
                                             );
                                         });
@@ -593,10 +614,12 @@ pub fn render_diff_stream(
                                     context,
                                     section,
                                     wrap,
-                                    all_comments,
-                                    thread_positions,
-                                    &mut emitted_threads,
-                                    &mut last_line_num,
+                                    &mut OrphanedRenderState {
+                                        all_comments,
+                                        thread_positions,
+                                        emitted_threads: &mut emitted_threads,
+                                        last_line_num: &mut last_line_num,
+                                    },
                                 );
                             }
                         }
@@ -639,10 +662,12 @@ pub fn render_diff_stream(
                                             context,
                                             section,
                                             wrap,
-                                            all_comments,
-                                            thread_positions,
-                                            &mut emitted_threads,
-                                            &mut last_line_num,
+                                            &mut OrphanedRenderState {
+                                                all_comments,
+                                                thread_positions,
+                                                emitted_threads: &mut emitted_threads,
+                                                last_line_num: &mut last_line_num,
+                                            },
                                         );
                                     }
                                 }
@@ -697,14 +722,11 @@ pub fn render_diff_stream(
                                 cursor.emit_rows(rows, |buf, y, theme, row| {
                                     render_side_by_side_line_wrapped_row(
                                         buf,
-                                        line_area,
                                         y,
                                         sbs_line,
                                         theme,
-                                        anchor,
-                                        show_thread_bar,
-                                        left_wrapped.as_ref(),
-                                        right_wrapped.as_ref(),
+                                        &LineRenderCtx { area: line_area, anchor, show_thread_bar },
+                                        (left_wrapped.as_ref(), right_wrapped.as_ref()),
                                         row,
                                     );
                                 });
@@ -712,12 +734,10 @@ pub fn render_diff_stream(
                                 cursor.emit(|buf, y, theme| {
                                     render_side_by_side_line_block(
                                         buf,
-                                        line_area,
                                         y,
                                         sbs_line,
                                         theme,
-                                        anchor,
-                                        show_thread_bar,
+                                        &LineRenderCtx { area: line_area, anchor, show_thread_bar },
                                         entry.highlighted_lines.as_slice(),
                                     );
                                 });
@@ -750,10 +770,12 @@ pub fn render_diff_stream(
                                     context,
                                     section,
                                     wrap,
-                                    all_comments,
-                                    thread_positions,
-                                    &mut emitted_threads,
-                                    &mut last_line_num,
+                                    &mut OrphanedRenderState {
+                                        all_comments,
+                                        thread_positions,
+                                        emitted_threads: &mut emitted_threads,
+                                        last_line_num: &mut last_line_num,
+                                    },
                                 );
                             }
                         }
@@ -819,13 +841,12 @@ pub fn render_diff_stream(
                                 cursor.emit_rows(rows, |buf, y, theme, row| {
                                     render_context_line_wrapped_row(
                                         buf,
-                                        line_area,
                                         y,
                                         *line_num,
                                         theme,
+                                        &LineRenderCtx { area: line_area, anchor: None, show_thread_bar },
                                         &wrapped,
                                         row,
-                                        show_thread_bar,
                                     );
                                 });
                             } else {

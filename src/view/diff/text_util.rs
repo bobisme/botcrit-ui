@@ -116,12 +116,24 @@ pub(super) fn draw_wrapped_line(
 ) {
     match line {
         WrappedLine::Spans(spans) => {
-            draw_highlighted_text(buffer, x, y, max_width, Some(spans), "", fallback_fg, bg);
+            draw_highlighted_text(buffer, x, y, max_width, &HighlightContent {
+                spans: Some(spans), fallback_text: "", fallback_fg, bg,
+            });
         }
         WrappedLine::Text(text) => {
-            draw_highlighted_text(buffer, x, y, max_width, None, text, fallback_fg, bg);
+            draw_highlighted_text(buffer, x, y, max_width, &HighlightContent {
+                spans: None, fallback_text: text, fallback_fg, bg,
+            });
         }
     }
+}
+
+/// Content parameters for highlighted text rendering.
+pub(super) struct HighlightContent<'a> {
+    pub spans: Option<&'a Vec<HighlightSpan>>,
+    pub fallback_text: &'a str,
+    pub fallback_fg: Rgba,
+    pub bg: Rgba,
 }
 
 pub(super) fn draw_highlighted_text(
@@ -129,17 +141,15 @@ pub(super) fn draw_highlighted_text(
     x: u32,
     y: u32,
     max_width: u32,
-    spans: Option<&Vec<HighlightSpan>>,
-    fallback_text: &str,
-    fallback_fg: Rgba,
-    bg: Rgba,
+    content: &HighlightContent<'_>,
 ) {
     let max_chars = max_width as usize;
 
-    if let Some(spans) = spans {
+    let bg = content.bg;
+    if let Some(spans) = content.spans {
         if spans.is_empty() {
-            let content = truncate_chars(fallback_text, max_chars);
-            buffer.draw_text(x, y, content, Style::fg(fallback_fg).with_bg(bg));
+            let text = truncate_chars(content.fallback_text, max_chars);
+            buffer.draw_text(x, y, text, Style::fg(content.fallback_fg).with_bg(bg));
             return;
         }
 
@@ -164,7 +174,7 @@ pub(super) fn draw_highlighted_text(
             }
         }
     } else {
-        let content = truncate_chars(fallback_text, max_chars);
-        buffer.draw_text(x, y, content, Style::fg(fallback_fg).with_bg(bg));
+        let text = truncate_chars(content.fallback_text, max_chars);
+        buffer.draw_text(x, y, text, Style::fg(content.fallback_fg).with_bg(bg));
     }
 }

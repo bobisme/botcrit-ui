@@ -5,7 +5,7 @@ use crate::layout::{BLOCK_MARGIN, BLOCK_PADDING};
 use crate::text::wrap_text;
 use crate::view::components::Rect;
 
-use super::helpers::{comment_block_area, comment_content_area, draw_comment_bar, draw_plain_line_with_right};
+use super::helpers::{comment_block_area, comment_content_area, draw_comment_bar, draw_plain_line_with_right, PlainLineContent};
 use super::StreamCursor;
 
 #[derive(Clone)]
@@ -123,10 +123,12 @@ pub(super) fn emit_comment_block(
                     padded,
                     y,
                     theme.panel_bg,
-                    &line.left,
-                    line.right.as_deref(),
-                    left_style,
-                    right_style,
+                    &PlainLineContent {
+                        left: &line.left,
+                        right: line.right.as_deref(),
+                        left_style,
+                        right_style,
+                    },
                 );
                 content_idx += 1;
             } else if row < top_margin + BLOCK_PADDING + content_lines.len() + BLOCK_PADDING {

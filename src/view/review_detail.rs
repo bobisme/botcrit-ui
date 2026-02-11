@@ -3,7 +3,7 @@
 use opentui::{OptimizedBuffer, Style};
 
 use super::components::{dim_rect, draw_help_bar, draw_text_truncated, truncate_path, HotkeyHint, Rect};
-use super::diff::{diff_change_counts, render_diff_stream, render_pinned_header_block};
+use super::diff::{diff_change_counts, render_diff_stream, render_pinned_header_block, DiffStreamParams};
 use crate::model::{Focus, LayoutMode, Model, SidebarItem};
 use crate::layout::{BLOCK_MARGIN, BLOCK_PADDING, DIFF_MARGIN};
 use crate::stream::{block_height, description_block_height};
@@ -330,16 +330,18 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     render_diff_stream(
         buffer,
         stream_area,
-        &files,
-        &model.file_cache,
-        &model.threads,
-        &model.all_comments,
-        model.diff_scroll,
-        theme,
-        model.diff_view_mode,
-        model.diff_wrap,
-        &model.thread_positions,
-        description,
+        &DiffStreamParams {
+            files: &files,
+            file_cache: &model.file_cache,
+            threads: &model.threads,
+            all_comments: &model.all_comments,
+            scroll: model.diff_scroll,
+            theme,
+            view_mode: model.diff_view_mode,
+            wrap: model.diff_wrap,
+            thread_positions: &model.thread_positions,
+            description,
+        },
     );
 
     // Render pinned header:

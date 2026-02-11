@@ -46,6 +46,13 @@ impl CliClient {
     }
 }
 
+// -- Intermediate serde types for `crit reviews list` --
+
+#[derive(Deserialize)]
+struct ReviewsListResponse {
+    reviews: Vec<ReviewSummary>,
+}
+
 // -- Intermediate serde types for the combined `crit review <id>` endpoint --
 
 #[derive(Deserialize)]
@@ -119,8 +126,9 @@ impl From<CombinedReview> for ReviewDetail {
 impl CritClient for CliClient {
     fn list_reviews(&self, status: Option<&str>) -> Result<Vec<ReviewSummary>> {
         let stdout = self.run_crit(&["reviews", "list"])?;
-        let reviews: Vec<ReviewSummary> =
+        let resp: ReviewsListResponse =
             serde_json::from_slice(&stdout).context("Failed to parse `crit reviews list` JSON")?;
+        let reviews = resp.reviews;
 
         match status {
             Some(s) => Ok(reviews.into_iter().filter(|r| r.status == s).collect()),

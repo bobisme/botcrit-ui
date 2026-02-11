@@ -88,6 +88,10 @@ pub enum Message {
     SearchInput(String),
     /// Delete last character from search input
     SearchBackspace,
+    /// Delete last word from search input
+    SearchDeleteWord,
+    /// Clear search input text (stay in search mode)
+    SearchClearLine,
     /// Clear and deactivate search
     SearchClear,
     /// Toggle between unified and side-by-side diff view
@@ -106,6 +110,7 @@ pub enum Message {
     CommandPalettePrev,
     CommandPaletteUpdateInput(String),
     CommandPaletteInputBackspace,
+    CommandPaletteDeleteWord,
     CommandPaletteExecute,
 
     // === Commenting ===

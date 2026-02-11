@@ -119,8 +119,8 @@ fn draw_review_item(
     let item_width = area.width.saturating_sub(margin * 2);
     buffer.fill_rect(item_x, y, item_width, ITEM_HEIGHT, bg);
 
-    let left_pad: u32 = 2;
-    let right_pad: u32 = 1;
+    let left_pad: u32 = 3;
+    let right_pad: u32 = 2;
     let mut x = item_x + left_pad;
     let right_edge = item_x + item_width.saturating_sub(right_pad);
 
@@ -136,7 +136,9 @@ fn draw_review_item(
     let thread_text = format_thread_label(review.thread_count, review.open_thread_count);
     let thread_len = thread_text.len() as u32;
     let thread_x = right_edge.saturating_sub(thread_len);
-    let thread_color = if review.open_thread_count > 0 {
+    let thread_color = if selected {
+        theme.selection_fg
+    } else if review.open_thread_count > 0 {
         theme.warning
     } else {
         theme.muted
@@ -163,11 +165,15 @@ fn draw_review_item(
 
     // Status badge
     let badge = format!("[{}]", review.status);
-    let badge_color = match review.status.as_str() {
-        "open" | "merged" => theme.success,
-        "abandoned" => theme.muted,
-        "approved" => theme.warning,
-        _ => theme.foreground,
+    let badge_color = if selected {
+        theme.selection_fg
+    } else {
+        match review.status.as_str() {
+            "open" | "merged" => theme.success,
+            "abandoned" => theme.muted,
+            "approved" => theme.warning,
+            _ => theme.foreground,
+        }
     };
     buffer.draw_text(x2, y2, &badge, Style::fg(badge_color).with_bg(bg));
     x2 += badge.len() as u32 + 2;
@@ -179,6 +185,11 @@ fn draw_review_item(
         let reviewers: Vec<String> = review.reviewers.iter().map(|r| format!("@{r}")).collect();
         format!("@{} -> {}", review.author, reviewers.join(", "))
     };
+    let people_color = if selected {
+        theme.selection_fg
+    } else {
+        theme.muted
+    };
     let people_width = right_edge.saturating_sub(x2);
     draw_text_truncated(
         buffer,
@@ -186,7 +197,7 @@ fn draw_review_item(
         y2,
         &people,
         people_width,
-        Style::fg(theme.muted).with_bg(bg),
+        Style::fg(people_color).with_bg(bg),
     );
 }
 

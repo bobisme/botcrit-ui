@@ -24,11 +24,11 @@ pub fn map_event_to_message(model: &mut Model, event: &Event) -> Message {
             }
 
             if model.focus == Focus::CommandPalette {
-                return map_command_palette_key(key.code);
+                return map_command_palette_key(key.code, key.modifiers);
             }
 
             match model.screen {
-                Screen::ReviewList => map_review_list_key(key.code, model),
+                Screen::ReviewList => map_review_list_key(key.code, key.modifiers, model),
                 Screen::ReviewDetail => map_review_detail_key(model, key.code, key.modifiers),
             }
         }
@@ -44,9 +44,16 @@ pub fn map_event_to_message(model: &mut Model, event: &Event) -> Message {
     }
 }
 
-fn map_review_list_key(key: KeyCode, model: &Model) -> Message {
+fn map_review_list_key(key: KeyCode, modifiers: KeyModifiers, model: &Model) -> Message {
     // When search is active, route chars to search input
     if model.search_active {
+        if modifiers.contains(KeyModifiers::CTRL) {
+            return match key {
+                KeyCode::Char('w') => Message::SearchDeleteWord,
+                KeyCode::Char('u') => Message::SearchClearLine,
+                _ => Message::Noop,
+            };
+        }
         return match key {
             KeyCode::Esc => Message::SearchClear,
             KeyCode::Backspace => Message::SearchBackspace,
@@ -317,7 +324,13 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
     }
 }
 
-fn map_command_palette_key(key: KeyCode) -> Message {
+fn map_command_palette_key(key: KeyCode, modifiers: KeyModifiers) -> Message {
+    if modifiers.contains(KeyModifiers::CTRL) {
+        return match key {
+            KeyCode::Char('w') => Message::CommandPaletteDeleteWord,
+            _ => Message::Noop,
+        };
+    }
     match key {
         KeyCode::Esc => Message::HideCommandPalette,
         KeyCode::Up => Message::CommandPalettePrev,

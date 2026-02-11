@@ -261,6 +261,15 @@ fn update_command_palette(model: &mut Model, msg: Message) {
             preview_selected_theme(model);
             model.needs_redraw = true;
         }
+        Message::CommandPaletteDeleteWord => {
+            delete_last_word(&mut model.command_palette_input);
+            model.command_palette_selection = 0;
+            if model.command_palette_mode == PaletteMode::Commands {
+                model.command_palette_commands = filter_commands(&model.command_palette_input);
+            }
+            preview_selected_theme(model);
+            model.needs_redraw = true;
+        }
         Message::CommandPaletteExecute => {
             match model.command_palette_mode {
                 PaletteMode::Commands => {
@@ -611,7 +620,8 @@ pub fn update(model: &mut Model, msg: Message) {
 
         Message::ShowCommandPalette | Message::HideCommandPalette | Message::CommandPaletteNext
         | Message::CommandPalettePrev | Message::CommandPaletteUpdateInput(_)
-        | Message::CommandPaletteInputBackspace | Message::CommandPaletteExecute => {
+        | Message::CommandPaletteInputBackspace | Message::CommandPaletteDeleteWord
+        | Message::CommandPaletteExecute => {
             update_command_palette(model, msg);
         }
 
@@ -659,6 +669,18 @@ pub fn update(model: &mut Model, msg: Message) {
         }
         Message::SearchBackspace => {
             model.search_input.pop();
+            model.list_index = 0;
+            model.list_scroll = 0;
+            model.needs_redraw = true;
+        }
+        Message::SearchDeleteWord => {
+            delete_last_word(&mut model.search_input);
+            model.list_index = 0;
+            model.list_scroll = 0;
+            model.needs_redraw = true;
+        }
+        Message::SearchClearLine => {
+            model.search_input.clear();
             model.list_index = 0;
             model.list_scroll = 0;
             model.needs_redraw = true;
@@ -947,6 +969,17 @@ fn filter_theme_names(query: &str) -> Vec<&'static str> {
             terms.iter().all(|term| name_lower.contains(term.as_str()))
         })
         .collect()
+}
+
+fn delete_last_word(s: &mut String) {
+    // Trim trailing whitespace
+    while s.ends_with(' ') {
+        s.pop();
+    }
+    // Delete until whitespace or empty
+    while !s.is_empty() && !s.ends_with(' ') {
+        s.pop();
+    }
 }
 
 fn filter_commands(query: &str) -> Vec<crate::command::CommandSpec> {

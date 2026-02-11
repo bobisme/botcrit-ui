@@ -103,23 +103,22 @@ pub(super) fn emit_comment_block(
 
     let top_margin = 0usize;
     let bottom_margin = BLOCK_MARGIN;
-    let total_rows = content_lines
-        .len()
-        .saturating_add(BLOCK_PADDING * 2)
-        .saturating_add(top_margin)
+    let content_start = top_margin + BLOCK_PADDING;
+    let content_end = content_start + content_lines.len();
+    let total_rows = content_end
+        .saturating_add(BLOCK_PADDING)
         .saturating_add(bottom_margin);
-    let mut content_idx = 0usize;
 
     for row in 0..total_rows {
         cursor.emit(|buf, y, theme| {
             if row < top_margin {
                 buf.fill_rect(area.x, y, area.width, 1, theme.background);
-            } else if row < top_margin + BLOCK_PADDING {
+            } else if row < content_start {
                 buf.fill_rect(area.x, y, area.width, 1, theme.background);
                 buf.fill_rect(block.x, y, block.width, 1, theme.panel_bg);
                 draw_comment_bar(buf, block.x, y, theme.panel_bg, theme);
-            } else if row < top_margin + BLOCK_PADDING + content_lines.len() {
-                let line = &content_lines[content_idx];
+            } else if row < content_end {
+                let line = &content_lines[row - content_start];
                 let (left_style, right_style) = match line.kind {
                     CommentLineKind::Header => (theme.style_muted(), theme.style_muted()),
                     CommentLineKind::Author => (theme.style_primary(), theme.style_muted()),
@@ -140,8 +139,7 @@ pub(super) fn emit_comment_block(
                         right_style,
                     },
                 );
-                content_idx += 1;
-            } else if row < top_margin + BLOCK_PADDING + content_lines.len() + BLOCK_PADDING {
+            } else if row < content_end + BLOCK_PADDING {
                 buf.fill_rect(area.x, y, area.width, 1, theme.background);
                 buf.fill_rect(block.x, y, block.width, 1, theme.panel_bg);
                 draw_comment_bar(buf, block.x, y, theme.panel_bg, theme);

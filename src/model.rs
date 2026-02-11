@@ -335,13 +335,22 @@ impl Model {
                 collapsed,
             });
             if !collapsed {
-                // Add threads belonging to this file, sorted by line number
+                // Add threads belonging to this file, sorted by their
+                // position in the diff stream so the sidebar order matches
+                // what the user sees in the diff pane.  Fall back to
+                // selection_start for threads not yet positioned.
+                let positions = self.thread_positions.borrow();
                 let mut file_threads: Vec<&ThreadSummary> = self
                     .threads
                     .iter()
                     .filter(|t| t.file_path == file.path)
                     .collect();
-                file_threads.sort_by_key(|t| t.selection_start);
+                file_threads.sort_by_key(|t| {
+                    positions
+                        .get(&t.thread_id)
+                        .copied()
+                        .unwrap_or(usize::MAX)
+                });
 
                 for thread in file_threads {
                     items.push(SidebarItem::Thread {

@@ -1,6 +1,6 @@
 //! Orphaned context building, rendering, and `calculate_context_ranges`.
 
-use opentui::OptimizedBuffer;
+use opentui::{OptimizedBuffer, Style};
 
 use crate::db::ThreadSummary;
 use crate::layout::{CONTEXT_LINES, SBS_LINE_NUM_WIDTH};
@@ -11,7 +11,7 @@ use crate::view::components::Rect;
 use super::analysis::{build_thread_ranges, line_in_thread_ranges};
 use super::comments::{comment_block_rows, emit_comment_block};
 use super::helpers::{
-    draw_diff_base_line,
+    cursor_bg, cursor_fg, draw_diff_base_line,
     orphaned_context_width, orphaned_context_x,
 };
 use super::text_util::{draw_highlighted_text, draw_wrapped_line, wrap_content, HighlightContent, WrappedLine};
@@ -341,30 +341,33 @@ pub(super) fn render_context_item_block(
             );
         }
         DisplayItem::Line { line_num, content } => {
-            draw_diff_base_line(buffer, area, y, dt.context_bg);
+            let bg = cursor_bg(dt.context_bg, is_cursor, theme);
+            let fg = cursor_fg(dt.context, is_cursor);
+            let ln_fg = cursor_fg(dt.line_number, is_cursor);
+            draw_diff_base_line(buffer, area, y, bg);
 
             let ln_str = format!("{line_num:5} ");
             let line_num_width = SBS_LINE_NUM_WIDTH;
             let ln_x = orphaned_context_x(area);
-            buffer.fill_rect(ln_x, y, line_num_width, 1, dt.context_bg);
+            buffer.fill_rect(ln_x, y, line_num_width, 1, bg);
             buffer.draw_text(
                 ln_x,
                 y,
                 &ln_str,
-                dt.style_line_number(dt.context_bg),
+                Style::fg(ln_fg).with_bg(bg),
             );
 
             let content_x = ln_x + line_num_width;
             let content_width = orphaned_context_width(area).saturating_sub(line_num_width);
-            buffer.fill_rect(content_x, y, content_width, 1, dt.context_bg);
+            buffer.fill_rect(content_x, y, content_width, 1, bg);
             let highlight = highlighted_lines.get((*line_num - start_line) as usize);
             draw_highlighted_text(
                 buffer, content_x, y, content_width,
                 &HighlightContent {
                     spans: highlight,
                     fallback_text: content,
-                    fallback_fg: dt.context,
-                    bg: dt.context_bg,
+                    fallback_fg: fg,
+                    bg,
                 },
             );
         }
@@ -381,26 +384,30 @@ pub(super) fn render_context_line_wrapped_row(
     row: usize,
 ) {
     let dt = &theme.diff;
-    draw_diff_base_line(buffer, ctx.area, y, dt.context_bg);
+    let is_cursor = ctx.is_cursor;
+    let bg = cursor_bg(dt.context_bg, is_cursor, theme);
+    let fg = cursor_fg(dt.context, is_cursor);
+    let ln_fg = cursor_fg(dt.line_number, is_cursor);
+    draw_diff_base_line(buffer, ctx.area, y, bg);
 
     let ln_str = format!("{line_num:5} ");
     let line_num_width = SBS_LINE_NUM_WIDTH;
     let ln_x = orphaned_context_x(ctx.area);
-    buffer.fill_rect(ln_x, y, line_num_width, 1, dt.context_bg);
+    buffer.fill_rect(ln_x, y, line_num_width, 1, bg);
     if row == 0 {
         buffer.draw_text(
             ln_x, y, &ln_str,
-            dt.style_line_number(dt.context_bg),
+            Style::fg(ln_fg).with_bg(bg),
         );
     }
 
     let content_x = ln_x + line_num_width;
     let content_width = orphaned_context_width(ctx.area).saturating_sub(line_num_width);
-    buffer.fill_rect(content_x, y, content_width, 1, dt.context_bg);
+    buffer.fill_rect(content_x, y, content_width, 1, bg);
     if let Some(line_content) = wrapped.get(row) {
         draw_wrapped_line(
             buffer, content_x, y, content_width,
-            line_content, dt.context, dt.context_bg,
+            line_content, fg, bg,
         );
     }
 }

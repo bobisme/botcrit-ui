@@ -7,7 +7,7 @@ use crate::layout::UNIFIED_LINE_NUM_WIDTH;
 use crate::syntax::HighlightSpan;
 use crate::theme::Theme;
 
-use super::helpers::{diff_content_width, diff_content_x, draw_diff_base_line};
+use super::helpers::{cursor_bg, cursor_fg, diff_content_width, diff_content_x, draw_diff_base_line};
 use super::text_util::{draw_highlighted_text, draw_wrapped_line, HighlightContent, WrappedLine};
 use super::{DisplayLine, LineRenderCtx};
 
@@ -29,12 +29,8 @@ pub(super) fn render_unified_diff_line_block(
             buffer.draw_text(sep_x, y, sep, theme.style_muted_on(dt.context_bg));
         }
         DisplayLine::Diff(line) => {
-            let line_bg = match line.kind {
-                DiffLineKind::Added => dt.added_bg,
-                DiffLineKind::Removed => dt.removed_bg,
-                DiffLineKind::Context => dt.context_bg,
-            };
-            draw_diff_base_line(buffer, ctx.area, y, dt.context_bg);
+            let base_bg = cursor_bg(dt.context_bg, ctx.is_cursor, theme);
+            draw_diff_base_line(buffer, ctx.area, y, base_bg);
 
             let content_x = diff_content_x(ctx.area);
 
@@ -53,6 +49,8 @@ pub(super) fn render_unified_diff_line_block(
                 line,
                 dt,
                 highlights,
+                ctx.is_cursor,
+                theme,
             );
         }
     }
@@ -68,25 +66,33 @@ pub(super) fn render_unified_diff_line_wrapped_row(
     row: usize,
 ) {
     let dt = &theme.diff;
+    let is_cursor = ctx.is_cursor;
     let (bg, line_num_bg, default_fg, sign, sign_color) = match line.kind {
         DiffLineKind::Added => (
-            dt.added_bg,
-            dt.added_line_number_bg,
-            dt.added,
+            cursor_bg(dt.added_bg, is_cursor, theme),
+            cursor_bg(dt.added_line_number_bg, is_cursor, theme),
+            cursor_fg(dt.added, is_cursor),
             "+",
-            dt.highlight_added,
+            cursor_fg(dt.highlight_added, is_cursor),
         ),
         DiffLineKind::Removed => (
-            dt.removed_bg,
-            dt.removed_line_number_bg,
-            dt.removed,
+            cursor_bg(dt.removed_bg, is_cursor, theme),
+            cursor_bg(dt.removed_line_number_bg, is_cursor, theme),
+            cursor_fg(dt.removed, is_cursor),
             "-",
-            dt.highlight_removed,
+            cursor_fg(dt.highlight_removed, is_cursor),
         ),
-        DiffLineKind::Context => (dt.context_bg, dt.context_bg, dt.context, " ", dt.context),
+        DiffLineKind::Context => (
+            cursor_bg(dt.context_bg, is_cursor, theme),
+            cursor_bg(dt.context_bg, is_cursor, theme),
+            cursor_fg(dt.context, is_cursor),
+            " ",
+            cursor_fg(dt.context, is_cursor),
+        ),
     };
 
-    draw_diff_base_line(buffer, ctx.area, y, dt.context_bg);
+    let base_bg = cursor_bg(dt.context_bg, is_cursor, theme);
+    draw_diff_base_line(buffer, ctx.area, y, base_bg);
 
     let content_x = diff_content_x(ctx.area);
 
@@ -101,29 +107,30 @@ pub(super) fn render_unified_diff_line_wrapped_row(
             .new_line
             .map_or_else(|| "     ".to_string(), |n| format!("{n:>5}"));
 
+        let ln_fg = cursor_fg(dt.line_number, is_cursor);
         buffer.draw_text(
             line_num_x,
             y,
             &old_ln,
-            dt.style_line_number(line_num_bg),
+            Style::fg(ln_fg).with_bg(line_num_bg),
         );
         buffer.draw_text(
             line_num_x + 5,
             y,
             " ",
-            dt.style_line_number(line_num_bg),
+            Style::fg(ln_fg).with_bg(line_num_bg),
         );
         buffer.draw_text(
             line_num_x + 6,
             y,
             &new_ln,
-            dt.style_line_number(line_num_bg),
+            Style::fg(ln_fg).with_bg(line_num_bg),
         );
         buffer.draw_text(
             line_num_x + 11,
             y,
             " ",
-            dt.style_line_number(line_num_bg),
+            Style::fg(ln_fg).with_bg(line_num_bg),
         );
     }
 
@@ -163,25 +170,34 @@ pub(super) fn render_diff_line(
     line: &DiffLine,
     dt: &crate::theme::DiffTheme,
     highlights: Option<&Vec<HighlightSpan>>,
+    is_cursor: bool,
+    theme: &Theme,
 ) {
     let (bg, line_num_bg, default_fg, sign, sign_color) = match line.kind {
         DiffLineKind::Added => (
-            dt.added_bg,
-            dt.added_line_number_bg,
-            dt.added,
+            cursor_bg(dt.added_bg, is_cursor, theme),
+            cursor_bg(dt.added_line_number_bg, is_cursor, theme),
+            cursor_fg(dt.added, is_cursor),
             "+",
-            dt.highlight_added,
+            cursor_fg(dt.highlight_added, is_cursor),
         ),
         DiffLineKind::Removed => (
-            dt.removed_bg,
-            dt.removed_line_number_bg,
-            dt.removed,
+            cursor_bg(dt.removed_bg, is_cursor, theme),
+            cursor_bg(dt.removed_line_number_bg, is_cursor, theme),
+            cursor_fg(dt.removed, is_cursor),
             "-",
-            dt.highlight_removed,
+            cursor_fg(dt.highlight_removed, is_cursor),
         ),
-        DiffLineKind::Context => (dt.context_bg, dt.context_bg, dt.context, " ", dt.context),
+        DiffLineKind::Context => (
+            cursor_bg(dt.context_bg, is_cursor, theme),
+            cursor_bg(dt.context_bg, is_cursor, theme),
+            cursor_fg(dt.context, is_cursor),
+            " ",
+            cursor_fg(dt.context, is_cursor),
+        ),
     };
 
+    let ln_fg = cursor_fg(dt.line_number, is_cursor);
     buffer.fill_rect(layout.x, y, 12, 1, line_num_bg);
     buffer.fill_rect(layout.content_x, y, layout.content_width, 1, bg);
 
@@ -192,10 +208,10 @@ pub(super) fn render_diff_line(
         .new_line
         .map_or_else(|| "     ".to_string(), |n| format!("{n:>5}"));
 
-    buffer.draw_text(layout.x, y, &old_ln, dt.style_line_number(line_num_bg));
-    buffer.draw_text(layout.x + 5, y, " ", dt.style_line_number(line_num_bg));
-    buffer.draw_text(layout.x + 6, y, &new_ln, dt.style_line_number(line_num_bg));
-    buffer.draw_text(layout.x + 11, y, " ", dt.style_line_number(line_num_bg));
+    buffer.draw_text(layout.x, y, &old_ln, Style::fg(ln_fg).with_bg(line_num_bg));
+    buffer.draw_text(layout.x + 5, y, " ", Style::fg(ln_fg).with_bg(line_num_bg));
+    buffer.draw_text(layout.x + 6, y, &new_ln, Style::fg(ln_fg).with_bg(line_num_bg));
+    buffer.draw_text(layout.x + 11, y, " ", Style::fg(ln_fg).with_bg(line_num_bg));
 
     buffer.draw_text(layout.content_x, y, sign, Style::fg(sign_color).with_bg(bg));
 

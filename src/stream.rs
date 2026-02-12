@@ -34,8 +34,13 @@ pub struct StreamLayoutParams<'a> {
 }
 
 /// Inner width for description/comment block content.
+/// Uses the same `comment_block_area` → `comment_content_area` chain as
+/// `emit_comment_block` so text wraps at the same column.
 const fn block_wrap_width(pane_width: u32) -> usize {
-    layout::block_inner_width(pane_width) as usize
+    // comment_block_area: inset COMMENT_H_MARGIN on each side
+    let block_w = pane_width.saturating_sub(layout::COMMENT_H_MARGIN * 2);
+    // comment_content_area: inset 2 (double bar) + COMMENT_H_PAD on each side
+    block_w.saturating_sub(4 + layout::COMMENT_H_PAD * 2) as usize
 }
 
 /// Compute height of description block (if present).

@@ -245,6 +245,24 @@ pub(super) fn draw_plain_line_with_right(
     }
 }
 
+/// Blend a background color with the cursor accent when the line is under the cursor.
+pub(super) fn cursor_bg(bg: Rgba, is_cursor: bool, theme: &Theme) -> Rgba {
+    if is_cursor {
+        bg.lerp(theme.primary, 0.15)
+    } else {
+        bg
+    }
+}
+
+/// Lighten a foreground color toward white when the line is under the cursor.
+pub(super) fn cursor_fg(fg: Rgba, is_cursor: bool) -> Rgba {
+    if is_cursor {
+        fg.lerp(Rgba::WHITE, 0.20)
+    } else {
+        fg
+    }
+}
+
 pub(super) fn draw_file_header_line(
     buffer: &mut OptimizedBuffer,
     area: Rect,

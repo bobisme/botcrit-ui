@@ -76,11 +76,29 @@ pub struct Comment {
     pub created_at: String,
 }
 
+/// Per-file diff and content data from crit.
+pub struct FileData {
+    pub path: String,
+    /// Unified diff text for this file (if available).
+    pub diff: Option<String>,
+    /// Windowed file content for orphaned thread context.
+    pub content: Option<FileContentData>,
+}
+
+/// Windowed file content returned by crit for orphaned threads.
+pub struct FileContentData {
+    /// 1-based line number of the first line in `lines`.
+    pub start_line: i64,
+    pub lines: Vec<String>,
+}
+
 /// Bundle of review data loaded in one call.
 pub struct ReviewData {
     pub detail: ReviewDetail,
     pub threads: Vec<ThreadSummary>,
     pub comments: HashMap<String, Vec<Comment>>,
+    /// Per-file diffs and content (populated when `--include-diffs` is used).
+    pub files: Vec<FileData>,
 }
 
 /// Trait for loading review data from any backend.

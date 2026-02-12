@@ -139,6 +139,8 @@ struct OrphanedContext<'a> {
     threads: Vec<&'a ThreadSummary>,
     lines: &'a [String],
     highlights: &'a [Vec<HighlightSpan>],
+    /// 1-based line number of `lines[0]`. Used for windowed content.
+    start_line: i64,
 }
 
 /// Shared rendering context that flows from `render_diff_stream` through all
@@ -458,9 +460,11 @@ fn render_file_with_diff(
                 orphaned_threads.iter().map(|t| **t).collect();
             let hunk_ranges =
                 crate::diff::hunk_exclusion_ranges(&diff.hunks);
+            #[allow(clippy::cast_possible_wrap)]
+            let total_lines = content.start_line + content.lines.len() as i64 - 1;
             let ranges = calculate_context_ranges(
                 &orphaned_deref,
-                content.lines.len(),
+                total_lines as usize,
                 &hunk_ranges,
             );
             let sections = group_context_ranges_by_hunks(ranges, &hunk_ranges);
@@ -470,6 +474,7 @@ fn render_file_with_diff(
                     threads: orphaned_deref,
                     lines: content.lines.as_slice(),
                     highlights: entry.file_highlighted_lines.as_slice(),
+                    start_line: content.start_line,
                 });
             }
         }
@@ -542,9 +547,10 @@ fn render_file_content_no_diff(
     sctx: &StreamRenderCtx<'_>,
 ) {
     let line_area = diff_margin_area(area);
+    let start_line = content.start_line;
     let thread_ranges = build_thread_ranges(file_threads);
     let display_items =
-        build_context_items(content.lines.as_slice(), file_threads, &[]);
+        build_context_items(content.lines.as_slice(), file_threads, &[], start_line);
     for item in display_items {
         let show_thread_bar = match &item {
             DisplayItem::Line { line_num, .. } => {
@@ -565,12 +571,13 @@ fn render_file_content_no_diff(
                         file_highlights,
                         false,
                         false,
+                        start_line,
                     );
                 });
             }
             DisplayItem::Line { line_num, content } => {
                 if sctx.wrap {
-                    let line_index = (*line_num).saturating_sub(1) as usize;
+                    let line_index = (*line_num - start_line) as usize;
                     let highlight = file_highlights.get(line_index);
                     let line_num_width = SBS_LINE_NUM_WIDTH;
                     let content_width = diff_content_width(line_area)
@@ -605,6 +612,7 @@ fn render_file_content_no_diff(
                             file_highlights,
                             is_cursor,
                             is_selected,
+                            start_line,
                         );
                     });
                 }

@@ -11,10 +11,16 @@ use crate::diff::ParsedDiff;
 use crate::syntax::{HighlightSpan, Highlighter};
 use crate::theme::Theme;
 
-/// File content for displaying context when no diff is available
+/// File content for displaying context when no diff is available.
+///
+/// When populated from crit's windowed content, `start_line` indicates
+/// the 1-based line number of the first element in `lines`.
+/// When populated from a full file read, `start_line` is 1.
 #[derive(Debug, Clone)]
 pub struct FileContent {
     pub lines: Vec<String>,
+    /// 1-based line number of `lines[0]`. Defaults to 1 for full files.
+    pub start_line: i64,
 }
 
 /// Cached data for a file in the review stream

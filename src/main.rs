@@ -30,7 +30,7 @@ use botcrit_ui::stream::{
 };
 use botcrit_ui::theme::{load_built_in_theme, load_theme_from_path};
 use botcrit_ui::{
-    update, vcs, view, CliClient, CritClient, Focus, Highlighter, LayoutMode, Message, Model,
+    update, view, CliClient, CritClient, Focus, Highlighter, LayoutMode, Message, Model,
     Screen, Theme,
 };
 
@@ -43,7 +43,6 @@ fn main() -> Result<()> {
         .as_ref()
         .map(|repo| -> Box<dyn CritClient> { Box::new(CliClient::new(repo)) });
 
-    // Repo root for vcs diff loading
     let repo_path = args.repo_path.clone();
 
     // Load theme (optional)
@@ -724,8 +723,57 @@ fn persist_comment(
     Ok(())
 }
 
+/// Build file cache entries from data returned by crit (no VCS calls needed).
+fn populate_file_cache(
+    model: &mut Model,
+    files: Vec<botcrit_ui::db::FileData>,
+) {
+    use botcrit_ui::diff::ParsedDiff;
+
+    model.file_cache.clear();
+
+    for file_data in files {
+        let diff = file_data.diff.as_deref().map(ParsedDiff::parse);
+
+        let file_content = file_data.content.map(|c| botcrit_ui::model::FileContent {
+            lines: c.lines,
+            start_line: c.start_line,
+        });
+
+        let highlighted_lines = if let Some(parsed) = &diff {
+            compute_diff_highlights(parsed, &file_data.path, &model.highlighter)
+        } else if let Some(content) = &file_content {
+            compute_file_highlights(&content.lines, &file_data.path, &model.highlighter)
+        } else {
+            Vec::new()
+        };
+
+        let file_highlighted_lines = if diff.is_some() {
+            if let Some(content) = &file_content {
+                compute_file_highlights(&content.lines, &file_data.path, &model.highlighter)
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        };
+
+        model.file_cache.insert(
+            file_data.path,
+            botcrit_ui::model::FileCacheEntry {
+                diff,
+                file_content,
+                highlighted_lines,
+                file_highlighted_lines,
+            },
+        );
+    }
+
+    model.sync_active_file_cache();
+}
+
 /// Reload review data after a comment is persisted.
-fn reload_review_data(model: &mut Model, client: &dyn CritClient, repo_path: Option<&Path>) {
+fn reload_review_data(model: &mut Model, client: &dyn CritClient, _repo_path: Option<&Path>) {
     let Some(review) = &model.current_review else {
         return;
     };
@@ -734,77 +782,11 @@ fn reload_review_data(model: &mut Model, client: &dyn CritClient, repo_path: Opt
         model.current_review = Some(data.detail);
         model.threads = data.threads;
         model.all_comments = data.comments;
-        // Rebuild file cache for new threads
-        model.file_cache.clear();
-        if let Some(repo) = repo_path {
-            let files = model.files_with_threads();
-            let from = model
-                .current_review
-                .as_ref()
-                .map(|r| r.initial_commit.as_str())
-                .unwrap_or_default();
-            let to = model
-                .current_review
-                .as_ref()
-                .and_then(|r| r.final_commit.as_deref());
-            for file in &files {
-                let diff = vcs::get_file_diff(repo, &file.path, from, to);
-                let mut file_content = None;
-                let mut file_highlighted_lines = Vec::new();
-                let highlighted_lines = if let Some(parsed) = &diff {
-                    let diff_highlights =
-                        compute_diff_highlights(parsed, &file.path, &model.highlighter);
-
-                    let file_threads: Vec<&botcrit_ui::db::ThreadSummary> = model
-                        .threads
-                        .iter()
-                        .filter(|t| t.file_path == file.path)
-                        .collect();
-                    let anchors = botcrit_ui::view::map_threads_to_diff(parsed, &file_threads);
-                    let anchored_ids: std::collections::HashSet<&str> =
-                        anchors.iter().map(|a| a.thread_id.as_str()).collect();
-                    let has_orphaned = file_threads
-                        .iter()
-                        .any(|t| !anchored_ids.contains(t.thread_id.as_str()));
-
-                    if has_orphaned {
-                        let commit = to.unwrap_or(from);
-                        if let Some(lines) = vcs::get_file_content(repo, &file.path, commit) {
-                            file_highlighted_lines =
-                                compute_file_highlights(&lines, &file.path, &model.highlighter);
-                            file_content = Some(botcrit_ui::model::FileContent { lines });
-                        }
-                    }
-
-                    diff_highlights
-                } else {
-                    let commit = to.unwrap_or(from);
-                    if let Some(lines) = vcs::get_file_content(repo, &file.path, commit) {
-                        file_content = Some(botcrit_ui::model::FileContent { lines });
-                    }
-                    if let Some(content) = &file_content {
-                        compute_file_highlights(&content.lines, &file.path, &model.highlighter)
-                    } else {
-                        Vec::new()
-                    }
-                };
-
-                model.file_cache.insert(
-                    file.path.clone(),
-                    botcrit_ui::model::FileCacheEntry {
-                        diff,
-                        file_content,
-                        highlighted_lines,
-                        file_highlighted_lines,
-                    },
-                );
-            }
-            model.sync_active_file_cache();
-        }
+        populate_file_cache(model, data.files);
     }
 }
 
-fn handle_data_loading(model: &mut Model, client: &dyn CritClient, repo_path: Option<&std::path::Path>) {
+fn handle_data_loading(model: &mut Model, client: &dyn CritClient, _repo_path: Option<&std::path::Path>) {
     // Load review details when entering detail screen
     if model.screen == Screen::ReviewDetail && model.current_review.is_none() {
         let reviews = model.filtered_reviews();
@@ -814,80 +796,16 @@ fn handle_data_loading(model: &mut Model, client: &dyn CritClient, repo_path: Op
                 model.current_review = Some(data.detail);
                 model.threads = data.threads;
                 model.all_comments = data.comments;
+                populate_file_cache(model, data.files);
             }
         }
     }
 
-    // Load diff or file content for all files in the review stream
-    if model.screen == Screen::ReviewDetail {
-        if let (Some(repo), Some(review)) = (repo_path, &model.current_review) {
-            let files = model.files_with_threads();
-            let from = &review.initial_commit;
-            let to = review.final_commit.as_deref();
-
-            for file in &files {
-                if model.file_cache.contains_key(&file.path) {
-                    continue;
-                }
-
-                let diff = vcs::get_file_diff(repo, &file.path, from, to);
-                let mut file_content = None;
-                let mut file_highlighted_lines = Vec::new();
-                let highlighted_lines = if let Some(parsed) = &diff {
-                    let diff_highlights =
-                        compute_diff_highlights(parsed, &file.path, &model.highlighter);
-
-                    // Check if any threads for this file will be orphaned
-                    let file_threads: Vec<&botcrit_ui::db::ThreadSummary> = model
-                        .threads
-                        .iter()
-                        .filter(|t| t.file_path == file.path)
-                        .collect();
-                    let anchors = botcrit_ui::view::map_threads_to_diff(parsed, &file_threads);
-                    let anchored_ids: std::collections::HashSet<&str> =
-                        anchors.iter().map(|a| a.thread_id.as_str()).collect();
-                    let has_orphaned = file_threads
-                        .iter()
-                        .any(|t| !anchored_ids.contains(t.thread_id.as_str()));
-
-                    if has_orphaned {
-                        let commit = to.unwrap_or(from);
-                        if let Some(lines) = vcs::get_file_content(repo, &file.path, commit) {
-                            file_highlighted_lines =
-                                compute_file_highlights(&lines, &file.path, &model.highlighter);
-                            file_content = Some(botcrit_ui::model::FileContent { lines });
-                        }
-                    }
-
-                    diff_highlights
-                } else {
-                    let commit = to.unwrap_or(from);
-                    if let Some(lines) = vcs::get_file_content(repo, &file.path, commit) {
-                        file_content = Some(botcrit_ui::model::FileContent { lines });
-                    }
-                    if let Some(content) = &file_content {
-                        compute_file_highlights(&content.lines, &file.path, &model.highlighter)
-                    } else {
-                        Vec::new()
-                    }
-                };
-
-                model.file_cache.insert(
-                    file.path.clone(),
-                    botcrit_ui::model::FileCacheEntry {
-                        diff,
-                        file_content,
-                        highlighted_lines,
-                        file_highlighted_lines,
-                    },
-                );
-            }
-
-            model.sync_active_file_cache();
-
-            // Apply pending CLI navigation targets now that data is loaded
-            apply_pending_navigation(model);
-        }
+    // If we're on the detail screen and file cache is empty but we have review data,
+    // the cache was already populated by load_review_data above (or a previous call).
+    if model.screen == Screen::ReviewDetail && model.current_review.is_some() {
+        model.sync_active_file_cache();
+        apply_pending_navigation(model);
     }
 
     ensure_default_expanded_thread(model);

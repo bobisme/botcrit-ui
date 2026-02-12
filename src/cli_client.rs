@@ -7,7 +7,10 @@ use std::process::Command;
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 
-use crate::db::{Comment, CritClient, ReviewData, ReviewDetail, ReviewSummary, ThreadSummary};
+use crate::db::{
+    Comment, CritClient, FileContentData, FileData, ReviewData, ReviewDetail, ReviewSummary,
+    ThreadSummary,
+};
 
 /// Client that invokes the `crit` binary as a subprocess.
 pub struct CliClient {
@@ -59,6 +62,22 @@ struct ReviewsListResponse {
 struct CombinedResponse {
     review: CombinedReview,
     threads: Vec<CombinedThread>,
+    #[serde(default)]
+    files: Vec<CombinedFile>,
+}
+
+/// Per-file diff/content from `--include-diffs`.
+#[derive(Deserialize)]
+struct CombinedFile {
+    path: String,
+    diff: Option<String>,
+    content: Option<CombinedFileContent>,
+}
+
+#[derive(Deserialize)]
+struct CombinedFileContent {
+    start_line: i64,
+    lines: Vec<String>,
 }
 
 /// Review detail from the combined endpoint.
@@ -137,7 +156,7 @@ impl CritClient for CliClient {
     }
 
     fn load_review_data(&self, review_id: &str) -> Result<Option<ReviewData>> {
-        let stdout = self.run_crit(&["review", review_id])?;
+        let stdout = self.run_crit(&["review", review_id, "--include-diffs"])?;
         let resp: CombinedResponse =
             serde_json::from_slice(&stdout).context("Failed to parse `crit review` JSON")?;
 
@@ -173,10 +192,24 @@ impl CritClient for CliClient {
             });
         }
 
+        let files = resp
+            .files
+            .into_iter()
+            .map(|f| FileData {
+                path: f.path,
+                diff: f.diff,
+                content: f.content.map(|c| FileContentData {
+                    start_line: c.start_line,
+                    lines: c.lines,
+                }),
+            })
+            .collect();
+
         Ok(Some(ReviewData {
             detail,
             threads,
             comments,
+            files,
         }))
     }
 

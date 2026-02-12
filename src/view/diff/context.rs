@@ -99,18 +99,22 @@ pub(super) fn build_context_items(
     lines: &[String],
     threads: &[&ThreadSummary],
     exclude_ranges: &[(i64, i64)],
+    start_line: i64,
 ) -> Vec<DisplayItem> {
-    let ranges = calculate_context_ranges(threads, lines.len(), exclude_ranges);
+    #[allow(clippy::cast_possible_wrap)]
+    let total_lines = start_line + lines.len() as i64 - 1;
+    let ranges = calculate_context_ranges(threads, total_lines as usize, exclude_ranges);
     if ranges.is_empty() {
         return vec![DisplayItem::Separator(0)];
     }
 
-    build_context_items_from_ranges(lines, &ranges)
+    build_context_items_from_ranges(lines, &ranges, start_line)
 }
 
 pub(super) fn build_context_items_from_ranges(
     lines: &[String],
     ranges: &[LineRange],
+    start_line: i64,
 ) -> Vec<DisplayItem> {
     if ranges.is_empty() {
         return Vec::new();
@@ -128,7 +132,7 @@ pub(super) fn build_context_items_from_ranges(
         }
 
         for line_num in range.start..=range.end {
-            let idx = (line_num - 1) as usize;
+            let idx = (line_num - start_line) as usize;
             if idx < lines.len() {
                 display_items.push(DisplayItem::Line {
                     line_num,
@@ -192,7 +196,7 @@ pub(super) fn emit_orphaned_context_section(
         draw_diff_base_line(buf, area, y, dt.context_bg);
     });
 
-    let display_items = build_context_items_from_ranges(context.lines, ranges);
+    let display_items = build_context_items_from_ranges(context.lines, ranges, context.start_line);
     for item in &display_items {
         if let DisplayItem::Line { line_num, .. } = item {
             if let Some(prev) = state.last_line_num.as_ref() {
@@ -225,7 +229,7 @@ pub(super) fn emit_orphaned_context_section(
         match item {
             DisplayItem::Separator(_) => {
                 cursor.emit(|buf, y, theme| {
-                    render_context_item_block(buf, area, y, item, theme, show_thread_bar, context.highlights, false, false);
+                    render_context_item_block(buf, area, y, item, theme, show_thread_bar, context.highlights, false, false, context.start_line);
                 });
             }
             DisplayItem::Line {
@@ -233,7 +237,7 @@ pub(super) fn emit_orphaned_context_section(
                 content: line_content,
             } => {
                 if wrap {
-                    let line_index = (*line_num).saturating_sub(1) as usize;
+                    let line_index = (*line_num - context.start_line) as usize;
                     let highlight = context.highlights.get(line_index);
                     let line_num_width = SBS_LINE_NUM_WIDTH;
                     let cw = orphaned_context_width(area).saturating_sub(line_num_width) as usize;
@@ -253,7 +257,7 @@ pub(super) fn emit_orphaned_context_section(
                     let is_selected = cursor.is_selected_at(1);
                     cursor.emit(|buf, y, theme| {
                         render_context_item_block(
-                            buf, area, y, item, theme, show_thread_bar, context.highlights, is_cursor, is_selected,
+                            buf, area, y, item, theme, show_thread_bar, context.highlights, is_cursor, is_selected, context.start_line,
                         );
                     });
                 }
@@ -316,6 +320,7 @@ pub(super) fn render_context_item_block(
     highlighted_lines: &[Vec<HighlightSpan>],
     is_cursor: bool,
     is_selected: bool,
+    start_line: i64,
 ) {
     let dt = &theme.diff;
     match item {
@@ -361,7 +366,7 @@ pub(super) fn render_context_item_block(
             let content_x = ln_x + line_num_width;
             let content_width = orphaned_context_width(area).saturating_sub(line_num_width);
             buffer.fill_rect(content_x, y, content_width, 1, dt.context_bg);
-            let highlight = highlighted_lines.get((*line_num as usize).saturating_sub(1));
+            let highlight = highlighted_lines.get((*line_num - start_line) as usize);
             draw_highlighted_text(
                 buffer, content_x, y, content_width,
                 &HighlightContent {

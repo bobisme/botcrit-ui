@@ -137,7 +137,7 @@ impl CritClient for CliClient {
     }
 
     fn load_review_data(&self, review_id: &str) -> Result<Option<ReviewData>> {
-        let stdout = self.run_crit(&["review", review_id])?;
+        let stdout = self.run_crit(&["review", review_id, "--no-context"])?;
         let resp: CombinedResponse =
             serde_json::from_slice(&stdout).context("Failed to parse `crit review` JSON")?;
 

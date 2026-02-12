@@ -1,11 +1,13 @@
 //! Comment block rendering (thread comment bubbles in the diff stream).
 
+use opentui::Style;
+
 use crate::db::ThreadSummary;
-use crate::layout::{BLOCK_MARGIN, BLOCK_PADDING};
+use crate::layout::BLOCK_PADDING;
 use crate::text::wrap_text;
 use crate::view::components::Rect;
 
-use super::helpers::{comment_block_area, comment_content_area, draw_comment_bar, draw_plain_line_with_right, PlainLineContent};
+use super::helpers::{comment_block_area, comment_content_area, draw_plain_line_with_right, PlainLineContent};
 use super::StreamCursor;
 
 #[derive(Clone)]
@@ -101,7 +103,6 @@ pub(super) fn comment_block_rows(
     let content_end = content_start + content_lines.len();
     content_end
         .saturating_add(BLOCK_PADDING)
-        .saturating_add(BLOCK_MARGIN)
 }
 
 pub(super) fn emit_comment_block(
@@ -122,7 +123,7 @@ pub(super) fn emit_comment_block(
     let content_lines = build_comment_lines(thread, comments, content_width);
 
     let top_margin = 0usize;
-    let bottom_margin = BLOCK_MARGIN;
+    let bottom_margin = 0usize;
     let content_start = top_margin + BLOCK_PADDING;
     let content_end = content_start + content_lines.len();
     let total_rows = content_end
@@ -136,12 +137,28 @@ pub(super) fn emit_comment_block(
             } else {
                 theme.panel_bg
             };
+            let border_style = Style::fg(theme.background).with_bg(block_bg);
+            let bar_style = Style::fg(theme.background).with_bg(block_bg);
+            let rc = block.x + block.width.saturating_sub(1);
+            let rc2 = block.x + block.width.saturating_sub(2);
             if row < top_margin {
                 buf.fill_rect(area.x, y, area.width, 1, theme.background);
+            } else if row == top_margin {
+                // Top border:  ▛▀…▀▜  (outer corners match window bg)
+                buf.fill_rect(area.x, y, area.width, 1, theme.background);
+                buf.fill_rect(block.x + 1, y, block.width.saturating_sub(2), 1, block_bg);
+                buf.draw_text(block.x + 1, y, "▛", border_style);
+                for col in 2..block.width.saturating_sub(2) {
+                    buf.draw_text(block.x + col, y, "▀", border_style);
+                }
+                buf.draw_text(rc2, y, "▜", border_style);
             } else if row < content_start {
                 buf.fill_rect(area.x, y, area.width, 1, theme.background);
                 buf.fill_rect(block.x, y, block.width, 1, block_bg);
-                draw_comment_bar(buf, block.x, y, block_bg, theme);
+                buf.draw_text(block.x, y, "▌", bar_style);
+                buf.draw_text(block.x + 1, y, "▌", bar_style);
+                buf.draw_text(rc2, y, "▐", bar_style);
+                buf.draw_text(rc, y, "▐", bar_style);
             } else if row < content_end {
                 let line = &content_lines[row - content_start];
                 let (left_style, right_style) = match line.kind {
@@ -160,7 +177,10 @@ pub(super) fn emit_comment_block(
                 };
                 buf.fill_rect(area.x, y, area.width, 1, theme.background);
                 buf.fill_rect(block.x, y, block.width, 1, block_bg);
-                draw_comment_bar(buf, block.x, y, block_bg, theme);
+                buf.draw_text(block.x, y, "▌", bar_style);
+                buf.draw_text(block.x + 1, y, "▌", bar_style);
+                buf.draw_text(rc2, y, "▐", bar_style);
+                buf.draw_text(rc, y, "▐", bar_style);
                 draw_plain_line_with_right(
                     buf,
                     padded,
@@ -175,8 +195,21 @@ pub(super) fn emit_comment_block(
                 );
             } else if row < content_end + BLOCK_PADDING {
                 buf.fill_rect(area.x, y, area.width, 1, theme.background);
-                buf.fill_rect(block.x, y, block.width, 1, block_bg);
-                draw_comment_bar(buf, block.x, y, block_bg, theme);
+                if row == content_end + BLOCK_PADDING - 1 {
+                    // Bottom border:  ▙▄…▄▟  (outer corners match window bg)
+                    buf.fill_rect(block.x + 1, y, block.width.saturating_sub(2), 1, block_bg);
+                    buf.draw_text(block.x + 1, y, "▙", border_style);
+                    for col in 2..block.width.saturating_sub(2) {
+                        buf.draw_text(block.x + col, y, "▄", border_style);
+                    }
+                    buf.draw_text(rc2, y, "▟", border_style);
+                } else {
+                    buf.fill_rect(block.x, y, block.width, 1, block_bg);
+                    buf.draw_text(block.x, y, "▌", bar_style);
+                    buf.draw_text(block.x + 1, y, "▌", bar_style);
+                    buf.draw_text(rc2, y, "▐", bar_style);
+                    buf.draw_text(rc, y, "▐", bar_style);
+                }
             } else {
                 buf.fill_rect(area.x, y, area.width, 1, theme.background);
             }

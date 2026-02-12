@@ -11,7 +11,7 @@ use crate::view::components::Rect;
 use super::analysis::{build_thread_ranges, line_in_thread_ranges};
 use super::comments::{comment_block_rows, emit_comment_block};
 use super::helpers::{
-    diff_content_x, draw_cursor_bar, draw_diff_base_line, draw_thread_range_bar,
+    draw_diff_base_line,
     orphaned_context_width, orphaned_context_x,
 };
 use super::text_util::{draw_highlighted_text, draw_wrapped_line, wrap_content, HighlightContent, WrappedLine};
@@ -326,9 +326,6 @@ pub(super) fn render_context_item_block(
     match item {
         DisplayItem::Separator(gap) => {
             draw_diff_base_line(buffer, area, y, dt.context_bg);
-            if show_thread_bar {
-                draw_thread_range_bar(buffer, diff_content_x(area), y, theme.panel_bg, theme);
-            }
             let sep_text = if *gap > 0 {
                 format!("··· {gap} lines ···")
             } else {
@@ -345,12 +342,6 @@ pub(super) fn render_context_item_block(
         }
         DisplayItem::Line { line_num, content } => {
             draw_diff_base_line(buffer, area, y, dt.context_bg);
-            let thread_x = diff_content_x(area);
-            if is_cursor || is_selected {
-                draw_cursor_bar(buffer, thread_x, y, dt.context_bg, theme);
-            } else if show_thread_bar {
-                draw_thread_range_bar(buffer, thread_x, y, theme.panel_bg, theme);
-            }
 
             let ln_str = format!("{line_num:5} ");
             let line_num_width = SBS_LINE_NUM_WIDTH;
@@ -391,12 +382,6 @@ pub(super) fn render_context_line_wrapped_row(
 ) {
     let dt = &theme.diff;
     draw_diff_base_line(buffer, ctx.area, y, dt.context_bg);
-    let thread_x = diff_content_x(ctx.area);
-    if ctx.is_cursor || ctx.is_selected {
-        draw_cursor_bar(buffer, thread_x, y, dt.context_bg, theme);
-    } else if ctx.show_thread_bar {
-        draw_thread_range_bar(buffer, thread_x, y, theme.panel_bg, theme);
-    }
 
     let ln_str = format!("{line_num:5} ");
     let line_num_width = SBS_LINE_NUM_WIDTH;

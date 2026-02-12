@@ -3,11 +3,11 @@
 use opentui::{OptimizedBuffer, Style};
 
 use crate::diff::{DiffLine, DiffLineKind};
-use crate::layout::{THREAD_COL_WIDTH, UNIFIED_LINE_NUM_WIDTH};
+use crate::layout::UNIFIED_LINE_NUM_WIDTH;
 use crate::syntax::HighlightSpan;
 use crate::theme::Theme;
 
-use super::helpers::{diff_content_width, diff_content_x, draw_cursor_bar, draw_diff_base_line, draw_thread_range_bar};
+use super::helpers::{diff_content_width, diff_content_x, draw_diff_base_line};
 use super::text_util::{draw_highlighted_text, draw_wrapped_line, HighlightContent, WrappedLine};
 use super::{DisplayLine, LineRenderCtx};
 
@@ -34,28 +34,19 @@ pub(super) fn render_unified_diff_line_block(
                 DiffLineKind::Removed => dt.removed_bg,
                 DiffLineKind::Context => dt.context_bg,
             };
-            draw_diff_base_line(buffer, ctx.area, y, line_bg);
+            draw_diff_base_line(buffer, ctx.area, y, dt.context_bg);
 
-            let thread_x = diff_content_x(ctx.area);
-            let thread_col_width = THREAD_COL_WIDTH;
-            let _ = ctx.anchor;
-            if ctx.is_cursor || ctx.is_selected {
-                draw_cursor_bar(buffer, thread_x, y, line_bg, theme);
-            } else if ctx.show_thread_bar {
-                draw_thread_range_bar(buffer, thread_x, y, theme.panel_bg, theme);
-            } else {
-                buffer.fill_rect(thread_x, y, thread_col_width, 1, line_bg);
-            }
+            let content_x = diff_content_x(ctx.area);
 
             let line_num_width = UNIFIED_LINE_NUM_WIDTH;
-            let content_start = thread_x + thread_col_width + line_num_width;
+            let content_start = content_x + line_num_width;
             let content_width =
-                diff_content_width(ctx.area).saturating_sub(thread_col_width + line_num_width);
+                diff_content_width(ctx.area).saturating_sub(line_num_width);
             render_diff_line(
                 buffer,
                 y,
                 &UnifiedLineLayout {
-                    x: thread_x + thread_col_width,
+                    x: content_x,
                     content_x: content_start,
                     content_width,
                 },
@@ -95,21 +86,12 @@ pub(super) fn render_unified_diff_line_wrapped_row(
         DiffLineKind::Context => (dt.context_bg, dt.context_bg, dt.context, " ", dt.context),
     };
 
-    draw_diff_base_line(buffer, ctx.area, y, bg);
+    draw_diff_base_line(buffer, ctx.area, y, dt.context_bg);
 
-    let thread_x = diff_content_x(ctx.area);
-    let thread_col_width = THREAD_COL_WIDTH;
-    let _ = (ctx.anchor, row);
-    if ctx.is_cursor || ctx.is_selected {
-        draw_cursor_bar(buffer, thread_x, y, bg, theme);
-    } else if ctx.show_thread_bar {
-        draw_thread_range_bar(buffer, thread_x, y, theme.panel_bg, theme);
-    } else {
-        buffer.fill_rect(thread_x, y, thread_col_width, 1, bg);
-    }
+    let content_x = diff_content_x(ctx.area);
 
     let line_num_width = UNIFIED_LINE_NUM_WIDTH;
-    let line_num_x = thread_x + thread_col_width;
+    let line_num_x = content_x;
     buffer.fill_rect(line_num_x, y, line_num_width, 1, line_num_bg);
     if row == 0 {
         let old_ln = line
@@ -146,7 +128,7 @@ pub(super) fn render_unified_diff_line_wrapped_row(
     }
 
     let content_start = line_num_x + line_num_width;
-    let content_width = diff_content_width(ctx.area).saturating_sub(thread_col_width + line_num_width);
+    let content_width = diff_content_width(ctx.area).saturating_sub(line_num_width);
     buffer.fill_rect(content_start, y, content_width, 1, bg);
     if row == 0 {
         buffer.draw_text(content_start, y, sign, Style::fg(sign_color).with_bg(bg));

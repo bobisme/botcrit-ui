@@ -17,21 +17,21 @@ pub const SIDE_BY_SIDE_MIN_WIDTH: u32 = 100;
 
 // --- Diff constants ---
 
-pub const DIFF_H_PAD: u32 = 0;
-pub const DIFF_MARGIN: u32 = 2;
+pub const DIFF_H_PAD: u32 = 2;
+pub const DIFF_MARGIN: u32 = 0;
 pub const ORPHANED_CONTEXT_LEFT_PAD: u32 = 2;
 
 // --- Thread / line-number column widths ---
 
-pub const THREAD_COL_WIDTH: u32 = 2;
+pub const THREAD_COL_WIDTH: u32 = 0;
 pub const UNIFIED_LINE_NUM_WIDTH: u32 = 12;
 pub const SBS_LINE_NUM_WIDTH: u32 = 6;
 pub const CONTEXT_LINE_NUM_WIDTH: u32 = 6;
 
 // --- Comment layout ---
 
-pub const COMMENT_H_MARGIN: u32 = 2;
-pub const COMMENT_H_PAD: u32 = 2;
+pub const COMMENT_H_MARGIN: u32 = 4;
+pub const COMMENT_H_PAD: u32 = 1;
 
 // --- Context lines around threads ---
 

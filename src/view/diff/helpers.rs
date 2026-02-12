@@ -94,11 +94,11 @@ pub(super) const fn diff_content_width(area: Rect) -> u32 {
 }
 
 pub(super) const fn orphaned_context_x(area: Rect) -> u32 {
-    diff_content_x(area).saturating_add(ORPHANED_CONTEXT_LEFT_PAD)
+    area.x + ORPHANED_CONTEXT_LEFT_PAD
 }
 
 pub(super) const fn orphaned_context_width(area: Rect) -> u32 {
-    diff_content_width(area).saturating_sub(ORPHANED_CONTEXT_LEFT_PAD)
+    area.width.saturating_sub(ORPHANED_CONTEXT_LEFT_PAD)
 }
 
 pub(super) fn draw_diff_base_line(
@@ -163,12 +163,11 @@ pub(super) const fn comment_block_area(area: Rect) -> Rect {
     }
 }
 
-/// Padded content area inside a comment (after bar + margin + padding).
+/// Padded content area inside a comment block (after double bar + padding each side).
 pub(super) const fn comment_content_area(block: Rect) -> Rect {
-    // block already has bar at block.x; content starts 1 (bar) + pad from block.x
     Rect {
-        x: block.x + 1 + COMMENT_H_PAD,
-        width: block.width.saturating_sub(1 + COMMENT_H_PAD * 2),
+        x: block.x + 2 + COMMENT_H_PAD,
+        width: block.width.saturating_sub(4 + COMMENT_H_PAD * 2),
         ..block
     }
 }

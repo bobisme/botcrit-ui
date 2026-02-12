@@ -3,11 +3,11 @@
 use opentui::{OptimizedBuffer, Rgba, Style};
 
 use crate::diff::DiffLineKind;
-use crate::layout::{SBS_LINE_NUM_WIDTH, THREAD_COL_WIDTH};
+use crate::layout::SBS_LINE_NUM_WIDTH;
 use crate::syntax::HighlightSpan;
 use crate::theme::Theme;
 
-use super::helpers::{diff_content_width, diff_content_x, draw_cursor_bar, draw_diff_base_line, draw_thread_range_bar};
+use super::helpers::{diff_content_width, diff_content_x, draw_diff_base_line};
 use super::text_util::{draw_highlighted_text, draw_wrapped_line, HighlightContent, WrappedLine};
 use super::{LineRenderCtx, SideBySideLine, SideLine};
 
@@ -41,27 +41,18 @@ pub(super) fn render_side_by_side_line_block(
     let base_bg = dt.context_bg;
     draw_diff_base_line(buffer, ctx.area, y, base_bg);
 
-    let thread_x = diff_content_x(ctx.area);
-    let thread_col_width = THREAD_COL_WIDTH;
-    let _ = ctx.anchor;
-    if ctx.is_cursor || ctx.is_selected {
-        draw_cursor_bar(buffer, thread_x, y, base_bg, theme);
-    } else if ctx.show_thread_bar {
-        draw_thread_range_bar(buffer, thread_x, y, theme.panel_bg, theme);
-    } else {
-        buffer.fill_rect(thread_x, y, thread_col_width, 1, base_bg);
-    }
+    let content_x = diff_content_x(ctx.area);
 
     let divider_width: u32 = 0;
     let line_num_width = SBS_LINE_NUM_WIDTH;
-    let available = diff_content_width(ctx.area).saturating_sub(thread_col_width + divider_width);
+    let available = diff_content_width(ctx.area).saturating_sub(divider_width);
     let half_width = available / 2;
     let left_content_width = half_width.saturating_sub(line_num_width);
     let right_content_width = half_width.saturating_sub(line_num_width);
 
-    let left_ln_x = thread_x + thread_col_width;
+    let left_ln_x = content_x;
     let left_content_x = left_ln_x + line_num_width;
-    let divider_x = thread_x + thread_col_width + half_width;
+    let divider_x = content_x + half_width;
     let right_ln_x = divider_x + divider_width;
     let right_content_x = right_ln_x + line_num_width;
 
@@ -102,27 +93,18 @@ pub(super) fn render_side_by_side_line_wrapped_row(
     let base_bg = dt.context_bg;
     draw_diff_base_line(buffer, ctx.area, y, base_bg);
 
-    let thread_x = diff_content_x(ctx.area);
-    let thread_col_width = THREAD_COL_WIDTH;
-    let _ = (ctx.anchor, row);
-    if ctx.is_cursor || ctx.is_selected {
-        draw_cursor_bar(buffer, thread_x, y, base_bg, theme);
-    } else if ctx.show_thread_bar {
-        draw_thread_range_bar(buffer, thread_x, y, theme.panel_bg, theme);
-    } else {
-        buffer.fill_rect(thread_x, y, thread_col_width, 1, base_bg);
-    }
+    let content_x = diff_content_x(ctx.area);
 
     let divider_width: u32 = 0;
     let line_num_width = SBS_LINE_NUM_WIDTH;
-    let available = diff_content_width(ctx.area).saturating_sub(thread_col_width + divider_width);
+    let available = diff_content_width(ctx.area).saturating_sub(divider_width);
     let half_width = available / 2;
     let left_content_width = half_width.saturating_sub(line_num_width);
     let right_content_width = half_width.saturating_sub(line_num_width);
 
-    let left_ln_x = thread_x + thread_col_width;
+    let left_ln_x = content_x;
     let left_content_x = left_ln_x + line_num_width;
-    let divider_x = thread_x + thread_col_width + half_width;
+    let divider_x = content_x + half_width;
     let right_ln_x = divider_x + divider_width;
     let right_content_x = right_ln_x + line_num_width;
 

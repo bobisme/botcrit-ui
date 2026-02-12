@@ -2,7 +2,7 @@
 
 use crate::command::{command_id_to_message, get_commands};
 use crate::message::Message;
-use crate::model::{DiffViewMode, EditorRequest, Focus, Model, PaletteMode, ReviewFilter, Screen};
+use crate::model::{CommentRequest, DiffViewMode, EditorRequest, Focus, Model, PaletteMode, ReviewFilter, Screen};
 use crate::stream::{active_file_index, compute_stream_layout, file_scroll_offset, StreamLayoutParams};
 use crate::layout::visible_stream_rows;
 use crate::{config, theme, Highlighter};
@@ -667,6 +667,7 @@ fn update_system_theme(model: &mut Model, msg: &Message) {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn update(model: &mut Model, msg: Message) {
     match msg {
         Message::ListUp | Message::ListDown | Message::ListPageUp | Message::ListPageDown
@@ -704,6 +705,10 @@ pub fn update(model: &mut Model, msg: Message) {
         | Message::CommandPaletteInputBackspace | Message::CommandPaletteDeleteWord
         | Message::CommandPaletteExecute => {
             update_command_palette(model, msg);
+        }
+
+        Message::StartComment => {
+            handle_start_comment(model);
         }
 
         Message::EnterCommentMode | Message::CommentInput(_) | Message::CommentInputBackspace
@@ -781,6 +786,79 @@ pub fn update(model: &mut Model, msg: Message) {
 
         Message::Tick | Message::Noop => {}
     }
+}
+
+fn handle_start_comment(model: &mut Model) {
+    let Some(review) = &model.current_review else {
+        return;
+    };
+    let review_id = review.review_id.clone();
+    let files = model.files_with_threads();
+    let Some(file) = files.get(model.file_index) else {
+        return;
+    };
+    let file_path = file.path.clone();
+
+    if model.visual_mode {
+        // Visual selection → new thread
+        let sel_start = model.visual_anchor.min(model.diff_cursor);
+        let sel_end = model.visual_anchor.max(model.diff_cursor);
+
+        let line_map = model.line_map.borrow();
+        let mut min_line = i64::MAX;
+        let mut max_line = i64::MIN;
+        for row in sel_start..=sel_end {
+            if let Some(&new_line) = line_map.get(&row) {
+                min_line = min_line.min(new_line);
+                max_line = max_line.max(new_line);
+            }
+        }
+        drop(line_map);
+
+        if min_line > max_line {
+            // No diff lines in selection
+            return;
+        }
+
+        let end_line = if max_line == min_line {
+            None
+        } else {
+            Some(max_line)
+        };
+
+        model.visual_mode = false;
+        model.pending_comment_request = Some(CommentRequest {
+            review_id,
+            file_path,
+            start_line: min_line,
+            end_line,
+            thread_id: None,
+            existing_comments: Vec::new(),
+        });
+    } else {
+        // No visual selection → add comment to expanded thread
+        let Some(thread_id) = model.expanded_thread.clone() else {
+            return;
+        };
+        let Some(thread) = model.threads.iter().find(|t| t.thread_id == thread_id) else {
+            return;
+        };
+        let existing_comments = model
+            .all_comments
+            .get(&thread_id)
+            .cloned()
+            .unwrap_or_default();
+
+        model.pending_comment_request = Some(CommentRequest {
+            review_id,
+            file_path: thread.file_path.clone(),
+            start_line: thread.selection_start,
+            end_line: thread.selection_end,
+            thread_id: Some(thread_id),
+            existing_comments,
+        });
+    }
+    model.needs_redraw = true;
 }
 
 fn sync_file_index_from_sidebar(model: &mut Model) {

@@ -396,6 +396,7 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
             max_stream_row: &model.max_stream_row,
             description,
             selection,
+            line_map: &model.line_map,
         },
     );
 
@@ -462,11 +463,13 @@ fn render_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         Focus::DiffPane if model.visual_mode => {
             all_hints.extend([
                 HotkeyHint::new("Select", "j/k"),
+                HotkeyHint::new("Comment", "a"),
                 HotkeyHint::new("Exit", "V/Esc"),
             ]);
         }
         Focus::DiffPane => {
             all_hints.extend([
+                HotkeyHint::new("Comment", "a"),
                 HotkeyHint::new("Select", "V"),
                 HotkeyHint::new("View", "v"),
                 HotkeyHint::new("Wrap", "w"),

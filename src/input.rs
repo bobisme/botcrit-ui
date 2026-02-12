@@ -276,6 +276,7 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
             KeyCode::Char('k') | KeyCode::Up => Message::CursorUp,
             KeyCode::Char('g') | KeyCode::Home => Message::CursorTop,
             KeyCode::Char('G') | KeyCode::End => Message::CursorBottom,
+            KeyCode::Char('a') => Message::StartComment,
             KeyCode::Char('V') | KeyCode::Esc => Message::VisualToggle,
             _ => Message::Noop,
         },
@@ -304,6 +305,7 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
                     |id| Message::ExpandThread(id.clone()),
                 )
             }
+            KeyCode::Char('a') => Message::StartComment,
             KeyCode::Char('V') => Message::VisualToggle,
             KeyCode::Char('[') => Message::PrevFile,
             KeyCode::Char(']') => Message::NextFile,

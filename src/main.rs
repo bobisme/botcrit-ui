@@ -24,7 +24,7 @@ use opentui::{
 
 use botcrit_ui::config::{load_ui_config, save_ui_config};
 use botcrit_ui::input::map_event_to_message;
-use botcrit_ui::model::{DiffViewMode, EditorRequest};
+use botcrit_ui::model::{CommentRequest, DiffViewMode, EditorRequest};
 use botcrit_ui::stream::{
     compute_stream_layout, file_scroll_offset, StreamLayoutParams, SIDE_BY_SIDE_MIN_WIDTH,
 };
@@ -380,6 +380,43 @@ fn process_event(event: &Event, model: &mut Model, ctx: &mut EventContext<'_>) -
         ctx.renderer.invalidate();
     }
 
+    if let Some(request) = model.pending_comment_request.take() {
+        let (prev_width, prev_height) = ctx.renderer.size();
+        let prev_width = prev_width as u16;
+        let prev_height = prev_height as u16;
+        drop(std::mem::replace(
+            ctx.renderer,
+            Renderer::new_with_options(1, 1, ctx.options).unwrap(),
+        ));
+        ctx.raw_guard.take();
+        ctx.wrap_guard.take();
+        ctx.cursor_guard.take();
+
+        let comment_result = run_comment_editor(ctx.repo_path, &request);
+
+        // Persist the comment if editor returned content
+        if let Ok(Some(body)) = &comment_result {
+            if let Some(client) = ctx.client.as_ref() {
+                let persist_result = persist_comment(client.as_ref(), ctx.repo_path, &request, body);
+                if persist_result.is_ok() {
+                    // Refresh review data to show the new comment
+                    reload_review_data(model, client.as_ref(), ctx.repo_path);
+                }
+            }
+        }
+
+        *ctx.raw_guard = Some(enable_raw_mode().context("Failed to enable raw mode")?);
+        let (width, height) = terminal_size().unwrap_or((prev_width, prev_height));
+        *ctx.renderer = Renderer::new_with_options(width.into(), height.into(), ctx.options)
+            .context("Failed to initialize renderer")?;
+        ctx.renderer.set_background(model.theme.background);
+        *ctx.wrap_guard = Some(AutoWrapGuard::new().context("Failed to disable line wrap")?);
+        *ctx.cursor_guard = Some(CursorGuard::new().context("Failed to hide cursor")?);
+        model.resize(width, height);
+        model.needs_redraw = true;
+        ctx.renderer.invalidate();
+    }
+
     Ok(())
 }
 
@@ -575,6 +612,184 @@ fn open_file_in_editor(repo_path: Option<&Path>, request: EditorRequest) -> Resu
     cmd.arg(file_path);
     let _ = cmd.status();
     Ok(())
+}
+
+/// Open $EDITOR with a temp file for writing a comment.
+/// Returns `Ok(Some(body))` if the user wrote content, `Ok(None)` if cancelled.
+fn run_comment_editor(_repo_path: Option<&Path>, request: &CommentRequest) -> Result<Option<String>> {
+    use std::io::Read;
+
+    let dir = std::env::temp_dir();
+    let tmp_path = dir.join(format!("crit-comment-{}.md", std::process::id()));
+
+    // Build the temp file with context
+    {
+        let mut f = std::fs::File::create(&tmp_path)
+            .context("Failed to create temp file for comment")?;
+
+        // Write context as comments (lines starting with # are stripped later)
+        writeln!(f, "# File: {}", request.file_path)?;
+        let line_range = match request.end_line {
+            Some(end) if end != request.start_line => format!("{}-{}", request.start_line, end),
+            _ => request.start_line.to_string(),
+        };
+        writeln!(f, "# Lines: {line_range}")?;
+        if let Some(thread_id) = &request.thread_id {
+            writeln!(f, "# Thread: {thread_id}")?;
+        }
+        if !request.existing_comments.is_empty() {
+            writeln!(f, "#")?;
+            writeln!(f, "# Existing comments:")?;
+            for c in &request.existing_comments {
+                writeln!(f, "# {}: {}", c.author, c.body)?;
+            }
+        }
+        writeln!(f, "#")?;
+        writeln!(f, "# Write your comment below. Lines starting with # are ignored.")?;
+        writeln!(f, "# Save and exit to submit. Leave empty to cancel.")?;
+        writeln!(f)?;
+        f.flush()?;
+    }
+
+    // Determine editor
+    let editor = std::env::var("EDITOR")
+        .or_else(|_| std::env::var("VISUAL"))
+        .unwrap_or_else(|_| "vi".to_string());
+
+    let status = Command::new(&editor).arg(&tmp_path).status();
+
+    // Read the result
+    let body = if let Ok(exit) = status {
+        if exit.success() {
+            let mut content = String::new();
+            std::fs::File::open(&tmp_path)
+                .and_then(|mut f| f.read_to_string(&mut content))
+                .context("Failed to read temp file after editor")?;
+
+            // Strip comment lines and trim
+            let body: String = content
+                .lines()
+                .filter(|line| !line.starts_with('#'))
+                .collect::<Vec<_>>()
+                .join("\n")
+                .trim()
+                .to_string();
+
+            if body.is_empty() { None } else { Some(body) }
+        } else {
+            None // Editor exited non-zero → cancel
+        }
+    } else {
+        None
+    };
+
+    // Clean up
+    let _ = std::fs::remove_file(&tmp_path);
+
+    Ok(body)
+}
+
+/// Persist a comment via the crit CLI (create thread if needed, then add comment).
+fn persist_comment(
+    client: &dyn CritClient,
+    _repo_path: Option<&Path>,
+    request: &CommentRequest,
+    body: &str,
+) -> Result<()> {
+    if let Some(thread_id) = &request.thread_id {
+        // Add comment to existing thread
+        client.add_comment(thread_id, body)?;
+    } else {
+        // Create new thread, then add comment
+        let thread_id = client.create_thread(
+            &request.review_id,
+            &request.file_path,
+            request.start_line,
+            request.end_line,
+        )?;
+        client.add_comment(&thread_id, body)?;
+    }
+    Ok(())
+}
+
+/// Reload review data after a comment is persisted.
+fn reload_review_data(model: &mut Model, client: &dyn CritClient, repo_path: Option<&Path>) {
+    let Some(review) = &model.current_review else {
+        return;
+    };
+    let review_id = review.review_id.clone();
+    if let Ok(Some(data)) = client.load_review_data(&review_id) {
+        model.current_review = Some(data.detail);
+        model.threads = data.threads;
+        model.all_comments = data.comments;
+        // Rebuild file cache for new threads
+        model.file_cache.clear();
+        if let Some(repo) = repo_path {
+            let files = model.files_with_threads();
+            let from = model
+                .current_review
+                .as_ref()
+                .map(|r| r.initial_commit.as_str())
+                .unwrap_or_default();
+            let to = model
+                .current_review
+                .as_ref()
+                .and_then(|r| r.final_commit.as_deref());
+            for file in &files {
+                let diff = vcs::get_file_diff(repo, &file.path, from, to);
+                let mut file_content = None;
+                let mut file_highlighted_lines = Vec::new();
+                let highlighted_lines = if let Some(parsed) = &diff {
+                    let diff_highlights =
+                        compute_diff_highlights(parsed, &file.path, &model.highlighter);
+
+                    let file_threads: Vec<&botcrit_ui::db::ThreadSummary> = model
+                        .threads
+                        .iter()
+                        .filter(|t| t.file_path == file.path)
+                        .collect();
+                    let anchors = botcrit_ui::view::map_threads_to_diff(parsed, &file_threads);
+                    let anchored_ids: std::collections::HashSet<&str> =
+                        anchors.iter().map(|a| a.thread_id.as_str()).collect();
+                    let has_orphaned = file_threads
+                        .iter()
+                        .any(|t| !anchored_ids.contains(t.thread_id.as_str()));
+
+                    if has_orphaned {
+                        let commit = to.unwrap_or(from);
+                        if let Some(lines) = vcs::get_file_content(repo, &file.path, commit) {
+                            file_highlighted_lines =
+                                compute_file_highlights(&lines, &file.path, &model.highlighter);
+                            file_content = Some(botcrit_ui::model::FileContent { lines });
+                        }
+                    }
+
+                    diff_highlights
+                } else {
+                    let commit = to.unwrap_or(from);
+                    if let Some(lines) = vcs::get_file_content(repo, &file.path, commit) {
+                        file_content = Some(botcrit_ui::model::FileContent { lines });
+                    }
+                    if let Some(content) = &file_content {
+                        compute_file_highlights(&content.lines, &file.path, &model.highlighter)
+                    } else {
+                        Vec::new()
+                    }
+                };
+
+                model.file_cache.insert(
+                    file.path.clone(),
+                    botcrit_ui::model::FileCacheEntry {
+                        diff,
+                        file_content,
+                        highlighted_lines,
+                        file_highlighted_lines,
+                    },
+                );
+            }
+            model.sync_active_file_cache();
+        }
+    }
 }
 
 fn handle_data_loading(model: &mut Model, client: &dyn CritClient, repo_path: Option<&std::path::Path>) {

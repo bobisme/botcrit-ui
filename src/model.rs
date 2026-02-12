@@ -84,6 +84,23 @@ pub struct EditorRequest {
     pub line: Option<u32>,
 }
 
+/// Request to open $EDITOR for writing a comment.
+#[derive(Debug, Clone)]
+pub struct CommentRequest {
+    /// Review being commented on
+    pub review_id: String,
+    /// File the comment targets
+    pub file_path: String,
+    /// Start line (new-side, 1-based)
+    pub start_line: i64,
+    /// End line (new-side, 1-based); None means single line
+    pub end_line: Option<i64>,
+    /// If Some, add comment to existing thread; if None, create new thread
+    pub thread_id: Option<String>,
+    /// Existing comments for context in the editor temp file
+    pub existing_comments: Vec<Comment>,
+}
+
 impl LayoutMode {
     /// Determine layout mode from terminal width
     #[must_use]
@@ -171,6 +188,8 @@ pub struct Model {
     pub diff_wrap: bool,
     /// Pending editor launch request
     pub pending_editor_request: Option<EditorRequest>,
+    /// Pending comment-via-$EDITOR request
+    pub pending_comment_request: Option<CommentRequest>,
 
     // === Command Palette ===
     pub command_palette_input: String,
@@ -204,6 +223,9 @@ pub struct Model {
     pub thread_positions: RefCell<HashMap<String, usize>>,
     /// Total stream rows from the last render pass (for cursor clamping)
     pub max_stream_row: Cell<usize>,
+    /// Diff line mapping captured during rendering: `stream_row` → new-side line number.
+    /// Populated for every diff line (including all wrapped rows).
+    pub line_map: RefCell<HashMap<usize, i64>>,
 
     // === Review list search ===
     pub search_input: String,
@@ -259,6 +281,7 @@ impl Model {
             diff_view_mode: DiffViewMode::default(),
             diff_wrap: true,
             pending_editor_request: None,
+            pending_comment_request: None,
             command_palette_input: String::new(),
             command_palette_selection: 0,
             command_palette_commands: Vec::new(),
@@ -275,6 +298,7 @@ impl Model {
             config,
             thread_positions: RefCell::new(HashMap::new()),
             max_stream_row: Cell::new(0),
+            line_map: RefCell::new(HashMap::new()),
             search_input: String::new(),
             search_active: false,
             repo_path: None,

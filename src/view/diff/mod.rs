@@ -148,6 +148,7 @@ struct StreamRenderCtx<'a> {
     wrap: bool,
     all_comments: &'a std::collections::HashMap<String, Vec<crate::db::Comment>>,
     thread_positions: &'a std::cell::RefCell<std::collections::HashMap<String, usize>>,
+    line_map: &'a std::cell::RefCell<std::collections::HashMap<usize, i64>>,
 }
 
 /// Per-file rendering context for unified/SBS diff functions. Bundles the
@@ -161,6 +162,7 @@ struct DiffRenderCtx<'a> {
     wrap: bool,
     all_comments: &'a std::collections::HashMap<String, Vec<crate::db::Comment>>,
     thread_positions: &'a std::cell::RefCell<std::collections::HashMap<String, usize>>,
+    line_map: &'a std::cell::RefCell<std::collections::HashMap<usize, i64>>,
 }
 
 impl StreamCursor<'_> {
@@ -430,6 +432,7 @@ pub struct DiffStreamParams<'a> {
     pub max_stream_row: &'a std::cell::Cell<usize>,
     pub description: Option<&'a str>,
     pub selection: Option<(usize, usize)>,
+    pub line_map: &'a std::cell::RefCell<std::collections::HashMap<usize, i64>>,
 }
 
 fn render_file_with_diff(
@@ -480,6 +483,7 @@ fn render_file_with_diff(
         wrap: sctx.wrap,
         all_comments: sctx.all_comments,
         thread_positions: sctx.thread_positions,
+        line_map: sctx.line_map,
     };
 
     let emitted_threads = match view_mode {
@@ -731,6 +735,7 @@ fn try_emit_line_comment(
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn render_unified_display_items(
     cursor: &mut StreamCursor<'_>,
     display_data: &UnifiedDisplayData<'_>,
@@ -793,6 +798,31 @@ fn render_unified_display_items(
                 });
             }
             DisplayLine::Diff(line) => {
+                // Record new-side line mapping for comment targeting
+                if let Some(nl) = line.new_line {
+                    let base = cursor.stream_row;
+                    let nl_i64 = i64::from(nl);
+                    if ctx.wrap {
+                        let thread_col_width = THREAD_COL_WIDTH;
+                        let line_num_width = UNIFIED_LINE_NUM_WIDTH;
+                        let cw = diff_content_width(ctx.line_area)
+                            .saturating_sub(thread_col_width + line_num_width);
+                        let max_c = cw.saturating_sub(2) as usize;
+                        let row_count = wrap_content(
+                            ctx.file_highlights.get(idx),
+                            &line.content,
+                            max_c,
+                        )
+                        .len()
+                        .max(1);
+                        let mut lm = ctx.line_map.borrow_mut();
+                        for r in 0..row_count {
+                            lm.insert(base + r, nl_i64);
+                        }
+                    } else {
+                        ctx.line_map.borrow_mut().insert(base, nl_i64);
+                    }
+                }
                 if ctx.wrap {
                     let thread_col_width = THREAD_COL_WIDTH;
                     let line_num_width = UNIFIED_LINE_NUM_WIDTH;
@@ -1039,6 +1069,36 @@ fn render_file_diff_sbs(
                     .or_insert(cursor.stream_row);
             }
         }
+        // Record new-side line mapping for comment targeting (right side = new)
+        if !sbs_line.is_header {
+            if let Some(right) = &sbs_line.right {
+                let nl = i64::from(right.line_num);
+                let base = cursor.stream_row;
+                if ctx.wrap {
+                    // Compute row count for wrapped SBS (must match render_sbs_line)
+                    let thread_col_width = THREAD_COL_WIDTH;
+                    let divider_width: u32 = 1;
+                    let line_num_width = SBS_LINE_NUM_WIDTH;
+                    let available = diff_content_width(ctx.line_area)
+                        .saturating_sub(thread_col_width + divider_width);
+                    let half_width = available / 2;
+                    let left_w = half_width.saturating_sub(line_num_width) as usize;
+                    let right_w = half_width.saturating_sub(line_num_width) as usize;
+                    let left_rows = sbs_line
+                        .left
+                        .as_ref()
+                        .map_or(1, |l| wrap_content(None, &l.content, left_w).len().max(1));
+                    let right_rows = wrap_content(None, &right.content, right_w).len().max(1);
+                    let rows = left_rows.max(right_rows);
+                    let mut lm = ctx.line_map.borrow_mut();
+                    for r in 0..rows {
+                        lm.insert(base + r, nl);
+                    }
+                } else {
+                    ctx.line_map.borrow_mut().insert(base, nl);
+                }
+            }
+        }
         let is_cursor = !sbs_line.is_header && cursor.is_cursor_at(1);
         let is_selected = !sbs_line.is_header && cursor.is_selected_at(1);
         render_sbs_line(
@@ -1099,6 +1159,7 @@ pub fn render_diff_stream(
     params: &DiffStreamParams<'_>,
 ) {
     params.thread_positions.borrow_mut().clear();
+    params.line_map.borrow_mut().clear();
     params.max_stream_row.set(0);
     let mut cursor = StreamCursor {
         buffer,
@@ -1128,6 +1189,7 @@ pub fn render_diff_stream(
         wrap: params.wrap,
         all_comments: params.all_comments,
         thread_positions: params.thread_positions,
+        line_map: params.line_map,
     };
 
     for file in files {

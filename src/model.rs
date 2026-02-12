@@ -1,6 +1,6 @@
 //! Application state model
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
@@ -196,8 +196,8 @@ pub struct Model {
     // === Render-computed data ===
     /// Thread positions captured during rendering (`thread_id` → `stream_row`)
     pub thread_positions: RefCell<HashMap<String, usize>>,
-    /// Landable stream rows captured during rendering (diff/context lines, not headers)
-    pub landable_rows: RefCell<Vec<usize>>,
+    /// Total stream rows from the last render pass (for cursor clamping)
+    pub max_stream_row: Cell<usize>,
 
     // === Review list search ===
     pub search_input: String,
@@ -266,7 +266,7 @@ impl Model {
             pre_palette_theme: None,
             config,
             thread_positions: RefCell::new(HashMap::new()),
-            landable_rows: RefCell::new(Vec::new()),
+            max_stream_row: Cell::new(0),
             search_input: String::new(),
             search_active: false,
             repo_path: None,

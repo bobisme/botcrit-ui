@@ -72,54 +72,25 @@ fn update_list_nav(model: &mut Model, msg: &Message) {
 }
 
 fn update_cursor(model: &mut Model, msg: &Message) {
-    {
-        let rows = model.landable_rows.borrow();
-        if rows.is_empty() {
-            drop(rows);
-            // No landable rows yet — fall back to scroll behavior
-            match msg {
-                Message::CursorDown => {
-                    model.diff_scroll += 1;
-                    clamp_diff_scroll(model);
-                }
-                Message::CursorUp => {
-                    model.diff_scroll = model.diff_scroll.saturating_sub(1);
-                }
-                Message::CursorTop => {
-                    model.diff_scroll = 0;
-                    model.diff_cursor = 0;
-                }
-                Message::CursorBottom => {
-                    let layout = stream_layout(model);
-                    let visible = visible_stream_rows(model.height);
-                    model.diff_scroll = layout.total_lines.saturating_sub(visible);
-                }
-                _ => {}
-            }
-            update_active_file_from_scroll(model);
-            return;
-        }
+    let max_row = model.max_stream_row.get().saturating_sub(1);
 
-        let new_cursor = match msg {
-            Message::CursorDown => {
-                rows.iter().find(|&&r| r > model.diff_cursor).copied()
+    match msg {
+        Message::CursorDown => {
+            if model.diff_cursor < max_row {
+                model.diff_cursor += 1;
             }
-            Message::CursorUp => {
-                rows.iter().rev().find(|&&r| r < model.diff_cursor).copied()
-            }
-            Message::CursorTop => {
-                rows.first().copied()
-            }
-            Message::CursorBottom => {
-                rows.last().copied()
-            }
-            _ => None,
-        };
-
-        if let Some(cursor_row) = new_cursor {
-            model.diff_cursor = cursor_row;
         }
-    } // drop borrow
+        Message::CursorUp => {
+            model.diff_cursor = model.diff_cursor.saturating_sub(1);
+        }
+        Message::CursorTop => {
+            model.diff_cursor = 0;
+        }
+        Message::CursorBottom => {
+            model.diff_cursor = max_row;
+        }
+        _ => {}
+    }
 
     ensure_cursor_visible(model);
     update_active_file_from_scroll(model);
@@ -141,24 +112,16 @@ const fn ensure_cursor_visible(model: &mut Model) {
     }
 }
 
-/// After a scroll operation, snap cursor to the nearest visible landable row.
-fn snap_cursor_to_visible(model: &mut Model) {
-    let rows = model.landable_rows.borrow();
-    if rows.is_empty() {
-        return;
-    }
+/// After a scroll operation, snap cursor to visible range.
+const fn snap_cursor_to_visible(model: &mut Model) {
     let visible = visible_stream_rows(model.height);
     let view_start = model.diff_scroll;
     let view_end = model.diff_scroll + visible;
 
-    // If cursor is already visible, keep it
-    if model.diff_cursor >= view_start && model.diff_cursor < view_end {
-        return;
-    }
-
-    // Find nearest visible landable row
-    if let Some(&row) = rows.iter().find(|&&r| r >= view_start && r < view_end) {
-        model.diff_cursor = row;
+    if model.diff_cursor < view_start {
+        model.diff_cursor = view_start;
+    } else if model.diff_cursor >= view_end {
+        model.diff_cursor = view_end.saturating_sub(1);
     }
 }
 

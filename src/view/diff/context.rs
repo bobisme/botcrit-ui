@@ -9,7 +9,7 @@ use crate::theme::Theme;
 use crate::view::components::Rect;
 
 use super::analysis::{build_thread_ranges, line_in_thread_ranges};
-use super::comments::emit_comment_block;
+use super::comments::{comment_block_rows, emit_comment_block};
 use super::helpers::{
     diff_content_x, draw_cursor_bar, draw_diff_base_line, draw_thread_range_bar,
     orphaned_context_width, orphaned_context_x,
@@ -207,7 +207,9 @@ pub(super) fn emit_orphaned_context_section(
                             .borrow_mut()
                             .insert(thread.thread_id.clone(), cursor.stream_row);
                         if let Some(comments) = state.all_comments.get(&thread.thread_id) {
-                            emit_comment_block(cursor, comment_area, thread, comments);
+                            let rows = comment_block_rows(thread, comments, comment_area);
+                            let hl = cursor.is_cursor_at(rows);
+                            emit_comment_block(cursor, comment_area, thread, comments, hl);
                         }
                     }
                 }
@@ -220,10 +222,6 @@ pub(super) fn emit_orphaned_context_section(
             }
             DisplayItem::Separator(_) => false,
         };
-        let is_landable = matches!(item, DisplayItem::Line { .. });
-        if is_landable {
-            cursor.mark_landable();
-        }
         match item {
             DisplayItem::Separator(_) => {
                 cursor.emit(|buf, y, theme| {
@@ -268,7 +266,9 @@ pub(super) fn emit_orphaned_context_section(
                         .borrow_mut()
                         .insert(thread.thread_id.clone(), cursor.stream_row);
                     if let Some(comments) = state.all_comments.get(&thread.thread_id) {
-                        emit_comment_block(cursor, comment_area, thread, comments);
+                        let rows = comment_block_rows(thread, comments, comment_area);
+                        let hl = cursor.is_cursor_at(rows);
+                        emit_comment_block(cursor, comment_area, thread, comments, hl);
                     }
                 }
                 *state.last_line_num = Some(*line_num);
@@ -296,7 +296,9 @@ pub(super) fn emit_remaining_orphaned_comments(
             .borrow_mut()
             .insert(thread.thread_id.clone(), cursor.stream_row);
         if let Some(comments) = all_comments.get(&thread.thread_id) {
-            emit_comment_block(cursor, comment_area, thread, comments);
+            let rows = comment_block_rows(thread, comments, comment_area);
+            let hl = cursor.is_cursor_at(rows);
+            emit_comment_block(cursor, comment_area, thread, comments, hl);
         }
     }
 }

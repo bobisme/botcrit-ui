@@ -384,7 +384,7 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
             view_mode: model.diff_view_mode,
             wrap: model.diff_wrap,
             thread_positions: &model.thread_positions,
-            landable_rows: &model.landable_rows,
+            max_stream_row: &model.max_stream_row,
             description,
         },
     );

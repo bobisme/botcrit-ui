@@ -114,9 +114,15 @@ impl Theme {
     }
 
     /// `Style::fg(self.primary)`
-    #[must_use] 
+    #[must_use]
     pub const fn style_primary(&self) -> Style {
         Style::fg(self.primary)
+    }
+
+    /// `Style::fg(self.primary).with_bg(bg)`
+    #[must_use]
+    pub const fn style_primary_on(&self, bg: Rgba) -> Style {
+        Style::fg(self.primary).with_bg(bg)
     }
 }
 

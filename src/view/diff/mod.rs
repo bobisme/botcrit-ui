@@ -33,7 +33,7 @@ use crate::theme::Theme;
 pub use analysis::{diff_change_counts, map_threads_to_diff};
 
 use analysis::{build_thread_ranges, line_in_thread_ranges};
-use comments::emit_comment_block;
+use comments::{comment_block_rows, emit_comment_block};
 use context::{
     build_context_items, calculate_context_ranges, emit_orphaned_context_section,
     emit_remaining_orphaned_comments, group_context_ranges_by_hunks, render_context_item_block,
@@ -129,7 +129,7 @@ struct StreamCursor<'a> {
     stream_row: usize,
     diff_cursor: usize,
     theme: &'a Theme,
-    landable_rows: &'a std::cell::RefCell<Vec<usize>>,
+    max_stream_row: &'a std::cell::Cell<usize>,
 }
 
 struct OrphanedContext<'a> {
@@ -172,6 +172,7 @@ impl StreamCursor<'_> {
             self.screen_row += 1;
         }
         self.stream_row += 1;
+        self.max_stream_row.set(self.stream_row);
     }
 
     fn emit_rows<F>(&mut self, rows: usize, mut draw: F)
@@ -186,11 +187,7 @@ impl StreamCursor<'_> {
             }
             self.stream_row += 1;
         }
-    }
-
-    /// Record the current `stream_row` as a landable position.
-    fn mark_landable(&self) {
-        self.landable_rows.borrow_mut().push(self.stream_row);
+        self.max_stream_row.set(self.stream_row);
     }
 
     /// Check if the diff cursor is at or within [`stream_row`, `stream_row` + rows).
@@ -318,8 +315,8 @@ pub fn render_pinned_header_block(
         return 0;
     }
 
-    // Pinned header doesn't participate in cursor/landable tracking
-    let dummy_landable = std::cell::RefCell::new(Vec::new());
+    // Pinned header doesn't participate in cursor tracking
+    let dummy_max = std::cell::Cell::new(0);
     let mut cursor = StreamCursor {
         buffer,
         area: Rect::new(area.x, area.y, area.width, height),
@@ -328,7 +325,7 @@ pub fn render_pinned_header_block(
         stream_row: 0,
         diff_cursor: usize::MAX,
         theme,
-        landable_rows: &dummy_landable,
+        max_stream_row: &dummy_max,
     };
 
     for _ in 0..BLOCK_MARGIN {
@@ -415,7 +412,7 @@ pub struct DiffStreamParams<'a> {
     pub view_mode: crate::model::DiffViewMode,
     pub wrap: bool,
     pub thread_positions: &'a std::cell::RefCell<std::collections::HashMap<String, usize>>,
-    pub landable_rows: &'a std::cell::RefCell<Vec<usize>>,
+    pub max_stream_row: &'a std::cell::Cell<usize>,
     pub description: Option<&'a str>,
 }
 
@@ -508,7 +505,9 @@ fn render_file_with_diff(
                 .borrow_mut()
                 .insert(thread.thread_id.clone(), cursor.stream_row);
             if let Some(comments) = sctx.all_comments.get(&thread.thread_id) {
-                emit_comment_block(cursor, area, thread, comments);
+                let rows = comment_block_rows(thread, comments, area);
+                let hl = cursor.is_cursor_at(rows);
+                emit_comment_block(cursor, area, thread, comments, hl);
             }
         }
     }
@@ -533,10 +532,6 @@ fn render_file_content_no_diff(
             }
             DisplayItem::Separator(_) => false,
         };
-        let is_landable = matches!(&item, DisplayItem::Line { .. });
-        if is_landable {
-            cursor.mark_landable();
-        }
         match &item {
             DisplayItem::Separator(_) => {
                 cursor.emit(|buf, y, theme| {
@@ -602,7 +597,9 @@ fn render_file_content_no_diff(
                     .entry(thread.thread_id.clone())
                     .or_insert(cursor.stream_row);
                 if let Some(comments) = sctx.all_comments.get(&thread.thread_id) {
-                    emit_comment_block(cursor, area, thread, comments);
+                    let rows = comment_block_rows(thread, comments, area);
+                    let hl = cursor.is_cursor_at(rows);
+                    emit_comment_block(cursor, area, thread, comments, hl);
                 }
             }
         }
@@ -707,7 +704,9 @@ fn try_emit_line_comment(
             continue;
         };
         if let Some(comments) = ctx.all_comments.get(&comment_anchor.thread_id) {
-            emit_comment_block(cursor, ctx.area, thread, comments);
+            let rows = comment_block_rows(thread, comments, ctx.area);
+            let hl = cursor.is_cursor_at(rows);
+            emit_comment_block(cursor, ctx.area, thread, comments, hl);
         }
     }
 }
@@ -774,7 +773,6 @@ fn render_unified_display_items(
                 });
             }
             DisplayLine::Diff(line) => {
-                cursor.mark_landable();
                 if ctx.wrap {
                     let thread_col_width = THREAD_COL_WIDTH;
                     let line_num_width = UNIFIED_LINE_NUM_WIDTH;
@@ -1019,11 +1017,7 @@ fn render_file_diff_sbs(
                     .or_insert(cursor.stream_row);
             }
         }
-        let is_landable = !sbs_line.is_header;
-        if is_landable {
-            cursor.mark_landable();
-        }
-        let is_cursor = is_landable && cursor.is_cursor_at(1);
+        let is_cursor = !sbs_line.is_header && cursor.is_cursor_at(1);
         render_sbs_line(
             cursor,
             sbs_line,
@@ -1047,7 +1041,9 @@ fn render_file_diff_sbs(
                     if let Some(comments) =
                         ctx.all_comments.get(&comment_anchor.thread_id)
                     {
-                        emit_comment_block(cursor, ctx.area, thread, comments);
+                        let rows = comment_block_rows(thread, comments, ctx.area);
+                        let hl = cursor.is_cursor_at(rows);
+                        emit_comment_block(cursor, ctx.area, thread, comments, hl);
                     }
                 }
             }
@@ -1080,7 +1076,7 @@ pub fn render_diff_stream(
     params: &DiffStreamParams<'_>,
 ) {
     params.thread_positions.borrow_mut().clear();
-    params.landable_rows.borrow_mut().clear();
+    params.max_stream_row.set(0);
     let mut cursor = StreamCursor {
         buffer,
         area,
@@ -1089,7 +1085,7 @@ pub fn render_diff_stream(
         stream_row: 0,
         diff_cursor: params.diff_cursor,
         theme: params.theme,
-        landable_rows: params.landable_rows,
+        max_stream_row: params.max_stream_row,
     };
 
     // Render description block if present

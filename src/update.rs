@@ -4,6 +4,7 @@ use crate::command::{command_id_to_message, get_commands};
 use crate::message::Message;
 use crate::model::{DiffViewMode, EditorRequest, Focus, Model, PaletteMode, ReviewFilter, Screen};
 use crate::stream::{active_file_index, compute_stream_layout, file_scroll_offset, StreamLayoutParams};
+use crate::layout::visible_stream_rows;
 use crate::{config, theme, Highlighter};
 
 fn update_list_nav(model: &mut Model, msg: &Message) {
@@ -90,7 +91,7 @@ fn update_cursor(model: &mut Model, msg: &Message) {
                 }
                 Message::CursorBottom => {
                     let layout = stream_layout(model);
-                    let visible = model.height.saturating_sub(2) as usize;
+                    let visible = visible_stream_rows(model.height);
                     model.diff_scroll = layout.total_lines.saturating_sub(visible);
                 }
                 _ => {}
@@ -126,7 +127,7 @@ fn update_cursor(model: &mut Model, msg: &Message) {
 
 /// Ensure the cursor is visible on screen, adjusting scroll if needed.
 const fn ensure_cursor_visible(model: &mut Model) {
-    let visible = model.height.saturating_sub(2) as usize;
+    let visible = visible_stream_rows(model.height);
     if visible == 0 {
         return;
     }
@@ -146,7 +147,7 @@ fn snap_cursor_to_visible(model: &mut Model) {
     if rows.is_empty() {
         return;
     }
-    let visible = model.height.saturating_sub(2) as usize;
+    let visible = visible_stream_rows(model.height);
     let view_start = model.diff_scroll;
     let view_end = model.diff_scroll + visible;
 
@@ -184,14 +185,14 @@ fn update_scroll(model: &mut Model, msg: &Message) {
 
         Message::ScrollBottom => {
             let layout = stream_layout(model);
-            let visible = model.height.saturating_sub(2) as usize;
+            let visible = visible_stream_rows(model.height);
             model.diff_scroll = layout.total_lines.saturating_sub(visible);
             snap_cursor_to_visible(model);
             update_active_file_from_scroll(model);
         }
 
         Message::ScrollHalfPageUp => {
-            let page = model.height.saturating_sub(2) as usize;
+            let page = visible_stream_rows(model.height);
             let half = page.max(1) / 2;
             model.diff_scroll = model.diff_scroll.saturating_sub(half.max(1));
             snap_cursor_to_visible(model);
@@ -199,7 +200,7 @@ fn update_scroll(model: &mut Model, msg: &Message) {
         }
 
         Message::ScrollHalfPageDown => {
-            let page = model.height.saturating_sub(2) as usize;
+            let page = visible_stream_rows(model.height);
             let half = page.max(1) / 2;
             model.diff_scroll += half.max(1);
             clamp_diff_scroll(model);
@@ -221,14 +222,14 @@ fn update_scroll(model: &mut Model, msg: &Message) {
         }
 
         Message::PageUp => {
-            let page = model.height.saturating_sub(2) as usize;
+            let page = visible_stream_rows(model.height);
             model.diff_scroll = model.diff_scroll.saturating_sub(page);
             snap_cursor_to_visible(model);
             update_active_file_from_scroll(model);
         }
 
         Message::PageDown => {
-            let page = model.height.saturating_sub(2) as usize;
+            let page = visible_stream_rows(model.height);
             model.diff_scroll += page;
             clamp_diff_scroll(model);
             snap_cursor_to_visible(model);
@@ -899,7 +900,7 @@ fn active_thread_from_scroll(model: &Model) -> Option<String> {
     let files = model.files_with_threads();
     let file = files.get(model.file_index)?;
 
-    let view_height = model.height.saturating_sub(2) as usize;
+    let view_height = visible_stream_rows(model.height);
     let view_end = model.diff_scroll.saturating_add(view_height);
 
     let mut in_view: Option<(usize, &str)> = None;
@@ -976,7 +977,7 @@ fn center_on_thread(model: &mut Model) {
     if let Some(&stream_row) = positions.get(&thread_id) {
         drop(positions);
         model.diff_cursor = stream_row;
-        let view_height = model.height.saturating_sub(2) as usize;
+        let view_height = visible_stream_rows(model.height);
         let center = view_height / 2;
         model.diff_scroll = stream_row.saturating_sub(center);
     } else {
@@ -992,7 +993,7 @@ fn center_on_thread(model: &mut Model) {
                     .get(file_index + 1)
                     .copied()
                     .unwrap_or(layout.total_lines);
-                let view_height = model.height.saturating_sub(2) as usize;
+                let view_height = visible_stream_rows(model.height);
                 let center = view_height / 2;
                 model.diff_scroll = file_end.saturating_sub(center);
             }
@@ -1021,7 +1022,7 @@ fn stream_layout(model: &Model) -> crate::stream::StreamLayout {
 
 fn clamp_diff_scroll(model: &mut Model) {
     let layout = stream_layout(model);
-    let visible = model.height.saturating_sub(2) as usize;
+    let visible = visible_stream_rows(model.height);
     let max_scroll = layout.total_lines.saturating_sub(visible);
     if model.diff_scroll > max_scroll {
         model.diff_scroll = max_scroll;

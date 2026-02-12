@@ -44,6 +44,18 @@ pub const fn block_height(content_lines: usize) -> usize {
     content_lines + (BLOCK_MARGIN * 2) + (BLOCK_PADDING * 2)
 }
 
+/// Number of stream rows visible in the diff pane.
+///
+/// Accounts for the help bar footer (2 lines + 1 margin = 3) and the pinned
+/// header block at the top of the stream area.
+#[must_use]
+pub const fn visible_stream_rows(terminal_height: u16) -> usize {
+    let total = terminal_height as u32;
+    let footer: u32 = 3; // help bar (2 lines) + margin (1 line)
+    let pinned: u32 = block_height(1) as u32;
+    total.saturating_sub(footer + pinned) as usize
+}
+
 // --- Stream-layout inner-width helpers ---
 
 /// Inner width for diff content (no block bar/margins, just horizontal padding).

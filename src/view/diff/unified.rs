@@ -7,7 +7,7 @@ use crate::layout::UNIFIED_LINE_NUM_WIDTH;
 use crate::syntax::HighlightSpan;
 use crate::theme::Theme;
 
-use super::helpers::{cursor_bg, cursor_fg, diff_content_width, diff_content_x, draw_diff_base_line};
+use super::helpers::{cursor_bg, cursor_fg, selection_bg, diff_content_width, diff_content_x, draw_diff_base_line};
 use super::text_util::{draw_highlighted_text, draw_wrapped_line, HighlightContent, WrappedLine};
 use super::{DisplayLine, LineRenderCtx};
 
@@ -29,7 +29,7 @@ pub(super) fn render_unified_diff_line_block(
             buffer.draw_text(sep_x, y, sep, theme.style_muted_on(dt.context_bg));
         }
         DisplayLine::Diff(line) => {
-            let base_bg = cursor_bg(dt.context_bg, ctx.is_cursor, theme);
+            let base_bg = cursor_bg(selection_bg(dt.context_bg, ctx.is_selected, theme), ctx.is_cursor, theme);
             draw_diff_base_line(buffer, ctx.area, y, base_bg);
 
             let content_x = diff_content_x(ctx.area);
@@ -50,6 +50,7 @@ pub(super) fn render_unified_diff_line_block(
                 dt,
                 highlights,
                 ctx.is_cursor,
+                ctx.is_selected,
                 theme,
             );
         }
@@ -67,31 +68,32 @@ pub(super) fn render_unified_diff_line_wrapped_row(
 ) {
     let dt = &theme.diff;
     let is_cursor = ctx.is_cursor;
+    let is_sel = ctx.is_selected;
     let (bg, line_num_bg, default_fg, sign, sign_color) = match line.kind {
         DiffLineKind::Added => (
-            cursor_bg(dt.added_bg, is_cursor, theme),
-            cursor_bg(dt.added_line_number_bg, is_cursor, theme),
+            cursor_bg(selection_bg(dt.added_bg, is_sel, theme), is_cursor, theme),
+            cursor_bg(selection_bg(dt.added_line_number_bg, is_sel, theme), is_cursor, theme),
             cursor_fg(dt.added, is_cursor),
             "+",
             cursor_fg(dt.highlight_added, is_cursor),
         ),
         DiffLineKind::Removed => (
-            cursor_bg(dt.removed_bg, is_cursor, theme),
-            cursor_bg(dt.removed_line_number_bg, is_cursor, theme),
+            cursor_bg(selection_bg(dt.removed_bg, is_sel, theme), is_cursor, theme),
+            cursor_bg(selection_bg(dt.removed_line_number_bg, is_sel, theme), is_cursor, theme),
             cursor_fg(dt.removed, is_cursor),
             "-",
             cursor_fg(dt.highlight_removed, is_cursor),
         ),
         DiffLineKind::Context => (
-            cursor_bg(dt.context_bg, is_cursor, theme),
-            cursor_bg(dt.context_bg, is_cursor, theme),
+            cursor_bg(selection_bg(dt.context_bg, is_sel, theme), is_cursor, theme),
+            cursor_bg(selection_bg(dt.context_bg, is_sel, theme), is_cursor, theme),
             cursor_fg(dt.context, is_cursor),
             " ",
             cursor_fg(dt.context, is_cursor),
         ),
     };
 
-    let base_bg = cursor_bg(dt.context_bg, is_cursor, theme);
+    let base_bg = cursor_bg(selection_bg(dt.context_bg, is_sel, theme), is_cursor, theme);
     draw_diff_base_line(buffer, ctx.area, y, base_bg);
 
     let content_x = diff_content_x(ctx.area);
@@ -171,26 +173,27 @@ pub(super) fn render_diff_line(
     dt: &crate::theme::DiffTheme,
     highlights: Option<&Vec<HighlightSpan>>,
     is_cursor: bool,
+    is_selected: bool,
     theme: &Theme,
 ) {
     let (bg, line_num_bg, default_fg, sign, sign_color) = match line.kind {
         DiffLineKind::Added => (
-            cursor_bg(dt.added_bg, is_cursor, theme),
-            cursor_bg(dt.added_line_number_bg, is_cursor, theme),
+            cursor_bg(selection_bg(dt.added_bg, is_selected, theme), is_cursor, theme),
+            cursor_bg(selection_bg(dt.added_line_number_bg, is_selected, theme), is_cursor, theme),
             cursor_fg(dt.added, is_cursor),
             "+",
             cursor_fg(dt.highlight_added, is_cursor),
         ),
         DiffLineKind::Removed => (
-            cursor_bg(dt.removed_bg, is_cursor, theme),
-            cursor_bg(dt.removed_line_number_bg, is_cursor, theme),
+            cursor_bg(selection_bg(dt.removed_bg, is_selected, theme), is_cursor, theme),
+            cursor_bg(selection_bg(dt.removed_line_number_bg, is_selected, theme), is_cursor, theme),
             cursor_fg(dt.removed, is_cursor),
             "-",
             cursor_fg(dt.highlight_removed, is_cursor),
         ),
         DiffLineKind::Context => (
-            cursor_bg(dt.context_bg, is_cursor, theme),
-            cursor_bg(dt.context_bg, is_cursor, theme),
+            cursor_bg(selection_bg(dt.context_bg, is_selected, theme), is_cursor, theme),
+            cursor_bg(selection_bg(dt.context_bg, is_selected, theme), is_cursor, theme),
             cursor_fg(dt.context, is_cursor),
             " ",
             cursor_fg(dt.context, is_cursor),

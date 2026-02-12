@@ -7,7 +7,7 @@ use crate::layout::SBS_LINE_NUM_WIDTH;
 use crate::syntax::HighlightSpan;
 use crate::theme::Theme;
 
-use super::helpers::{cursor_bg, cursor_fg, diff_content_width, diff_content_x, draw_diff_base_line};
+use super::helpers::{cursor_bg, cursor_fg, selection_bg, diff_content_width, diff_content_x, draw_diff_base_line};
 use super::text_util::{draw_highlighted_text, draw_wrapped_line, HighlightContent, WrappedLine};
 use super::{LineRenderCtx, SideBySideLine, SideLine};
 
@@ -30,6 +30,7 @@ pub(super) fn render_side_by_side_line_block(
 ) {
     let dt = &theme.diff;
     let is_cursor = ctx.is_cursor;
+    let is_sel = ctx.is_selected;
     if sbs_line.is_header {
         draw_diff_base_line(buffer, ctx.area, y, dt.context_bg);
         let sep = "···";
@@ -39,7 +40,7 @@ pub(super) fn render_side_by_side_line_block(
         return;
     }
 
-    let base_bg = cursor_bg(dt.context_bg, is_cursor, theme);
+    let base_bg = cursor_bg(selection_bg(dt.context_bg, is_sel, theme), is_cursor, theme);
     draw_diff_base_line(buffer, ctx.area, y, base_bg);
 
     let content_x = diff_content_x(ctx.area);
@@ -70,7 +71,7 @@ pub(super) fn render_side_by_side_line_block(
         buffer, y, sbs_line.left.as_ref(),
         &SidePanelLayout { ln_x: left_ln_x, content_x: left_content_x, content_width: left_content_width, dt, line_number_color: dt.line_number },
         left_highlights,
-        is_cursor, theme,
+        is_cursor, is_sel, theme,
     );
 
     buffer.fill_rect(divider_x, y, divider_width, 1, base_bg);
@@ -79,7 +80,7 @@ pub(super) fn render_side_by_side_line_block(
         buffer, y, sbs_line.right.as_ref(),
         &SidePanelLayout { ln_x: right_ln_x, content_x: right_content_x, content_width: right_content_width, dt, line_number_color: theme.muted },
         right_highlights,
-        is_cursor, theme,
+        is_cursor, is_sel, theme,
     );
 }
 
@@ -94,7 +95,8 @@ pub(super) fn render_side_by_side_line_wrapped_row(
 ) {
     let dt = &theme.diff;
     let is_cursor = ctx.is_cursor;
-    let base_bg = cursor_bg(dt.context_bg, is_cursor, theme);
+    let is_sel = ctx.is_selected;
+    let base_bg = cursor_bg(selection_bg(dt.context_bg, is_sel, theme), is_cursor, theme);
     draw_diff_base_line(buffer, ctx.area, y, base_bg);
 
     let content_x = diff_content_x(ctx.area);
@@ -116,7 +118,7 @@ pub(super) fn render_side_by_side_line_wrapped_row(
         buffer, y, sbs_line.left.as_ref(),
         &SidePanelLayout { ln_x: left_ln_x, content_x: left_content_x, content_width: left_content_width, dt, line_number_color: dt.line_number },
         wrapped_sides.0, row,
-        is_cursor, theme,
+        is_cursor, is_sel, theme,
     );
 
     buffer.fill_rect(divider_x, y, divider_width, 1, base_bg);
@@ -125,7 +127,7 @@ pub(super) fn render_side_by_side_line_wrapped_row(
         buffer, y, sbs_line.right.as_ref(),
         &SidePanelLayout { ln_x: right_ln_x, content_x: right_content_x, content_width: right_content_width, dt, line_number_color: theme.muted },
         wrapped_sides.1, row,
-        is_cursor, theme,
+        is_cursor, is_sel, theme,
     );
 }
 
@@ -137,23 +139,24 @@ fn render_side_line_wrapped_row(
     wrapped: Option<&Vec<WrappedLine>>,
     row: usize,
     is_cursor: bool,
+    is_selected: bool,
     theme: &Theme,
 ) {
     if let Some(line) = side {
         let (bg, line_num_bg, fg) = match line.kind {
             DiffLineKind::Added => (
-                cursor_bg(layout.dt.added_bg, is_cursor, theme),
-                cursor_bg(layout.dt.added_line_number_bg, is_cursor, theme),
+                cursor_bg(selection_bg(layout.dt.added_bg, is_selected, theme), is_cursor, theme),
+                cursor_bg(selection_bg(layout.dt.added_line_number_bg, is_selected, theme), is_cursor, theme),
                 cursor_fg(layout.dt.added, is_cursor),
             ),
             DiffLineKind::Removed => (
-                cursor_bg(layout.dt.removed_bg, is_cursor, theme),
-                cursor_bg(layout.dt.removed_line_number_bg, is_cursor, theme),
+                cursor_bg(selection_bg(layout.dt.removed_bg, is_selected, theme), is_cursor, theme),
+                cursor_bg(selection_bg(layout.dt.removed_line_number_bg, is_selected, theme), is_cursor, theme),
                 cursor_fg(layout.dt.removed, is_cursor),
             ),
             DiffLineKind::Context => (
-                cursor_bg(layout.dt.context_bg, is_cursor, theme),
-                cursor_bg(layout.dt.context_bg, is_cursor, theme),
+                cursor_bg(selection_bg(layout.dt.context_bg, is_selected, theme), is_cursor, theme),
+                cursor_bg(selection_bg(layout.dt.context_bg, is_selected, theme), is_cursor, theme),
                 cursor_fg(layout.dt.context, is_cursor),
             ),
         };
@@ -175,7 +178,7 @@ fn render_side_line_wrapped_row(
             }
         }
     } else {
-        let empty_bg = cursor_bg(layout.dt.context_bg, is_cursor, theme);
+        let empty_bg = cursor_bg(selection_bg(layout.dt.context_bg, is_selected, theme), is_cursor, theme);
         buffer.fill_rect(layout.ln_x, y, 6, 1, empty_bg);
         buffer.fill_rect(layout.content_x, y, layout.content_width, 1, empty_bg);
     }
@@ -188,23 +191,24 @@ fn render_side_line(
     layout: &SidePanelLayout<'_>,
     highlights: Option<&Vec<HighlightSpan>>,
     is_cursor: bool,
+    is_selected: bool,
     theme: &Theme,
 ) {
     if let Some(line) = side {
         let (bg, line_num_bg, fg) = match line.kind {
             DiffLineKind::Added => (
-                cursor_bg(layout.dt.added_bg, is_cursor, theme),
-                cursor_bg(layout.dt.added_line_number_bg, is_cursor, theme),
+                cursor_bg(selection_bg(layout.dt.added_bg, is_selected, theme), is_cursor, theme),
+                cursor_bg(selection_bg(layout.dt.added_line_number_bg, is_selected, theme), is_cursor, theme),
                 cursor_fg(layout.dt.added, is_cursor),
             ),
             DiffLineKind::Removed => (
-                cursor_bg(layout.dt.removed_bg, is_cursor, theme),
-                cursor_bg(layout.dt.removed_line_number_bg, is_cursor, theme),
+                cursor_bg(selection_bg(layout.dt.removed_bg, is_selected, theme), is_cursor, theme),
+                cursor_bg(selection_bg(layout.dt.removed_line_number_bg, is_selected, theme), is_cursor, theme),
                 cursor_fg(layout.dt.removed, is_cursor),
             ),
             DiffLineKind::Context => (
-                cursor_bg(layout.dt.context_bg, is_cursor, theme),
-                cursor_bg(layout.dt.context_bg, is_cursor, theme),
+                cursor_bg(selection_bg(layout.dt.context_bg, is_selected, theme), is_cursor, theme),
+                cursor_bg(selection_bg(layout.dt.context_bg, is_selected, theme), is_cursor, theme),
                 cursor_fg(layout.dt.context, is_cursor),
             ),
         };
@@ -228,7 +232,7 @@ fn render_side_line(
             },
         );
     } else {
-        let empty_bg = cursor_bg(layout.dt.context_bg, is_cursor, theme);
+        let empty_bg = cursor_bg(selection_bg(layout.dt.context_bg, is_selected, theme), is_cursor, theme);
         buffer.fill_rect(layout.ln_x, y, 6, 1, empty_bg);
         buffer.fill_rect(layout.content_x, y, layout.content_width, 1, empty_bg);
     }

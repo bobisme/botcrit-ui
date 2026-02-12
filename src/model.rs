@@ -405,6 +405,9 @@ pub struct Model {
     /// Diff line mapping captured during rendering: `stream_row` → new-side line number.
     /// Populated for every diff line (including all wrapped rows).
     pub line_map: RefCell<HashMap<usize, i64>>,
+    /// Sorted list of stream rows that are valid cursor stops (one per logical item).
+    /// Populated during rendering; used by cursor navigation to skip wrapped/padding rows.
+    pub cursor_stops: RefCell<Vec<usize>>,
 
     // === Review list search ===
     pub search_input: String,
@@ -412,6 +415,9 @@ pub struct Model {
 
     // === Repo path for display ===
     pub repo_path: Option<String>,
+
+    // === Cached editor name for help bar ===
+    pub editor_name: String,
 
     // === Control ===
     pub should_quit: bool,
@@ -480,9 +486,15 @@ impl Model {
             thread_positions: RefCell::new(HashMap::new()),
             max_stream_row: Cell::new(0),
             line_map: RefCell::new(HashMap::new()),
+            cursor_stops: RefCell::new(Vec::new()),
             search_input: String::new(),
             search_active: false,
             repo_path: None,
+            editor_name: std::env::var("EDITOR")
+                .or_else(|_| std::env::var("VISUAL"))
+                .ok()
+                .and_then(|e| e.rsplit('/').next().map(String::from))
+                .unwrap_or_else(|| "Editor".to_string()),
             should_quit: false,
             needs_redraw: true,
             last_list_scroll: None,

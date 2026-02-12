@@ -245,6 +245,15 @@ pub(super) fn draw_plain_line_with_right(
     }
 }
 
+/// Tint a background color when the line is part of a visual selection.
+pub(super) fn selection_bg(bg: Rgba, is_selected: bool, theme: &Theme) -> Rgba {
+    if is_selected {
+        bg.lerp(theme.primary, 0.08)
+    } else {
+        bg
+    }
+}
+
 /// Blend a background color with the cursor accent when the line is under the cursor.
 pub(super) fn cursor_bg(bg: Rgba, is_cursor: bool, theme: &Theme) -> Rgba {
     if is_cursor {

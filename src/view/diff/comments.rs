@@ -111,6 +111,7 @@ pub(super) fn emit_comment_block(
     thread: &ThreadSummary,
     comments: &[crate::db::Comment],
     is_highlighted: bool,
+    is_cursor: bool,
 ) {
     if comments.is_empty() {
         return;
@@ -131,11 +132,17 @@ pub(super) fn emit_comment_block(
         .saturating_add(bottom_margin);
 
     for row in 0..total_rows {
+        cursor.mark_cursor_stop();
         cursor.emit(|buf, y, theme| {
-            let block_bg = if is_highlighted {
+            let base_bg = if is_highlighted {
                 theme.panel_bg.lerp(theme.primary, 0.12)
             } else {
                 theme.panel_bg
+            };
+            let block_bg = if is_cursor {
+                base_bg.lerp(theme.primary, 0.15)
+            } else {
+                base_bg
             };
             let border_style = Style::fg(theme.background).with_bg(block_bg);
             let bar_style = Style::fg(theme.background).with_bg(block_bg);

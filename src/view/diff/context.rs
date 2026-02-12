@@ -11,7 +11,7 @@ use crate::view::components::Rect;
 use super::analysis::{build_thread_ranges, line_in_thread_ranges};
 use super::comments::{comment_block_rows, emit_comment_block};
 use super::helpers::{
-    cursor_bg, cursor_fg, draw_diff_base_line,
+    cursor_bg, cursor_fg, selection_bg, draw_diff_base_line,
     orphaned_context_width, orphaned_context_x,
 };
 use super::text_util::{draw_highlighted_text, draw_wrapped_line, wrap_content, HighlightContent, WrappedLine};
@@ -212,8 +212,9 @@ pub(super) fn emit_orphaned_context_section(
                             .insert(thread.thread_id.clone(), cursor.stream_row);
                         if let Some(comments) = state.all_comments.get(&thread.thread_id) {
                             let rows = comment_block_rows(thread, comments, comment_area);
-                            let hl = cursor.is_cursor_at(rows) || cursor.is_selected_at(rows);
-                            emit_comment_block(cursor, comment_area, thread, comments, hl);
+                            let is_cursor = cursor.is_cursor_at(rows);
+                            let hl = is_cursor || cursor.is_selected_at(rows);
+                            emit_comment_block(cursor, comment_area, thread, comments, hl, is_cursor);
                         }
                     }
                 }
@@ -236,6 +237,7 @@ pub(super) fn emit_orphaned_context_section(
                 line_num,
                 content: line_content,
             } => {
+                cursor.mark_cursor_stop();
                 if wrap {
                     let line_index = (*line_num - context.start_line) as usize;
                     let highlight = context.highlights.get(line_index);
@@ -273,8 +275,9 @@ pub(super) fn emit_orphaned_context_section(
                         .insert(thread.thread_id.clone(), cursor.stream_row);
                     if let Some(comments) = state.all_comments.get(&thread.thread_id) {
                         let rows = comment_block_rows(thread, comments, comment_area);
-                        let hl = cursor.is_cursor_at(rows) || cursor.is_selected_at(rows);
-                        emit_comment_block(cursor, comment_area, thread, comments, hl);
+                        let is_cursor = cursor.is_cursor_at(rows);
+                        let hl = is_cursor || cursor.is_selected_at(rows);
+                        emit_comment_block(cursor, comment_area, thread, comments, hl, is_cursor);
                     }
                 }
                 *state.last_line_num = Some(*line_num);
@@ -303,8 +306,9 @@ pub(super) fn emit_remaining_orphaned_comments(
             .insert(thread.thread_id.clone(), cursor.stream_row);
         if let Some(comments) = all_comments.get(&thread.thread_id) {
             let rows = comment_block_rows(thread, comments, comment_area);
-            let hl = cursor.is_cursor_at(rows) || cursor.is_selected_at(rows);
-            emit_comment_block(cursor, comment_area, thread, comments, hl);
+            let is_cursor = cursor.is_cursor_at(rows);
+            let hl = is_cursor || cursor.is_selected_at(rows);
+            emit_comment_block(cursor, comment_area, thread, comments, hl, is_cursor);
         }
     }
 }
@@ -341,7 +345,7 @@ pub(super) fn render_context_item_block(
             );
         }
         DisplayItem::Line { line_num, content } => {
-            let bg = cursor_bg(dt.context_bg, is_cursor, theme);
+            let bg = cursor_bg(selection_bg(dt.context_bg, is_selected, theme), is_cursor, theme);
             let fg = cursor_fg(dt.context, is_cursor);
             let ln_fg = cursor_fg(dt.line_number, is_cursor);
             draw_diff_base_line(buffer, area, y, bg);
@@ -385,7 +389,7 @@ pub(super) fn render_context_line_wrapped_row(
 ) {
     let dt = &theme.diff;
     let is_cursor = ctx.is_cursor;
-    let bg = cursor_bg(dt.context_bg, is_cursor, theme);
+    let bg = cursor_bg(selection_bg(dt.context_bg, ctx.is_selected, theme), is_cursor, theme);
     let fg = cursor_fg(dt.context, is_cursor);
     let ln_fg = cursor_fg(dt.line_number, is_cursor);
     draw_diff_base_line(buffer, ctx.area, y, bg);

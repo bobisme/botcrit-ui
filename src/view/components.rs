@@ -1,5 +1,7 @@
 //! Reusable UI components
 
+use std::borrow::Cow;
+
 use opentui::buffer::BoxStyle;
 use opentui::{OptimizedBuffer, Rgba, Style};
 
@@ -313,18 +315,18 @@ pub fn dim_rect(buffer: &mut OptimizedBuffer, area: Rect, scale: f32) {
 
 /// A label + key hint for the help bar.
 pub struct HotkeyHint {
-    pub label: &'static str,
+    pub label: Cow<'static, str>,
     pub key: &'static str,
 }
 
 impl HotkeyHint {
     #[must_use]
-    pub const fn new(label: &'static str, key: &'static str) -> Self {
-        Self { label, key }
+    pub fn new(label: impl Into<Cow<'static, str>>, key: &'static str) -> Self {
+        Self { label: label.into(), key }
     }
 
     #[must_use]
-    pub const fn width(&self) -> usize {
+    pub fn width(&self) -> usize {
         self.label.len() + 1 + self.key.len()
     }
 }
@@ -407,7 +409,7 @@ pub fn draw_help_bar_ext(
             buffer.draw_text(x, y, separator, dim);
             x += sep_len as u32;
         }
-        buffer.draw_text(x, y, hint.label, dim);
+        buffer.draw_text(x, y, &hint.label, dim);
         x += hint.label.len() as u32;
         buffer.draw_text(x, y, " ", dim);
         x += 1;

@@ -133,6 +133,7 @@ struct StreamCursor<'a> {
     theme: &'a Theme,
     max_stream_row: &'a std::cell::Cell<usize>,
     selection: Option<(usize, usize)>,
+    cursor_stops: &'a std::cell::RefCell<Vec<usize>>,
 }
 
 struct OrphanedContext<'a> {
@@ -216,6 +217,11 @@ impl StreamCursor<'_> {
 
     const fn remaining_rows(&self) -> usize {
         self.area.height.saturating_sub(self.screen_row as u32) as usize
+    }
+
+    /// Record the current stream_row as a valid cursor stop.
+    fn mark_cursor_stop(&self) {
+        self.cursor_stops.borrow_mut().push(self.stream_row);
     }
 }
 
@@ -336,6 +342,7 @@ pub fn render_pinned_header_block(
 
     // Pinned header doesn't participate in cursor tracking
     let dummy_max = std::cell::Cell::new(0);
+    let dummy_stops = std::cell::RefCell::new(Vec::new());
     let mut cursor = StreamCursor {
         buffer,
         area: Rect::new(area.x, area.y, area.width, height),
@@ -346,6 +353,7 @@ pub fn render_pinned_header_block(
         theme,
         max_stream_row: &dummy_max,
         selection: None,
+        cursor_stops: &dummy_stops,
     };
 
     for _ in 0..BLOCK_MARGIN {
@@ -492,6 +500,7 @@ pub struct DiffStreamParams<'a> {
     pub description: Option<&'a str>,
     pub selection: Option<(usize, usize)>,
     pub line_map: &'a std::cell::RefCell<std::collections::HashMap<usize, i64>>,
+    pub cursor_stops: &'a std::cell::RefCell<Vec<usize>>,
 }
 
 fn render_file_with_diff(
@@ -588,8 +597,9 @@ fn render_file_with_diff(
                 .insert(thread.thread_id.clone(), cursor.stream_row);
             if let Some(comments) = sctx.all_comments.get(&thread.thread_id) {
                 let rows = comment_block_rows(thread, comments, area);
-                let hl = cursor.is_cursor_at(rows) || cursor.is_selected_at(rows);
-                emit_comment_block(cursor, area, thread, comments, hl);
+                let is_cursor = cursor.is_cursor_at(rows);
+                let hl = is_cursor || cursor.is_selected_at(rows);
+                emit_comment_block(cursor, area, thread, comments, hl, is_cursor);
             }
         }
     }
@@ -633,6 +643,7 @@ fn render_file_content_no_diff(
                 });
             }
             DisplayItem::Line { line_num, content } => {
+                cursor.mark_cursor_stop();
                 if sctx.wrap {
                     let line_index = (*line_num - start_line) as usize;
                     let highlight = file_highlights.get(line_index);
@@ -687,8 +698,9 @@ fn render_file_content_no_diff(
                     .or_insert(cursor.stream_row);
                 if let Some(comments) = sctx.all_comments.get(&thread.thread_id) {
                     let rows = comment_block_rows(thread, comments, area);
-                    let hl = cursor.is_cursor_at(rows);
-                    emit_comment_block(cursor, area, thread, comments, hl);
+                    let is_cursor = cursor.is_cursor_at(rows);
+                    let hl = is_cursor;
+                    emit_comment_block(cursor, area, thread, comments, hl, is_cursor);
                 }
             }
         }
@@ -794,8 +806,9 @@ fn try_emit_line_comment(
         };
         if let Some(comments) = ctx.all_comments.get(&comment_anchor.thread_id) {
             let rows = comment_block_rows(thread, comments, ctx.area);
-            let hl = cursor.is_cursor_at(rows) || cursor.is_selected_at(rows);
-            emit_comment_block(cursor, ctx.area, thread, comments, hl);
+            let is_cursor = cursor.is_cursor_at(rows);
+            let hl = is_cursor || cursor.is_selected_at(rows);
+            emit_comment_block(cursor, ctx.area, thread, comments, hl, is_cursor);
         }
     }
 }
@@ -863,6 +876,7 @@ fn render_unified_display_items(
                 });
             }
             DisplayLine::Diff(line) => {
+                cursor.mark_cursor_stop();
                 // Record new-side line mapping for comment targeting
                 if let Some(nl) = line.new_line {
                     let base = cursor.stream_row;
@@ -1164,6 +1178,9 @@ fn render_file_diff_sbs(
                 }
             }
         }
+        if !sbs_line.is_header {
+            cursor.mark_cursor_stop();
+        }
         let is_cursor = !sbs_line.is_header && cursor.is_cursor_at(1);
         let is_selected = !sbs_line.is_header && cursor.is_selected_at(1);
         render_sbs_line(
@@ -1190,8 +1207,9 @@ fn render_file_diff_sbs(
                         ctx.all_comments.get(&comment_anchor.thread_id)
                     {
                         let rows = comment_block_rows(thread, comments, ctx.area);
-                        let hl = cursor.is_cursor_at(rows);
-                        emit_comment_block(cursor, ctx.area, thread, comments, hl);
+                        let is_cursor = cursor.is_cursor_at(rows);
+                        let hl = is_cursor;
+                        emit_comment_block(cursor, ctx.area, thread, comments, hl, is_cursor);
                     }
                 }
             }
@@ -1225,6 +1243,7 @@ pub fn render_diff_stream(
 ) {
     params.thread_positions.borrow_mut().clear();
     params.line_map.borrow_mut().clear();
+    params.cursor_stops.borrow_mut().clear();
     params.max_stream_row.set(0);
     let mut cursor = StreamCursor {
         buffer,
@@ -1236,6 +1255,7 @@ pub fn render_diff_stream(
         theme: params.theme,
         max_stream_row: params.max_stream_row,
         selection: params.selection,
+        cursor_stops: params.cursor_stops,
     };
 
     // Render description block if present

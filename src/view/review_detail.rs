@@ -397,6 +397,7 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
             description,
             selection,
             line_map: &model.line_map,
+            cursor_stops: &model.cursor_stops,
         },
     );
 
@@ -464,18 +465,19 @@ fn render_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
             all_hints.extend([
                 HotkeyHint::new("Select", "j/k"),
                 HotkeyHint::new("Comment", "a"),
-                HotkeyHint::new("$EDITOR", "A"),
+                HotkeyHint::new(format!("Comment with {}", model.editor_name), "A"),
                 HotkeyHint::new("Exit", "V/Esc"),
             ]);
         }
         Focus::DiffPane => {
+            let on_diff_line = model.line_map.borrow().contains_key(&model.diff_cursor);
+            if on_diff_line {
+                all_hints.push(HotkeyHint::new("Select", "V"));
+            }
             all_hints.extend([
-                HotkeyHint::new("Comment", "a"),
-                HotkeyHint::new("$EDITOR", "A"),
-                HotkeyHint::new("Select", "V"),
                 HotkeyHint::new("View", "v"),
                 HotkeyHint::new("Wrap", "w"),
-                HotkeyHint::new("Open", "o"),
+                HotkeyHint::new("Open File", "o"),
                 HotkeyHint::new("Sidebar", "s"),
                 HotkeyHint::new("Back", "Esc"),
                 HotkeyHint::new("Quit", "q"),

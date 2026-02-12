@@ -277,6 +277,7 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
             KeyCode::Char('g') | KeyCode::Home => Message::CursorTop,
             KeyCode::Char('G') | KeyCode::End => Message::CursorBottom,
             KeyCode::Char('a') => Message::StartComment,
+            KeyCode::Char('A') => Message::StartCommentExternal,
             KeyCode::Char('V') | KeyCode::Esc => Message::VisualToggle,
             _ => Message::Noop,
         },
@@ -306,6 +307,7 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
                 )
             }
             KeyCode::Char('a') => Message::StartComment,
+            KeyCode::Char('A') => Message::StartCommentExternal,
             KeyCode::Char('V') => Message::VisualToggle,
             KeyCode::Char('[') => Message::PrevFile,
             KeyCode::Char(']') => Message::NextFile,
@@ -324,13 +326,29 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
             }
             _ => Message::Noop,
         },
-        Focus::Commenting => match key {
-            KeyCode::Esc => Message::CancelComment,
-            KeyCode::Enter => Message::SaveComment,
-            KeyCode::Char(c) => Message::CommentInput(c.to_string()),
-            KeyCode::Backspace => Message::CommentInputBackspace,
-            _ => Message::Noop,
-        },
+        Focus::Commenting => {
+            if modifiers.contains(KeyModifiers::CTRL) {
+                return match key {
+                    KeyCode::Char('s') => Message::SaveComment,
+                    KeyCode::Char('w') => Message::CommentDeleteWord,
+                    KeyCode::Char('u') => Message::CommentClearLine,
+                    _ => Message::Noop,
+                };
+            }
+            match key {
+                KeyCode::Esc => Message::CancelComment,
+                KeyCode::Enter => Message::CommentNewline,
+                KeyCode::Up => Message::CommentCursorUp,
+                KeyCode::Down => Message::CommentCursorDown,
+                KeyCode::Left => Message::CommentCursorLeft,
+                KeyCode::Right => Message::CommentCursorRight,
+                KeyCode::Home => Message::CommentHome,
+                KeyCode::End => Message::CommentEnd,
+                KeyCode::Backspace => Message::CommentInputBackspace,
+                KeyCode::Char(c) => Message::CommentInput(c.to_string()),
+                _ => Message::Noop,
+            }
+        }
         _ => Message::Noop,
     }
 }

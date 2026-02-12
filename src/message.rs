@@ -124,11 +124,22 @@ pub enum Message {
     CommandPaletteExecute,
 
     // === Commenting ===
-    /// Open $EDITOR to write a comment (on existing thread or new from selection)
+    /// Open inline multi-line comment editor (a)
     StartComment,
+    /// Open $EDITOR for comment (Shift+A)
+    StartCommentExternal,
     EnterCommentMode,
     CommentInput(String),
     CommentInputBackspace,
+    CommentNewline,
+    CommentCursorUp,
+    CommentCursorDown,
+    CommentCursorLeft,
+    CommentCursorRight,
+    CommentHome,
+    CommentEnd,
+    CommentDeleteWord,
+    CommentClearLine,
     SaveComment,
     CancelComment,
 

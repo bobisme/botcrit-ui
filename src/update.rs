@@ -2,7 +2,7 @@
 
 use crate::command::{command_id_to_message, get_commands};
 use crate::message::Message;
-use crate::model::{CommentRequest, DiffViewMode, EditorRequest, Focus, Model, PaletteMode, ReviewFilter, Screen};
+use crate::model::{CommentRequest, DiffViewMode, EditorRequest, Focus, InlineEditor, Model, PaletteMode, PendingCommentSubmission, ReviewFilter, Screen};
 use crate::stream::{active_file_index, compute_stream_layout, file_scroll_offset, StreamLayoutParams};
 use crate::layout::visible_stream_rows;
 use crate::{config, theme, Highlighter};
@@ -370,26 +370,89 @@ fn update_comment(model: &mut Model, msg: Message) {
             model.needs_redraw = true;
         }
         Message::CommentInput(text) => {
-            model.comment_input.push_str(&text);
-            model.needs_redraw = true;
+            if let Some(editor) = &mut model.inline_editor {
+                for c in text.chars() {
+                    editor.insert_char(c);
+                }
+            }
         }
         Message::CommentInputBackspace => {
-            model.comment_input.pop();
-            model.needs_redraw = true;
+            if let Some(editor) = &mut model.inline_editor {
+                editor.backspace();
+            }
+        }
+        Message::CommentNewline => {
+            if let Some(editor) = &mut model.inline_editor {
+                editor.newline();
+            }
+        }
+        Message::CommentCursorUp => {
+            if let Some(editor) = &mut model.inline_editor {
+                editor.cursor_up();
+            }
+        }
+        Message::CommentCursorDown => {
+            if let Some(editor) = &mut model.inline_editor {
+                editor.cursor_down();
+            }
+        }
+        Message::CommentCursorLeft => {
+            if let Some(editor) = &mut model.inline_editor {
+                editor.cursor_left();
+            }
+        }
+        Message::CommentCursorRight => {
+            if let Some(editor) = &mut model.inline_editor {
+                editor.cursor_right();
+            }
+        }
+        Message::CommentHome => {
+            if let Some(editor) = &mut model.inline_editor {
+                editor.home();
+            }
+        }
+        Message::CommentEnd => {
+            if let Some(editor) = &mut model.inline_editor {
+                editor.end();
+            }
+        }
+        Message::CommentDeleteWord => {
+            if let Some(editor) = &mut model.inline_editor {
+                editor.delete_word();
+            }
+        }
+        Message::CommentClearLine => {
+            if let Some(editor) = &mut model.inline_editor {
+                editor.clear_line();
+            }
         }
         Message::SaveComment => {
-            // TODO: persist comment via crit
+            if let Some(editor) = model.inline_editor.take() {
+                let body = editor.body();
+                if !body.is_empty() {
+                    model.pending_comment_submission = Some(PendingCommentSubmission {
+                        request: editor.request,
+                        body,
+                    });
+                }
+            }
             model.focus = Focus::DiffPane;
-            model.needs_redraw = true;
         }
         Message::CancelComment => {
+            model.inline_editor = None;
             model.comment_input.clear();
             model.comment_target_line = None;
             model.focus = Focus::DiffPane;
-            model.needs_redraw = true;
         }
         _ => {}
     }
+
+    // Keep editor scroll in sync with cursor
+    if let Some(editor) = &mut model.inline_editor {
+        // Estimate viewport height (will be refined during render, but 6 is a safe default)
+        editor.ensure_visible(6);
+    }
+    model.needs_redraw = true;
 }
 
 fn update_file_sidebar(model: &mut Model, msg: &Message) {
@@ -708,10 +771,17 @@ pub fn update(model: &mut Model, msg: Message) {
         }
 
         Message::StartComment => {
-            handle_start_comment(model);
+            handle_start_comment_inline(model);
+        }
+
+        Message::StartCommentExternal => {
+            handle_start_comment_external(model);
         }
 
         Message::EnterCommentMode | Message::CommentInput(_) | Message::CommentInputBackspace
+        | Message::CommentNewline | Message::CommentCursorUp | Message::CommentCursorDown
+        | Message::CommentCursorLeft | Message::CommentCursorRight | Message::CommentHome
+        | Message::CommentEnd | Message::CommentDeleteWord | Message::CommentClearLine
         | Message::SaveComment | Message::CancelComment => {
             update_comment(model, msg);
         }
@@ -788,19 +858,15 @@ pub fn update(model: &mut Model, msg: Message) {
     }
 }
 
-fn handle_start_comment(model: &mut Model) {
-    let Some(review) = &model.current_review else {
-        return;
-    };
+/// Build a `CommentRequest` from the current model state (visual selection or expanded thread).
+fn build_comment_request(model: &mut Model) -> Option<CommentRequest> {
+    let review = model.current_review.as_ref()?;
     let review_id = review.review_id.clone();
     let files = model.files_with_threads();
-    let Some(file) = files.get(model.file_index) else {
-        return;
-    };
+    let file = files.get(model.file_index)?;
     let file_path = file.path.clone();
 
     if model.visual_mode {
-        // Visual selection → new thread
         let sel_start = model.visual_anchor.min(model.diff_cursor);
         let sel_end = model.visual_anchor.max(model.diff_cursor);
 
@@ -816,8 +882,7 @@ fn handle_start_comment(model: &mut Model) {
         drop(line_map);
 
         if min_line > max_line {
-            // No diff lines in selection
-            return;
+            return None;
         }
 
         let end_line = if max_line == min_line {
@@ -827,38 +892,49 @@ fn handle_start_comment(model: &mut Model) {
         };
 
         model.visual_mode = false;
-        model.pending_comment_request = Some(CommentRequest {
+        Some(CommentRequest {
             review_id,
             file_path,
             start_line: min_line,
             end_line,
             thread_id: None,
             existing_comments: Vec::new(),
-        });
+        })
     } else {
-        // No visual selection → add comment to expanded thread
-        let Some(thread_id) = model.expanded_thread.clone() else {
-            return;
-        };
-        let Some(thread) = model.threads.iter().find(|t| t.thread_id == thread_id) else {
-            return;
-        };
+        let thread_id = model.expanded_thread.clone()?;
+        let thread = model.threads.iter().find(|t| t.thread_id == thread_id)?;
         let existing_comments = model
             .all_comments
             .get(&thread_id)
             .cloned()
             .unwrap_or_default();
 
-        model.pending_comment_request = Some(CommentRequest {
+        Some(CommentRequest {
             review_id,
             file_path: thread.file_path.clone(),
             start_line: thread.selection_start,
             end_line: thread.selection_end,
             thread_id: Some(thread_id),
             existing_comments,
-        });
+        })
     }
-    model.needs_redraw = true;
+}
+
+/// Open inline multi-line comment editor (a key).
+fn handle_start_comment_inline(model: &mut Model) {
+    if let Some(request) = build_comment_request(model) {
+        model.inline_editor = Some(InlineEditor::new(request));
+        model.focus = Focus::Commenting;
+        model.needs_redraw = true;
+    }
+}
+
+/// Open $EDITOR for commenting (Shift+A key).
+fn handle_start_comment_external(model: &mut Model) {
+    if let Some(request) = build_comment_request(model) {
+        model.pending_comment_request = Some(request);
+        model.needs_redraw = true;
+    }
 }
 
 fn sync_file_index_from_sidebar(model: &mut Model) {

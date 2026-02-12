@@ -417,6 +417,18 @@ fn process_event(event: &Event, model: &mut Model, ctx: &mut EventContext<'_>) -
         ctx.renderer.invalidate();
     }
 
+    // Handle inline editor submission (no TUI teardown needed)
+    if let Some(submission) = model.pending_comment_submission.take() {
+        if let Some(client) = ctx.client.as_ref() {
+            let persist_result =
+                persist_comment(client.as_ref(), ctx.repo_path, &submission.request, &submission.body);
+            if persist_result.is_ok() {
+                reload_review_data(model, client.as_ref(), ctx.repo_path);
+            }
+        }
+        model.needs_redraw = true;
+    }
+
     Ok(())
 }
 

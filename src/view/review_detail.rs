@@ -464,12 +464,14 @@ fn render_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
             all_hints.extend([
                 HotkeyHint::new("Select", "j/k"),
                 HotkeyHint::new("Comment", "a"),
+                HotkeyHint::new("$EDITOR", "A"),
                 HotkeyHint::new("Exit", "V/Esc"),
             ]);
         }
         Focus::DiffPane => {
             all_hints.extend([
                 HotkeyHint::new("Comment", "a"),
+                HotkeyHint::new("$EDITOR", "A"),
                 HotkeyHint::new("Select", "V"),
                 HotkeyHint::new("View", "v"),
                 HotkeyHint::new("Wrap", "w"),

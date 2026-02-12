@@ -101,6 +101,175 @@ pub struct CommentRequest {
     pub existing_comments: Vec<Comment>,
 }
 
+/// A comment ready to be persisted (from the inline editor).
+#[derive(Debug, Clone)]
+pub struct PendingCommentSubmission {
+    pub request: CommentRequest,
+    pub body: String,
+}
+
+/// In-TUI multi-line comment editor state.
+#[derive(Debug, Clone)]
+pub struct InlineEditor {
+    /// Lines of text (always at least one)
+    pub lines: Vec<String>,
+    /// Cursor row (0-indexed into lines)
+    pub cursor_row: usize,
+    /// Cursor column (0-indexed, character position in current line)
+    pub cursor_col: usize,
+    /// Vertical scroll offset for the text area
+    pub scroll: usize,
+    /// The comment request this editor is for
+    pub request: CommentRequest,
+}
+
+impl InlineEditor {
+    #[must_use]
+    pub fn new(request: CommentRequest) -> Self {
+        Self {
+            lines: vec![String::new()],
+            cursor_row: 0,
+            cursor_col: 0,
+            scroll: 0,
+            request,
+        }
+    }
+
+    /// Insert a character at the cursor position.
+    pub fn insert_char(&mut self, c: char) {
+        let line = &mut self.lines[self.cursor_row];
+        let byte_idx = char_to_byte_index(line, self.cursor_col);
+        line.insert(byte_idx, c);
+        self.cursor_col += 1;
+    }
+
+    /// Insert a newline, splitting the current line.
+    pub fn newline(&mut self) {
+        let line = &self.lines[self.cursor_row];
+        let byte_idx = char_to_byte_index(line, self.cursor_col);
+        let rest = self.lines[self.cursor_row][byte_idx..].to_string();
+        self.lines[self.cursor_row].truncate(byte_idx);
+        self.cursor_row += 1;
+        self.lines.insert(self.cursor_row, rest);
+        self.cursor_col = 0;
+    }
+
+    /// Delete the character before the cursor.
+    pub fn backspace(&mut self) {
+        if self.cursor_col > 0 {
+            let line = &mut self.lines[self.cursor_row];
+            let byte_idx = char_to_byte_index(line, self.cursor_col - 1);
+            let end_byte = char_to_byte_index(line, self.cursor_col);
+            line.drain(byte_idx..end_byte);
+            self.cursor_col -= 1;
+        } else if self.cursor_row > 0 {
+            // Merge with previous line
+            let current = self.lines.remove(self.cursor_row);
+            self.cursor_row -= 1;
+            self.cursor_col = self.lines[self.cursor_row].chars().count();
+            self.lines[self.cursor_row].push_str(&current);
+        }
+    }
+
+    pub fn cursor_up(&mut self) {
+        if self.cursor_row > 0 {
+            self.cursor_row -= 1;
+            self.clamp_col();
+        }
+    }
+
+    pub fn cursor_down(&mut self) {
+        if self.cursor_row + 1 < self.lines.len() {
+            self.cursor_row += 1;
+            self.clamp_col();
+        }
+    }
+
+    pub fn cursor_left(&mut self) {
+        if self.cursor_col > 0 {
+            self.cursor_col -= 1;
+        } else if self.cursor_row > 0 {
+            self.cursor_row -= 1;
+            self.cursor_col = self.lines[self.cursor_row].chars().count();
+        }
+    }
+
+    pub fn cursor_right(&mut self) {
+        let line_len = self.lines[self.cursor_row].chars().count();
+        if self.cursor_col < line_len {
+            self.cursor_col += 1;
+        } else if self.cursor_row + 1 < self.lines.len() {
+            self.cursor_row += 1;
+            self.cursor_col = 0;
+        }
+    }
+
+    pub const fn home(&mut self) {
+        self.cursor_col = 0;
+    }
+
+    pub fn end(&mut self) {
+        self.cursor_col = self.lines[self.cursor_row].chars().count();
+    }
+
+    /// Delete the word before the cursor (Ctrl+W).
+    pub fn delete_word(&mut self) {
+        if self.cursor_col == 0 {
+            return;
+        }
+        let line = &self.lines[self.cursor_row];
+        let byte_idx = char_to_byte_index(line, self.cursor_col);
+        let before = &line[..byte_idx];
+        let trimmed = before.trim_end();
+        // Find start of last word
+        let word_start = trimmed.rfind(|c: char| c.is_whitespace()).map_or(0, |i| i + 1);
+        let new_col = before[..word_start].chars().count();
+        let start_byte = char_to_byte_index(&self.lines[self.cursor_row], new_col);
+        self.lines[self.cursor_row].drain(start_byte..byte_idx);
+        self.cursor_col = new_col;
+    }
+
+    /// Clear from cursor to start of line (Ctrl+U).
+    pub fn clear_line(&mut self) {
+        let line = &self.lines[self.cursor_row];
+        let byte_idx = char_to_byte_index(line, self.cursor_col);
+        self.lines[self.cursor_row].drain(..byte_idx);
+        self.cursor_col = 0;
+    }
+
+    /// Get the full body text.
+    #[must_use]
+    pub fn body(&self) -> String {
+        self.lines.join("\n").trim().to_string()
+    }
+
+    /// Ensure scroll keeps cursor visible given a viewport height.
+    pub const fn ensure_visible(&mut self, viewport_height: usize) {
+        if viewport_height == 0 {
+            return;
+        }
+        if self.cursor_row < self.scroll {
+            self.scroll = self.cursor_row;
+        } else if self.cursor_row >= self.scroll + viewport_height {
+            self.scroll = self.cursor_row - viewport_height + 1;
+        }
+    }
+
+    fn clamp_col(&mut self) {
+        let line_len = self.lines[self.cursor_row].chars().count();
+        if self.cursor_col > line_len {
+            self.cursor_col = line_len;
+        }
+    }
+}
+
+/// Convert a character index to a byte index in a string.
+fn char_to_byte_index(s: &str, char_idx: usize) -> usize {
+    s.char_indices()
+        .nth(char_idx)
+        .map_or(s.len(), |(byte_idx, _)| byte_idx)
+}
+
 impl LayoutMode {
     /// Determine layout mode from terminal width
     #[must_use]
@@ -188,8 +357,12 @@ pub struct Model {
     pub diff_wrap: bool,
     /// Pending editor launch request
     pub pending_editor_request: Option<EditorRequest>,
-    /// Pending comment-via-$EDITOR request
+    /// Pending comment-via-$EDITOR request (Shift+A)
     pub pending_comment_request: Option<CommentRequest>,
+    /// Inline comment editor state (a)
+    pub inline_editor: Option<InlineEditor>,
+    /// Comment ready for persistence (from inline editor submit)
+    pub pending_comment_submission: Option<PendingCommentSubmission>,
 
     // === Command Palette ===
     pub command_palette_input: String,
@@ -282,6 +455,8 @@ impl Model {
             diff_wrap: true,
             pending_editor_request: None,
             pending_comment_request: None,
+            inline_editor: None,
+            pending_comment_submission: None,
             command_palette_input: String::new(),
             command_palette_selection: 0,
             command_palette_commands: Vec::new(),

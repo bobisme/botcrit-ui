@@ -106,6 +106,7 @@ struct LineRenderCtx<'a> {
     anchor: Option<&'a ThreadAnchor>,
     show_thread_bar: bool,
     is_cursor: bool,
+    is_selected: bool,
 }
 
 /// Display item for file context view
@@ -130,6 +131,7 @@ struct StreamCursor<'a> {
     diff_cursor: usize,
     theme: &'a Theme,
     max_stream_row: &'a std::cell::Cell<usize>,
+    selection: Option<(usize, usize)>,
 }
 
 struct OrphanedContext<'a> {
@@ -193,6 +195,18 @@ impl StreamCursor<'_> {
     /// Check if the diff cursor is at or within [`stream_row`, `stream_row` + rows).
     const fn is_cursor_at(&self, rows: usize) -> bool {
         self.diff_cursor >= self.stream_row && self.diff_cursor < self.stream_row + rows
+    }
+
+    /// Check if any row in [`stream_row`, `stream_row` + rows) overlaps with the
+    /// visual selection range.
+    const fn is_selected_at(&self, rows: usize) -> bool {
+        match self.selection {
+            Some((start, end)) => {
+                let item_end = self.stream_row + rows.saturating_sub(1);
+                self.stream_row <= end && item_end >= start
+            }
+            None => false,
+        }
     }
 
     const fn remaining_rows(&self) -> usize {
@@ -326,6 +340,7 @@ pub fn render_pinned_header_block(
         diff_cursor: usize::MAX,
         theme,
         max_stream_row: &dummy_max,
+        selection: None,
     };
 
     for _ in 0..BLOCK_MARGIN {
@@ -414,6 +429,7 @@ pub struct DiffStreamParams<'a> {
     pub thread_positions: &'a std::cell::RefCell<std::collections::HashMap<String, usize>>,
     pub max_stream_row: &'a std::cell::Cell<usize>,
     pub description: Option<&'a str>,
+    pub selection: Option<(usize, usize)>,
 }
 
 fn render_file_with_diff(
@@ -506,7 +522,7 @@ fn render_file_with_diff(
                 .insert(thread.thread_id.clone(), cursor.stream_row);
             if let Some(comments) = sctx.all_comments.get(&thread.thread_id) {
                 let rows = comment_block_rows(thread, comments, area);
-                let hl = cursor.is_cursor_at(rows);
+                let hl = cursor.is_cursor_at(rows) || cursor.is_selected_at(rows);
                 emit_comment_block(cursor, area, thread, comments, hl);
             }
         }
@@ -544,6 +560,7 @@ fn render_file_content_no_diff(
                         show_thread_bar,
                         file_highlights,
                         false,
+                        false,
                     );
                 });
             }
@@ -558,19 +575,21 @@ fn render_file_content_no_diff(
                     let wrapped = wrap_content(highlight, content, content_width);
                     let rows = wrapped.len().max(1);
                     let is_cursor = cursor.is_cursor_at(rows);
+                    let is_selected = cursor.is_selected_at(rows);
                     cursor.emit_rows(rows, |buf, y, theme, row| {
                         render_context_line_wrapped_row(
                             buf,
                             y,
                             *line_num,
                             theme,
-                            &LineRenderCtx { area: line_area, anchor: None, show_thread_bar, is_cursor },
+                            &LineRenderCtx { area: line_area, anchor: None, show_thread_bar, is_cursor, is_selected },
                             &wrapped,
                             row,
                         );
                     });
                 } else {
                     let is_cursor = cursor.is_cursor_at(1);
+                    let is_selected = cursor.is_selected_at(1);
                     cursor.emit(|buf, y, theme| {
                         render_context_item_block(
                             buf,
@@ -581,6 +600,7 @@ fn render_file_content_no_diff(
                             show_thread_bar,
                             file_highlights,
                             is_cursor,
+                            is_selected,
                         );
                     });
                 }
@@ -705,7 +725,7 @@ fn try_emit_line_comment(
         };
         if let Some(comments) = ctx.all_comments.get(&comment_anchor.thread_id) {
             let rows = comment_block_rows(thread, comments, ctx.area);
-            let hl = cursor.is_cursor_at(rows);
+            let hl = cursor.is_cursor_at(rows) || cursor.is_selected_at(rows);
             emit_comment_block(cursor, ctx.area, thread, comments, hl);
         }
     }
@@ -767,7 +787,7 @@ fn render_unified_display_items(
                         y,
                         display_line,
                         theme,
-                        &LineRenderCtx { area: ctx.line_area, anchor, show_thread_bar, is_cursor: false },
+                        &LineRenderCtx { area: ctx.line_area, anchor, show_thread_bar, is_cursor: false, is_selected: false },
                         ctx.file_highlights.get(idx),
                     );
                 });
@@ -786,26 +806,28 @@ fn render_unified_display_items(
                     );
                     let rows = wrapped.len().max(1);
                     let is_cursor = cursor.is_cursor_at(rows);
+                    let is_selected = cursor.is_selected_at(rows);
                     cursor.emit_rows(rows, |buf, y, theme, row| {
                         render_unified_diff_line_wrapped_row(
                             buf,
                             y,
                             line,
                             theme,
-                            &LineRenderCtx { area: ctx.line_area, anchor, show_thread_bar, is_cursor },
+                            &LineRenderCtx { area: ctx.line_area, anchor, show_thread_bar, is_cursor, is_selected },
                             &wrapped,
                             row,
                         );
                     });
                 } else {
                     let is_cursor = cursor.is_cursor_at(1);
+                    let is_selected = cursor.is_selected_at(1);
                     cursor.emit(|buf, y, theme| {
                         render_unified_diff_line_block(
                             buf,
                             y,
                             display_line,
                             theme,
-                            &LineRenderCtx { area: ctx.line_area, anchor, show_thread_bar, is_cursor },
+                            &LineRenderCtx { area: ctx.line_area, anchor, show_thread_bar, is_cursor, is_selected },
                             ctx.file_highlights.get(idx),
                         );
                     });
@@ -1018,10 +1040,11 @@ fn render_file_diff_sbs(
             }
         }
         let is_cursor = !sbs_line.is_header && cursor.is_cursor_at(1);
+        let is_selected = !sbs_line.is_header && cursor.is_selected_at(1);
         render_sbs_line(
             cursor,
             sbs_line,
-            &LineRenderCtx { area: ctx.line_area, anchor, show_thread_bar, is_cursor },
+            &LineRenderCtx { area: ctx.line_area, anchor, show_thread_bar, is_cursor, is_selected },
             ctx.wrap,
             ctx.file_highlights,
         );
@@ -1086,6 +1109,7 @@ pub fn render_diff_stream(
         diff_cursor: params.diff_cursor,
         theme: params.theme,
         max_stream_row: params.max_stream_row,
+        selection: params.selection,
     };
 
     // Render description block if present

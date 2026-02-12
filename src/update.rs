@@ -542,6 +542,7 @@ fn update_navigation(model: &mut Model, msg: &Message) {
             Screen::ReviewDetail => {
                 model.screen = Screen::ReviewList;
                 model.focus = Focus::ReviewList;
+                model.visual_mode = false;
                 model.current_review = None;
                 model.current_diff = None;
                 model.current_file_content = None;
@@ -675,6 +676,16 @@ pub fn update(model: &mut Model, msg: Message) {
 
         Message::CursorUp | Message::CursorDown | Message::CursorTop | Message::CursorBottom => {
             update_cursor(model, &msg);
+        }
+
+        Message::VisualToggle => {
+            if model.visual_mode {
+                model.visual_mode = false;
+            } else {
+                model.visual_mode = true;
+                model.visual_anchor = model.diff_cursor;
+            }
+            model.needs_redraw = true;
         }
 
         Message::ScrollUp | Message::ScrollDown | Message::ScrollTop | Message::ScrollBottom

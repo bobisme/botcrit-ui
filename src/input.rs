@@ -271,6 +271,14 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
             KeyCode::Char('s') => Message::ToggleSidebar,
             _ => Message::Noop,
         },
+        Focus::DiffPane if model.visual_mode => match key {
+            KeyCode::Char('j') | KeyCode::Down => Message::CursorDown,
+            KeyCode::Char('k') | KeyCode::Up => Message::CursorUp,
+            KeyCode::Char('g') | KeyCode::Home => Message::CursorTop,
+            KeyCode::Char('G') | KeyCode::End => Message::CursorBottom,
+            KeyCode::Char('V') | KeyCode::Esc => Message::VisualToggle,
+            _ => Message::Noop,
+        },
         Focus::DiffPane => match key {
             KeyCode::Char('q') => Message::Quit,
             KeyCode::Esc => Message::Back,
@@ -296,6 +304,7 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
                     |id| Message::ExpandThread(id.clone()),
                 )
             }
+            KeyCode::Char('V') => Message::VisualToggle,
             KeyCode::Char('[') => Message::PrevFile,
             KeyCode::Char(']') => Message::NextFile,
             _ => Message::Noop,

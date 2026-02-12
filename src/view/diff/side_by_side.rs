@@ -44,7 +44,7 @@ pub(super) fn render_side_by_side_line_block(
     let thread_x = diff_content_x(ctx.area);
     let thread_col_width = THREAD_COL_WIDTH;
     let _ = ctx.anchor;
-    if ctx.is_cursor {
+    if ctx.is_cursor || ctx.is_selected {
         draw_cursor_bar(buffer, thread_x, y, base_bg, theme);
     } else if ctx.show_thread_bar {
         draw_thread_range_bar(buffer, thread_x, y, theme.panel_bg, theme);
@@ -105,7 +105,7 @@ pub(super) fn render_side_by_side_line_wrapped_row(
     let thread_x = diff_content_x(ctx.area);
     let thread_col_width = THREAD_COL_WIDTH;
     let _ = (ctx.anchor, row);
-    if ctx.is_cursor {
+    if ctx.is_cursor || ctx.is_selected {
         draw_cursor_bar(buffer, thread_x, y, base_bg, theme);
     } else if ctx.show_thread_bar {
         draw_thread_range_bar(buffer, thread_x, y, theme.panel_bg, theme);

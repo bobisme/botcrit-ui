@@ -369,6 +369,15 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         theme.background,
     );
 
+    // Compute visual selection range
+    let selection = if model.visual_mode {
+        let a = model.visual_anchor;
+        let b = model.diff_cursor;
+        Some((a.min(b), a.max(b)))
+    } else {
+        None
+    };
+
     // Render stream content (description block + files) below pinned header
     render_diff_stream(
         buffer,
@@ -386,6 +395,7 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
             thread_positions: &model.thread_positions,
             max_stream_row: &model.max_stream_row,
             description,
+            selection,
         },
     );
 
@@ -449,8 +459,15 @@ fn render_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
                 HotkeyHint::new("Quit", "q"),
             ]);
         }
+        Focus::DiffPane if model.visual_mode => {
+            all_hints.extend([
+                HotkeyHint::new("Select", "j/k"),
+                HotkeyHint::new("Exit", "V/Esc"),
+            ]);
+        }
         Focus::DiffPane => {
             all_hints.extend([
+                HotkeyHint::new("Select", "V"),
                 HotkeyHint::new("View", "v"),
                 HotkeyHint::new("Wrap", "w"),
                 HotkeyHint::new("Open", "o"),

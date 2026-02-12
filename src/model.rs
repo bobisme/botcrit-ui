@@ -178,6 +178,12 @@ pub struct Model {
     pub command_palette_commands: Vec<CommandSpec>,
     pub command_palette_mode: PaletteMode,
 
+    // === Visual Selection ===
+    /// Whether visual line selection mode is active (Shift+V)
+    pub visual_mode: bool,
+    /// Anchor stream row where visual mode was entered
+    pub visual_anchor: usize,
+
     // === Commenting State ===
     pub comment_input: String,
     pub comment_target_line: Option<u32>,
@@ -257,6 +263,8 @@ impl Model {
             command_palette_selection: 0,
             command_palette_commands: Vec::new(),
             command_palette_mode: PaletteMode::default(),
+            visual_mode: false,
+            visual_anchor: 0,
             comment_input: String::new(),
             comment_target_line: None,
             width,

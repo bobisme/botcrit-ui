@@ -208,7 +208,7 @@ pub(super) fn emit_orphaned_context_section(
                             .insert(thread.thread_id.clone(), cursor.stream_row);
                         if let Some(comments) = state.all_comments.get(&thread.thread_id) {
                             let rows = comment_block_rows(thread, comments, comment_area);
-                            let hl = cursor.is_cursor_at(rows);
+                            let hl = cursor.is_cursor_at(rows) || cursor.is_selected_at(rows);
                             emit_comment_block(cursor, comment_area, thread, comments, hl);
                         }
                     }
@@ -225,7 +225,7 @@ pub(super) fn emit_orphaned_context_section(
         match item {
             DisplayItem::Separator(_) => {
                 cursor.emit(|buf, y, theme| {
-                    render_context_item_block(buf, area, y, item, theme, show_thread_bar, context.highlights, false);
+                    render_context_item_block(buf, area, y, item, theme, show_thread_bar, context.highlights, false, false);
                 });
             }
             DisplayItem::Line {
@@ -240,18 +240,20 @@ pub(super) fn emit_orphaned_context_section(
                     let wrapped = wrap_content(highlight, line_content, cw);
                     let rows = wrapped.len().max(1);
                     let is_cursor = cursor.is_cursor_at(rows);
+                    let is_selected = cursor.is_selected_at(rows);
                     cursor.emit_rows(rows, |buf, y, theme, row| {
                         render_context_line_wrapped_row(
                             buf, y, *line_num, theme,
-                            &LineRenderCtx { area, anchor: None, show_thread_bar, is_cursor },
+                            &LineRenderCtx { area, anchor: None, show_thread_bar, is_cursor, is_selected },
                             &wrapped, row,
                         );
                     });
                 } else {
                     let is_cursor = cursor.is_cursor_at(1);
+                    let is_selected = cursor.is_selected_at(1);
                     cursor.emit(|buf, y, theme| {
                         render_context_item_block(
-                            buf, area, y, item, theme, show_thread_bar, context.highlights, is_cursor,
+                            buf, area, y, item, theme, show_thread_bar, context.highlights, is_cursor, is_selected,
                         );
                     });
                 }
@@ -267,7 +269,7 @@ pub(super) fn emit_orphaned_context_section(
                         .insert(thread.thread_id.clone(), cursor.stream_row);
                     if let Some(comments) = state.all_comments.get(&thread.thread_id) {
                         let rows = comment_block_rows(thread, comments, comment_area);
-                        let hl = cursor.is_cursor_at(rows);
+                        let hl = cursor.is_cursor_at(rows) || cursor.is_selected_at(rows);
                         emit_comment_block(cursor, comment_area, thread, comments, hl);
                     }
                 }
@@ -297,7 +299,7 @@ pub(super) fn emit_remaining_orphaned_comments(
             .insert(thread.thread_id.clone(), cursor.stream_row);
         if let Some(comments) = all_comments.get(&thread.thread_id) {
             let rows = comment_block_rows(thread, comments, comment_area);
-            let hl = cursor.is_cursor_at(rows);
+            let hl = cursor.is_cursor_at(rows) || cursor.is_selected_at(rows);
             emit_comment_block(cursor, comment_area, thread, comments, hl);
         }
     }
@@ -313,6 +315,7 @@ pub(super) fn render_context_item_block(
     show_thread_bar: bool,
     highlighted_lines: &[Vec<HighlightSpan>],
     is_cursor: bool,
+    is_selected: bool,
 ) {
     let dt = &theme.diff;
     match item {
@@ -338,7 +341,7 @@ pub(super) fn render_context_item_block(
         DisplayItem::Line { line_num, content } => {
             draw_diff_base_line(buffer, area, y, dt.context_bg);
             let thread_x = diff_content_x(area);
-            if is_cursor {
+            if is_cursor || is_selected {
                 draw_cursor_bar(buffer, thread_x, y, dt.context_bg, theme);
             } else if show_thread_bar {
                 draw_thread_range_bar(buffer, thread_x, y, theme.panel_bg, theme);
@@ -384,7 +387,7 @@ pub(super) fn render_context_line_wrapped_row(
     let dt = &theme.diff;
     draw_diff_base_line(buffer, ctx.area, y, dt.context_bg);
     let thread_x = diff_content_x(ctx.area);
-    if ctx.is_cursor {
+    if ctx.is_cursor || ctx.is_selected {
         draw_cursor_bar(buffer, thread_x, y, dt.context_bg, theme);
     } else if ctx.show_thread_bar {
         draw_thread_range_bar(buffer, thread_x, y, theme.panel_bg, theme);

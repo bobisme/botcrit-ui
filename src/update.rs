@@ -938,12 +938,7 @@ fn sync_file_index_from_sidebar(model: &mut Model) {
     if let Some(item) = items.get(model.sidebar_index) {
         match item {
             crate::model::SidebarItem::File { file_idx, .. } => {
-                if *file_idx == model.file_index {
-                    model.expanded_thread = None;
-                    model.needs_redraw = true;
-                } else {
-                    jump_to_file(model, *file_idx);
-                }
+                jump_to_file(model, *file_idx);
             }
             crate::model::SidebarItem::Thread {
                 file_idx,

@@ -70,6 +70,7 @@ fn draw_sidebar_file_item(
     model: &Model,
     buffer: &mut OptimizedBuffer,
     item: &SidebarItem,
+    item_idx: usize,
     y: u32,
     inner: Rect,
     pad: &SidebarPadding,
@@ -81,7 +82,7 @@ fn draw_sidebar_file_item(
     } = item
     {
         let theme = &model.theme;
-        let selected = *file_idx == model.sidebar_index;
+        let selected = item_idx == model.sidebar_index;
         let focused = matches!(model.focus, Focus::FileSidebar);
 
         let row_bg = if selected && focused {
@@ -290,7 +291,7 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
 
         match item {
             SidebarItem::File { .. } => {
-                draw_sidebar_file_item(model, buffer, item, y, inner, &pad);
+                draw_sidebar_file_item(model, buffer, item, item_idx, y, inner, &pad);
             }
             SidebarItem::Thread { .. } => {
                 draw_sidebar_thread_item(model, buffer, item, item_idx, y, inner, &pad);

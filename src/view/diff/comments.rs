@@ -135,7 +135,7 @@ pub(super) fn emit_comment_block(
         cursor.mark_cursor_stop();
         cursor.emit(|buf, y, theme| {
             let base_bg = if is_highlighted {
-                theme.panel_bg.lerp(theme.primary, 0.12)
+                theme.panel_bg.lerp(theme.primary, 0.06)
             } else {
                 theme.panel_bg
             };

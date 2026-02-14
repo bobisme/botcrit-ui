@@ -218,6 +218,39 @@ impl InlineEditor {
         self.cursor_col = self.lines[self.cursor_row].chars().count();
     }
 
+    /// Move cursor one word to the left (Alt+B).
+    pub fn word_left(&mut self) {
+        if self.cursor_col == 0 {
+            return;
+        }
+        let line = &self.lines[self.cursor_row];
+        let byte_idx = char_to_byte_index(line, self.cursor_col);
+        let before = &line[..byte_idx];
+        let trimmed = before.trim_end();
+        let word_start = trimmed.rfind(|c: char| c.is_whitespace()).map_or(0, |i| i + 1);
+        self.cursor_col = before[..word_start].chars().count();
+    }
+
+    /// Move cursor one word to the right (Alt+F).
+    pub fn word_right(&mut self) {
+        let line = &self.lines[self.cursor_row];
+        let line_len = line.chars().count();
+        if self.cursor_col >= line_len {
+            return;
+        }
+        let byte_idx = char_to_byte_index(line, self.cursor_col);
+        let after = &line[byte_idx..];
+        // Skip non-whitespace, then skip whitespace
+        let skip_word = after
+            .find(|c: char| c.is_whitespace())
+            .unwrap_or(after.len());
+        let rest = &after[skip_word..];
+        let skip_space = rest
+            .find(|c: char| !c.is_whitespace())
+            .unwrap_or(rest.len());
+        self.cursor_col += after[..skip_word + skip_space].chars().count();
+    }
+
     /// Delete the word before the cursor (Ctrl+W).
     pub fn delete_word(&mut self) {
         if self.cursor_col == 0 {

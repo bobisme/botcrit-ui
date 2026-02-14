@@ -412,6 +412,16 @@ fn update_comment(model: &mut Model, msg: Message) {
                 editor.end();
             }
         }
+        Message::CommentWordLeft => {
+            if let Some(editor) = &mut model.inline_editor {
+                editor.word_left();
+            }
+        }
+        Message::CommentWordRight => {
+            if let Some(editor) = &mut model.inline_editor {
+                editor.word_right();
+            }
+        }
         Message::CommentDeleteWord => {
             if let Some(editor) = &mut model.inline_editor {
                 editor.delete_word();
@@ -779,7 +789,8 @@ pub fn update(model: &mut Model, msg: Message) {
         Message::EnterCommentMode | Message::CommentInput(_) | Message::CommentInputBackspace
         | Message::CommentNewline | Message::CommentCursorUp | Message::CommentCursorDown
         | Message::CommentCursorLeft | Message::CommentCursorRight | Message::CommentHome
-        | Message::CommentEnd | Message::CommentDeleteWord | Message::CommentClearLine
+        | Message::CommentEnd | Message::CommentWordLeft | Message::CommentWordRight
+        | Message::CommentDeleteWord | Message::CommentClearLine
         | Message::SaveComment | Message::CancelComment => {
             update_comment(model, msg);
         }

@@ -332,6 +332,17 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
                     KeyCode::Char('s') => Message::SaveComment,
                     KeyCode::Char('w') => Message::CommentDeleteWord,
                     KeyCode::Char('u') => Message::CommentClearLine,
+                    KeyCode::Char('a') => Message::CommentHome,
+                    KeyCode::Char('e') => Message::CommentEnd,
+                    KeyCode::Char('b') => Message::CommentCursorLeft,
+                    KeyCode::Char('f') => Message::CommentCursorRight,
+                    _ => Message::Noop,
+                };
+            }
+            if modifiers.contains(KeyModifiers::ALT) {
+                return match key {
+                    KeyCode::Char('b') => Message::CommentWordLeft,
+                    KeyCode::Char('f') => Message::CommentWordRight,
                     _ => Message::Noop,
                 };
             }

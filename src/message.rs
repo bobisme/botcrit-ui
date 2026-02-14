@@ -138,6 +138,8 @@ pub enum Message {
     CommentCursorRight,
     CommentHome,
     CommentEnd,
+    CommentWordLeft,
+    CommentWordRight,
     CommentDeleteWord,
     CommentClearLine,
     SaveComment,

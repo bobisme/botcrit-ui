@@ -1,8 +1,9 @@
 //! Inline multi-line comment editor overlay.
 //!
-//! Renders a modal overlay similar to the command palette:
+//! Renders a bottom-pinned modal centered on the diff pane:
 //! - Dimmed background
-//! - Centered panel with title, existing comments, text area, and status bar
+//! - Text area with existing comments context
+//! - Bottom bar with title (left) and hotkeys (right)
 
 use opentui::{OptimizedBuffer, Style};
 
@@ -10,8 +11,10 @@ use crate::model::{Focus, InlineEditor, Model};
 use crate::theme::Theme;
 use crate::view::components::{dim_rect, draw_help_bar_ext, draw_text_truncated, HotkeyHint, Rect};
 
-/// Minimum editor panel height (title + padding + 3 text lines + status).
+/// Minimum editor panel height.
 const MIN_HEIGHT: u32 = 8;
+/// Below this diff-pane width the panel spans the full screen.
+const MIN_WIDTH: u32 = 40;
 /// Horizontal padding inside the panel.
 const H_PAD: u32 = 2;
 
@@ -26,7 +29,16 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
     let screen = Rect::from_size(model.width, model.height);
     dim_rect(buffer, screen, 0.6);
 
-    let panel = compute_panel(screen, editor);
+    // Compute diff pane region for centering
+    let sidebar_w = if model.sidebar_visible {
+        u32::from(model.layout_mode.sidebar_width())
+    } else {
+        0
+    };
+    let diff_pane_x = sidebar_w;
+    let diff_pane_width = u32::from(model.width).saturating_sub(sidebar_w);
+
+    let panel = compute_panel(screen, editor, diff_pane_x, diff_pane_width);
 
     // Fill panel background
     buffer.fill_rect(panel.x, panel.y, panel.width, panel.height, model.theme.panel_bg);
@@ -36,76 +48,71 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
 
     let mut y = panel.y + 1;
 
-    // --- Title row ---
-    y = render_title(buffer, &model.theme, editor, content_x, content_width, y);
-
-    // --- Blank row ---
-    y += 1;
-
     // --- Existing comments context (dimmed) ---
     y = render_existing_comments(buffer, &model.theme, editor, &panel, content_x, content_width, y);
 
     // --- Text area ---
-    let help_bar_top = panel.y + panel.height - 2;
-    render_text_area(buffer, &model.theme, editor, content_x, content_width, y, help_bar_top);
+    // render_text_area naturally leaves a 1-row gap before bottom_row
+    let bottom_row = panel.y + panel.height - 1;
+    render_text_area(buffer, &model.theme, editor, content_x, content_width, y, bottom_row);
 
-    // --- Help bar ---
-    let help_area = Rect::new(panel.x, panel.y + panel.height - 2, panel.width, 2);
+    // --- Bottom bar: title left + hotkeys right ---
+    let title = build_title(editor);
+    let help_area = Rect::new(panel.x, bottom_row, panel.width, 1);
     let hints = [
         HotkeyHint::new("Submit", "ctrl+s"),
         HotkeyHint::new("Cancel", "esc"),
     ];
-    draw_help_bar_ext(buffer, help_area, &model.theme, &hints, model.theme.panel_bg, "");
+    draw_help_bar_ext(buffer, help_area, &model.theme, &hints, model.theme.panel_bg, &title);
 }
 
-fn compute_panel(screen: Rect, editor: &InlineEditor) -> Rect {
-    let panel_width = (screen.width * 7 / 10).clamp(40, 80).min(screen.width.saturating_sub(4));
-    let panel_x = (screen.width.saturating_sub(panel_width)) / 2;
-
-    let existing_count = editor.request.existing_comments.len() as u32;
-    let context_rows = if existing_count > 0 {
-        1 + existing_count.min(6) + 1
-    } else {
-        0
-    };
-    let text_area_height = 8u32;
-    let ideal_height = 1 + 1 + 1 + context_rows + text_area_height + 2;
-    let panel_height = ideal_height
-        .clamp(MIN_HEIGHT, screen.height.saturating_sub(4))
-        .min(screen.height);
-    let panel_y = screen.height.saturating_sub(panel_height);
-
-    Rect::new(panel_x, panel_y, panel_width, panel_height)
-}
-
-fn render_title(
-    buffer: &mut OptimizedBuffer,
-    theme: &Theme,
-    editor: &InlineEditor,
-    content_x: u32,
-    content_width: u32,
-    y: u32,
-) -> u32 {
+fn build_title(editor: &InlineEditor) -> String {
     let line_range = match editor.request.end_line {
         Some(end) if end != editor.request.start_line => {
             format!("{}:{}-{}", editor.request.file_path, editor.request.start_line, end)
         }
         _ => format!("{}:{}", editor.request.file_path, editor.request.start_line),
     };
-    let title = if editor.request.thread_id.is_some() {
+    if editor.request.thread_id.is_some() {
         format!("Reply on {line_range}")
     } else {
-        format!("New comment on {line_range}")
+        format!("Comment on {line_range}")
+    }
+}
+
+fn compute_panel(
+    screen: Rect,
+    editor: &InlineEditor,
+    diff_pane_x: u32,
+    diff_pane_width: u32,
+) -> Rect {
+    let (panel_width, panel_x) = if diff_pane_width < MIN_WIDTH {
+        // Too narrow for margins — span full screen
+        (screen.width, 0)
+    } else {
+        let w = (diff_pane_width * 7 / 10)
+            .clamp(MIN_WIDTH, 80)
+            .min(diff_pane_width);
+        let x = diff_pane_x + (diff_pane_width.saturating_sub(w)) / 2;
+        (w, x)
     };
-    draw_text_truncated(
-        buffer,
-        content_x,
-        y,
-        &title,
-        content_width,
-        theme.style_muted(),
-    );
-    y + 1
+
+    let existing_count = editor.request.existing_comments.len() as u32;
+    let context_rows = if existing_count > 0 {
+        existing_count.min(6) + 1 // comments + blank separator
+    } else {
+        0
+    };
+    let text_area_height = 8u32;
+    // 1 top padding + context + text + 1 gap + 1 hotkey row
+    let ideal_height = 1 + context_rows + text_area_height + 1 + 1;
+    let panel_height = ideal_height
+        .clamp(MIN_HEIGHT, screen.height.saturating_sub(2))
+        .min(screen.height);
+    // Pin to bottom with 1-row margin
+    let panel_y = screen.height.saturating_sub(panel_height + 1);
+
+    Rect::new(panel_x, panel_y, panel_width, panel_height)
 }
 
 fn render_existing_comments(

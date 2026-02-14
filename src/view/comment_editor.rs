@@ -14,7 +14,7 @@ use crate::view::components::{dim_rect, draw_help_bar_ext, draw_text_truncated, 
 /// Minimum editor panel height.
 const MIN_HEIGHT: u32 = 8;
 /// Below this diff-pane width the panel spans the full screen.
-const MIN_WIDTH: u32 = 40;
+const MIN_WIDTH: u32 = 60;
 /// Horizontal padding inside the panel.
 const H_PAD: u32 = 2;
 

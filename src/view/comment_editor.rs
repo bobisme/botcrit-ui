@@ -52,13 +52,13 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
     y = render_existing_comments(buffer, &model.theme, editor, &panel, content_x, content_width, y);
 
     // --- Text area ---
-    // render_text_area naturally leaves a 1-row gap before bottom_row
-    let bottom_row = panel.y + panel.height - 1;
-    render_text_area(buffer, &model.theme, editor, content_x, content_width, y, bottom_row);
+    // render_text_area naturally leaves a 1-row gap before hotkey_row
+    let hotkey_row = panel.y + panel.height - 2;
+    render_text_area(buffer, &model.theme, editor, content_x, content_width, y, hotkey_row);
 
     // --- Bottom bar: title left + hotkeys right ---
     let title = build_title(editor);
-    let help_area = Rect::new(panel.x, bottom_row, panel.width, 1);
+    let help_area = Rect::new(panel.x, hotkey_row, panel.width, 1);
     let hints = [
         HotkeyHint::new("Submit", "ctrl+s"),
         HotkeyHint::new("Cancel", "esc"),
@@ -86,15 +86,13 @@ fn compute_panel(
     diff_pane_x: u32,
     diff_pane_width: u32,
 ) -> Rect {
-    let (panel_width, panel_x) = if diff_pane_width < MIN_WIDTH {
-        // Too narrow for margins — span full screen
-        (screen.width, 0)
+    let natural_w = (diff_pane_width * 7 / 10).min(80);
+    let (panel_width, panel_x) = if natural_w < MIN_WIDTH {
+        // Pane too narrow for margins — fill the diff pane
+        (diff_pane_width, diff_pane_x)
     } else {
-        let w = (diff_pane_width * 7 / 10)
-            .clamp(MIN_WIDTH, 80)
-            .min(diff_pane_width);
-        let x = diff_pane_x + (diff_pane_width.saturating_sub(w)) / 2;
-        (w, x)
+        let x = diff_pane_x + (diff_pane_width.saturating_sub(natural_w)) / 2;
+        (natural_w, x)
     };
 
     let existing_count = editor.request.existing_comments.len() as u32;
@@ -104,8 +102,8 @@ fn compute_panel(
         0
     };
     let text_area_height = 8u32;
-    // 1 top padding + context + text + 1 gap + 1 hotkey row
-    let ideal_height = 1 + context_rows + text_area_height + 1 + 1;
+    // 1 top padding + context + text + 1 gap + 1 hotkey row + 1 bottom padding
+    let ideal_height = 1 + context_rows + text_area_height + 1 + 1 + 1;
     let panel_height = ideal_height
         .clamp(MIN_HEIGHT, screen.height.saturating_sub(2))
         .min(screen.height);

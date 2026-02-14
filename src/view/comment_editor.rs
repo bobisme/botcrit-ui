@@ -8,7 +8,7 @@ use opentui::{OptimizedBuffer, Style};
 
 use crate::model::{Focus, InlineEditor, Model};
 use crate::theme::Theme;
-use crate::view::components::{dim_rect, draw_text_truncated, Rect};
+use crate::view::components::{dim_rect, draw_help_bar_ext, draw_text_truncated, HotkeyHint, Rect};
 
 /// Minimum editor panel height (title + padding + 3 text lines + status).
 const MIN_HEIGHT: u32 = 8;
@@ -24,7 +24,7 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
     };
 
     let screen = Rect::from_size(model.width, model.height);
-    dim_rect(buffer, screen, 0.35);
+    dim_rect(buffer, screen, 0.6);
 
     let panel = compute_panel(screen, editor);
 
@@ -34,10 +34,10 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
     let content_x = panel.x + H_PAD;
     let content_width = panel.width.saturating_sub(H_PAD * 2);
 
-    let mut y = panel.y;
+    let mut y = panel.y + 1;
 
     // --- Title row ---
-    y = render_title(buffer, &model.theme, editor, &panel, content_x, content_width, y);
+    y = render_title(buffer, &model.theme, editor, content_x, content_width, y);
 
     // --- Blank row ---
     y += 1;
@@ -46,11 +46,16 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
     y = render_existing_comments(buffer, &model.theme, editor, &panel, content_x, content_width, y);
 
     // --- Text area ---
-    let status_y = panel.y + panel.height - 2;
-    render_text_area(buffer, &model.theme, editor, content_x, content_width, y, status_y);
+    let help_bar_top = panel.y + panel.height - 2;
+    render_text_area(buffer, &model.theme, editor, content_x, content_width, y, help_bar_top);
 
-    // --- Status bar ---
-    render_status_bar(buffer, &model.theme, &panel, content_x, status_y);
+    // --- Help bar ---
+    let help_area = Rect::new(panel.x, panel.y + panel.height - 2, panel.width, 2);
+    let hints = [
+        HotkeyHint::new("Submit", "ctrl+s"),
+        HotkeyHint::new("Cancel", "esc"),
+    ];
+    draw_help_bar_ext(buffer, help_area, &model.theme, &hints, model.theme.panel_bg, "");
 }
 
 fn compute_panel(screen: Rect, editor: &InlineEditor) -> Rect {
@@ -64,11 +69,11 @@ fn compute_panel(screen: Rect, editor: &InlineEditor) -> Rect {
         0
     };
     let text_area_height = 8u32;
-    let ideal_height = 1 + 1 + context_rows + text_area_height + 1 + 1 + 1;
+    let ideal_height = 1 + 1 + 1 + context_rows + text_area_height + 2;
     let panel_height = ideal_height
         .clamp(MIN_HEIGHT, screen.height.saturating_sub(4))
         .min(screen.height);
-    let panel_y = (screen.height.saturating_sub(panel_height)) / 3;
+    let panel_y = screen.height.saturating_sub(panel_height);
 
     Rect::new(panel_x, panel_y, panel_width, panel_height)
 }
@@ -77,7 +82,6 @@ fn render_title(
     buffer: &mut OptimizedBuffer,
     theme: &Theme,
     editor: &InlineEditor,
-    panel: &Rect,
     content_x: u32,
     content_width: u32,
     y: u32,
@@ -98,11 +102,9 @@ fn render_title(
         content_x,
         y,
         &title,
-        content_width.saturating_sub(4),
-        theme.style_foreground().with_bold(),
+        content_width,
+        theme.style_muted(),
     );
-    let esc_x = panel.x + panel.width - H_PAD - 3;
-    buffer.draw_text(esc_x, y, "esc", theme.style_muted());
     y + 1
 }
 
@@ -142,21 +144,11 @@ fn render_text_area(
     status_y: u32,
 ) {
     let available_text_rows = status_y.saturating_sub(text_area_top + 1) as usize;
-    let bar_style = theme.style_primary();
     let text_style = theme.style_foreground().with_bg(theme.panel_bg);
     let cursor_style = Style::fg(theme.panel_bg).with_bg(theme.foreground);
 
-    // Draw left accent bar
-    for row in 0..available_text_rows {
-        let line_y = text_area_top + row as u32;
-        if line_y >= status_y {
-            break;
-        }
-        buffer.draw_text(content_x, line_y, "\u{2503}", bar_style);
-    }
-
-    let text_x = content_x + 2;
-    let text_width = content_width.saturating_sub(2);
+    let text_x = content_x;
+    let text_width = content_width;
     let scroll = editor.scroll;
 
     for (view_row, line_idx) in (scroll..editor.lines.len())
@@ -179,19 +171,6 @@ fn render_text_area(
     if editor.lines.len() == 1 && editor.lines[0].is_empty() && editor.cursor_col == 0 {
         buffer.draw_text(text_x, text_area_top, " ", cursor_style);
     }
-}
-
-fn render_status_bar(
-    buffer: &mut OptimizedBuffer,
-    theme: &Theme,
-    panel: &Rect,
-    content_x: u32,
-    status_y: u32,
-) {
-    buffer.fill_rect(panel.x, status_y, panel.width, 1, theme.panel_bg);
-    let status_text = "Ctrl+S submit    Esc cancel";
-    let status_x = panel.x + panel.width - H_PAD - status_text.len() as u32;
-    buffer.draw_text(status_x.max(content_x), status_y, status_text, theme.style_muted());
 }
 
 /// Render a line of text with the cursor shown as an inverted-color block.

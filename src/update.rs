@@ -432,12 +432,14 @@ fn update_comment(model: &mut Model, msg: Message) {
                     });
                 }
             }
+            model.visual_mode = false;
             model.focus = Focus::DiffPane;
         }
         Message::CancelComment => {
             model.inline_editor = None;
             model.comment_input.clear();
             model.comment_target_line = None;
+            model.visual_mode = false;
             model.focus = Focus::DiffPane;
         }
         _ => {}
@@ -887,7 +889,6 @@ fn build_comment_request(model: &mut Model) -> Option<CommentRequest> {
             Some(max_line)
         };
 
-        model.visual_mode = false;
         Some(CommentRequest {
             review_id,
             file_path,

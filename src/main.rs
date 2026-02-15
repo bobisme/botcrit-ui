@@ -421,8 +421,11 @@ fn process_event(event: &Event, model: &mut Model, ctx: &mut EventContext<'_>) -
         if let Some(client) = ctx.client.as_ref() {
             let persist_result =
                 persist_comment(client.as_ref(), ctx.repo_path, &submission.request, &submission.body);
-            if persist_result.is_ok() {
-                reload_review_data(model, client.as_ref(), ctx.repo_path);
+            match persist_result {
+                Ok(()) => reload_review_data(model, client.as_ref(), ctx.repo_path),
+                Err(e) => {
+                    model.flash_message = Some(format!("Comment failed: {e}"));
+                }
             }
         }
         model.needs_redraw = true;

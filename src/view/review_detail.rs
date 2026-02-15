@@ -499,7 +499,14 @@ fn render_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     }
 
     let footer = Rect::new(footer_x, area.y, footer_width, area.height);
-    if model.focus == Focus::FileSidebar {
+    if let Some(flash) = &model.flash_message {
+        // Render flash message in error color instead of normal hints.
+        let bg = model.theme.background;
+        let y = footer.y + footer.height.saturating_sub(2);
+        buffer.fill_rect(footer.x, y, footer.width, 2, bg);
+        let style = Style::fg(model.theme.error).with_bg(bg);
+        draw_text_truncated(buffer, footer.x + 2, y, flash, footer.width.saturating_sub(4), style);
+    } else if model.focus == Focus::FileSidebar {
         let scale = 0.7;
         let bg = &model.theme.background;
         let dimmed_bg = Rgba::new(bg.r * scale, bg.g * scale, bg.b * scale, bg.a);

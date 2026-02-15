@@ -452,6 +452,10 @@ pub struct Model {
     // === Cached editor name for help bar ===
     pub editor_name: String,
 
+    // === Flash message (transient error/status) ===
+    /// Shown in the help bar area until the next keypress.
+    pub flash_message: Option<String>,
+
     // === Control ===
     pub should_quit: bool,
     /// Flag indicating the view needs a full redraw
@@ -528,6 +532,7 @@ impl Model {
                 .ok()
                 .and_then(|e| e.rsplit('/').next().map(String::from))
                 .unwrap_or_else(|| "Editor".to_string()),
+            flash_message: None,
             should_quit: false,
             needs_redraw: true,
             last_list_scroll: None,

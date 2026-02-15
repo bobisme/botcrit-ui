@@ -740,6 +740,14 @@ fn update_system_theme(model: &mut Model, msg: &Message) {
 
 #[allow(clippy::too_many_lines)]
 pub fn update(model: &mut Model, msg: Message) {
+    // Clear transient flash message on any user-initiated action.
+    if model.flash_message.is_some()
+        && !matches!(msg, Message::Tick | Message::Resize { .. } | Message::Noop)
+    {
+        model.flash_message = None;
+        model.needs_redraw = true;
+    }
+
     match msg {
         Message::ListUp | Message::ListDown | Message::ListPageUp | Message::ListPageDown
         | Message::ListTop | Message::ListBottom => {
@@ -909,7 +917,25 @@ fn build_comment_request(model: &mut Model) -> Option<CommentRequest> {
             existing_comments: Vec::new(),
         })
     } else {
-        let thread_id = model.expanded_thread.clone()?;
+        // Find the thread whose rendered position is closest to (and at or
+        // before) the cursor, so pressing 'a' targets the thread the user is
+        // actually looking at rather than the stale `expanded_thread`.
+        let thread_id = {
+            let positions = model.thread_positions.borrow();
+            let mut best: Option<(usize, String)> = None;
+            for thread in model.threads.iter().filter(|t| t.file_path == file_path) {
+                if let Some(&pos) = positions.get(&thread.thread_id) {
+                    if pos <= model.diff_cursor
+                        && best
+                            .as_ref()
+                            .is_none_or(|(best_pos, _)| pos > *best_pos)
+                    {
+                        best = Some((pos, thread.thread_id.clone()));
+                    }
+                }
+            }
+            best.map(|(_, id)| id)
+        }?;
         let thread = model.threads.iter().find(|t| t.thread_id == thread_id)?;
         let existing_comments = model
             .all_comments

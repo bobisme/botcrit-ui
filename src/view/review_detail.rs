@@ -236,6 +236,8 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
 
     // Draw review header info
     if let Some(review) = &model.current_review {
+        // Header: "cr-xxxx · status"
+        let id_len = review.review_id.len() as u32;
         draw_text_truncated(
             buffer,
             text_x,
@@ -244,35 +246,45 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
             text_width,
             Style::fg(theme.foreground).with_bold(),
         );
-        y += 2;
-
-        let bookmark = format!("<{}>", review.jj_change_id);
-        draw_text_truncated(
-            buffer,
-            text_x,
-            y,
-            &bookmark,
-            text_width,
-            theme.style_muted(),
-        );
+        let sep_x = text_x + id_len;
+        if sep_x + 3 < text_x + text_width {
+            buffer.draw_text(sep_x, y, " \u{b7} ", theme.style_muted());
+            let status_x = sep_x + 3;
+            let status_color = match review.status.as_str() {
+                "open" | "merged" => theme.success,
+                "abandoned" => theme.muted,
+                "approved" => theme.warning,
+                _ => theme.foreground,
+            };
+            draw_text_truncated(
+                buffer,
+                status_x,
+                y,
+                &review.status,
+                text_width.saturating_sub(id_len + 3),
+                Style::fg(status_color),
+            );
+        }
         y += 1;
 
-        let from = short_hash(&review.initial_commit);
-        let to = short_hash(
-            review
-                .final_commit
-                .as_deref()
-                .unwrap_or(&review.initial_commit),
-        );
-        let commit_range = format!("@{from} -> @{to}");
-        draw_text_truncated(
-            buffer,
-            text_x,
-            y,
-            &commit_range,
-            text_width,
-            theme.style_muted(),
-        );
+        // Title (word-wrapped, bright, non-bold)
+        if !review.title.is_empty() {
+            y += 1;
+            for line in word_wrap_lines(&review.title, text_width as usize) {
+                if y >= bottom {
+                    break;
+                }
+                draw_text_truncated(buffer, text_x, y, &line, text_width, theme.style_foreground());
+                y += 1;
+            }
+        }
+        y += 1;
+
+        // Change ID + commit ID (first 8 chars each)
+        let change_id = short_hash(&review.jj_change_id);
+        let commit_id = short_hash(&review.initial_commit);
+        let ids = format!("{change_id}  {commit_id}");
+        draw_text_truncated(buffer, text_x, y, &ids, text_width, theme.style_muted());
         y += 2;
     }
 
@@ -306,6 +318,35 @@ fn short_hash(hash: &str) -> &str {
     let len = hash.len();
     let end = len.min(8);
     &hash[..end]
+}
+
+/// Simple word-wrap: split text into lines that fit within `max_width` characters.
+fn word_wrap_lines(text: &str, max_width: usize) -> Vec<String> {
+    if max_width == 0 {
+        return vec![];
+    }
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    for word in text.split_whitespace() {
+        if current.is_empty() {
+            if word.len() > max_width {
+                // Word itself is too long — truncate will handle it
+                lines.push(word.to_string());
+            } else {
+                current = word.to_string();
+            }
+        } else if current.len() + 1 + word.len() <= max_width {
+            current.push(' ');
+            current.push_str(word);
+        } else {
+            lines.push(std::mem::take(&mut current));
+            current = word.to_string();
+        }
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    lines
 }
 
 fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {

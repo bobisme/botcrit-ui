@@ -37,12 +37,10 @@ impl CliClient {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!(
-                "crit {} failed (exit {}): {}",
-                args.join(" "),
-                output.status,
-                stderr.trim()
-            );
+            let msg = stderr.trim();
+            // Strip "Error: " prefix that crit prepends to its messages.
+            let msg = msg.strip_prefix("Error: ").unwrap_or(msg);
+            bail!("{msg}");
         }
 
         Ok(output.stdout)

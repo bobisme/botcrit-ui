@@ -703,7 +703,7 @@ fn run_comment_editor(_repo_path: Option<&Path>, request: &CommentRequest) -> Re
     Ok(body)
 }
 
-/// Persist a comment via the crit CLI (create thread if needed, then add comment).
+/// Persist a comment via the crit CLI.
 fn persist_comment(
     client: &dyn CritClient,
     _repo_path: Option<&Path>,
@@ -711,17 +711,15 @@ fn persist_comment(
     body: &str,
 ) -> Result<()> {
     if let Some(thread_id) = &request.thread_id {
-        // Add comment to existing thread
-        client.add_comment(thread_id, body)?;
+        client.reply(thread_id, body)?;
     } else {
-        // Create new thread, then add comment
-        let thread_id = client.create_thread(
+        client.comment(
             &request.review_id,
             &request.file_path,
             request.start_line,
             request.end_line,
+            body,
         )?;
-        client.add_comment(&thread_id, body)?;
     }
     Ok(())
 }

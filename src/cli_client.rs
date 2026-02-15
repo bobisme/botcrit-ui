@@ -213,38 +213,26 @@ impl CritClient for CliClient {
         }))
     }
 
-    fn create_thread(
+    fn comment(
         &self,
         review_id: &str,
         file_path: &str,
         start_line: i64,
         end_line: Option<i64>,
-    ) -> Result<String> {
+        body: &str,
+    ) -> Result<()> {
         let lines_arg = match end_line {
             Some(end) if end != start_line => format!("{start_line}-{end}"),
             _ => start_line.to_string(),
         };
-        let stdout = self.run_crit(&[
-            "threads", "create", review_id, "--file", file_path, "--lines", &lines_arg, "--user",
+        self.run_crit(&[
+            "comment", review_id, body, "--file", file_path, "--line", &lines_arg, "--user",
         ])?;
-        let val: serde_json::Value =
-            serde_json::from_slice(&stdout).context("Failed to parse `crit threads create` JSON")?;
-        val["thread_id"]
-            .as_str()
-            .map(String::from)
-            .or_else(|| val["thread"]["thread_id"].as_str().map(String::from))
-            .context("No thread_id in `crit threads create` response")
+        Ok(())
     }
 
-    fn add_comment(&self, thread_id: &str, body: &str) -> Result<String> {
-        let stdout =
-            self.run_crit(&["comments", "add", thread_id, "--message", body, "--user"])?;
-        let val: serde_json::Value =
-            serde_json::from_slice(&stdout).context("Failed to parse `crit comments add` JSON")?;
-        val["comment_id"]
-            .as_str()
-            .map(String::from)
-            .or_else(|| val["comment"]["comment_id"].as_str().map(String::from))
-            .context("No comment_id in `crit comments add` response")
+    fn reply(&self, thread_id: &str, body: &str) -> Result<()> {
+        self.run_crit(&["reply", thread_id, body, "--user"])?;
+        Ok(())
     }
 }

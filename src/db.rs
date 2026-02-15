@@ -117,23 +117,24 @@ pub trait CritClient {
     /// Returns an error if the backend query fails.
     fn load_review_data(&self, review_id: &str) -> Result<Option<ReviewData>>;
 
-    /// Create a new thread on a review. Returns the new thread ID.
+    /// Add a comment to a review on specific lines (auto-creates thread).
     ///
     /// # Errors
     ///
     /// Returns an error if the CLI call fails.
-    fn create_thread(
+    fn comment(
         &self,
         review_id: &str,
         file_path: &str,
         start_line: i64,
         end_line: Option<i64>,
-    ) -> Result<String>;
+        body: &str,
+    ) -> Result<()>;
 
-    /// Add a comment to an existing thread. Returns the new comment ID.
+    /// Reply to an existing thread.
     ///
     /// # Errors
     ///
     /// Returns an error if the CLI call fails.
-    fn add_comment(&self, thread_id: &str, body: &str) -> Result<String>;
+    fn reply(&self, thread_id: &str, body: &str) -> Result<()>;
 }

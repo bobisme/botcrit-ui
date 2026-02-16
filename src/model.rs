@@ -569,7 +569,7 @@ impl Model {
             .collect()
     }
 
-    /// Get unique files from threads for the sidebar
+    /// Get unique files from threads and the diff file cache for the sidebar.
     #[must_use]
     pub fn files_with_threads(&self) -> Vec<FileEntry> {
         use std::collections::HashMap;
@@ -583,6 +583,11 @@ impl Model {
             } else {
                 entry.1 += 1;
             }
+        }
+
+        // Include cached files that have diffs but no threads.
+        for path in self.file_cache.keys() {
+            files.entry(path.clone()).or_insert((0, 0));
         }
 
         let mut result: Vec<_> = files

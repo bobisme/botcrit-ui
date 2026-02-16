@@ -733,7 +733,7 @@ fn populate_file_cache(
 
     model.file_cache.clear();
 
-    for file_data in files {
+    for file_data in files.into_iter().filter(|f| !f.path.starts_with(".crit/")) {
         let diff = file_data.diff.as_deref().map(ParsedDiff::parse);
 
         let file_content = file_data.content.map(|c| botcrit_ui::model::FileContent {

@@ -40,9 +40,9 @@ use context::{
     render_context_line_wrapped_row, OrphanedRenderState,
 };
 use helpers::{
-    comment_block_area, comment_content_area,
-    diff_content_width, diff_margin_area, draw_block_base_line, draw_block_text_line,
-    draw_file_header_line, draw_plain_line_with_right, PlainLineContent,
+    comment_block_area, comment_content_area, diff_content_width, diff_margin_area,
+    draw_block_base_line, draw_block_text_line, draw_file_header_line, draw_plain_line_with_right,
+    PlainLineContent,
 };
 use side_by_side::{render_side_by_side_line_block, render_side_by_side_line_wrapped_row};
 use text_util::wrap_content;
@@ -298,7 +298,7 @@ fn build_side_by_side_lines(diff: &ParsedDiff) -> Vec<SideBySideLine> {
                             left,
                             right,
                             is_header: false,
-                            });
+                        });
                     }
                 }
                 DiffLineKind::Added => {
@@ -524,15 +524,11 @@ fn render_file_with_diff(
         if let Some(content) = &entry.file_content {
             let orphaned_deref: Vec<&ThreadSummary> =
                 orphaned_threads.iter().map(|t| **t).collect();
-            let hunk_ranges =
-                crate::diff::hunk_exclusion_ranges(&diff.hunks);
+            let hunk_ranges = crate::diff::hunk_exclusion_ranges(&diff.hunks);
             #[allow(clippy::cast_possible_wrap)]
             let total_lines = content.start_line + content.lines.len() as i64 - 1;
-            let ranges = calculate_context_ranges(
-                &orphaned_deref,
-                total_lines as usize,
-                &hunk_ranges,
-            );
+            let ranges =
+                calculate_context_ranges(&orphaned_deref, total_lines as usize, &hunk_ranges);
             let sections = group_context_ranges_by_hunks(ranges, &hunk_ranges);
             if sections.iter().any(|section| !section.is_empty()) {
                 orphaned_context = Some(OrphanedContext {
@@ -558,15 +554,13 @@ fn render_file_with_diff(
     };
 
     let emitted_threads = match view_mode {
-        crate::model::DiffViewMode::Unified => {
-            render_file_diff_unified(
-                cursor,
-                &diff.hunks,
-                &ctx,
-                orphaned_context.as_ref(),
-                &anchors,
-            )
-        }
+        crate::model::DiffViewMode::Unified => render_file_diff_unified(
+            cursor,
+            &diff.hunks,
+            &ctx,
+            orphaned_context.as_ref(),
+            &anchors,
+        ),
         crate::model::DiffViewMode::SideBySide => {
             let sbs_lines = build_side_by_side_lines(diff);
             render_file_diff_sbs(
@@ -648,9 +642,8 @@ fn render_file_content_no_diff(
                     let line_index = (*line_num - start_line) as usize;
                     let highlight = file_highlights.get(line_index);
                     let line_num_width = SBS_LINE_NUM_WIDTH;
-                    let content_width = diff_content_width(line_area)
-                        .saturating_sub(line_num_width)
-                        as usize;
+                    let content_width =
+                        diff_content_width(line_area).saturating_sub(line_num_width) as usize;
                     let wrapped = wrap_content(highlight, content, content_width);
                     let rows = wrapped.len().max(1);
                     let is_cursor = cursor.is_cursor_at(rows);
@@ -661,7 +654,13 @@ fn render_file_content_no_diff(
                             y,
                             *line_num,
                             theme,
-                            &LineRenderCtx { area: line_area, anchor: None, show_thread_bar, is_cursor, is_selected },
+                            &LineRenderCtx {
+                                area: line_area,
+                                anchor: None,
+                                show_thread_bar,
+                                is_cursor,
+                                is_selected,
+                            },
                             &wrapped,
                             row,
                         );
@@ -755,13 +754,17 @@ fn build_unified_display_data<'a>(
     threads: &[&ThreadSummary],
     anchors: &'a [ThreadAnchor],
 ) -> UnifiedDisplayData<'a> {
-    let mut anchor_map: AnchorMap<'_> =
-        std::collections::HashMap::new();
-    let mut comment_map: AnchorMap<'_> =
-        std::collections::HashMap::new();
+    let mut anchor_map: AnchorMap<'_> = std::collections::HashMap::new();
+    let mut comment_map: AnchorMap<'_> = std::collections::HashMap::new();
     for anchor in anchors {
-        anchor_map.entry(anchor.display_line).or_default().push(anchor);
-        comment_map.entry(anchor.comment_after_line).or_default().push(anchor);
+        anchor_map
+            .entry(anchor.display_line)
+            .or_default()
+            .push(anchor);
+        comment_map
+            .entry(anchor.comment_after_line)
+            .or_default()
+            .push(anchor);
     }
 
     let thread_ranges = build_thread_ranges(threads);
@@ -846,10 +849,9 @@ fn render_unified_display_items(
             section_idx = section_idx.saturating_add(1);
         }
         let show_thread_bar = match display_line {
-            DisplayLine::Diff(line) => line_in_thread_ranges(
-                line.new_line.map(i64::from),
-                &display_data.thread_ranges,
-            ),
+            DisplayLine::Diff(line) => {
+                line_in_thread_ranges(line.new_line.map(i64::from), &display_data.thread_ranges)
+            }
             DisplayLine::HunkHeader => false,
         };
         let anchors_at_line = display_data.anchor_map.get(&idx);
@@ -870,7 +872,13 @@ fn render_unified_display_items(
                         y,
                         display_line,
                         theme,
-                        &LineRenderCtx { area: ctx.line_area, anchor, show_thread_bar, is_cursor: false, is_selected: false },
+                        &LineRenderCtx {
+                            area: ctx.line_area,
+                            anchor,
+                            show_thread_bar,
+                            is_cursor: false,
+                            is_selected: false,
+                        },
                         ctx.file_highlights.get(idx),
                     );
                 });
@@ -887,13 +895,10 @@ fn render_unified_display_items(
                         let cw = diff_content_width(ctx.line_area)
                             .saturating_sub(thread_col_width + line_num_width);
                         let max_c = cw.saturating_sub(2) as usize;
-                        let row_count = wrap_content(
-                            ctx.file_highlights.get(idx),
-                            &line.content,
-                            max_c,
-                        )
-                        .len()
-                        .max(1);
+                        let row_count =
+                            wrap_content(ctx.file_highlights.get(idx), &line.content, max_c)
+                                .len()
+                                .max(1);
                         let mut lm = ctx.line_map.borrow_mut();
                         for r in 0..row_count {
                             lm.insert(base + r, nl_i64);
@@ -908,11 +913,8 @@ fn render_unified_display_items(
                     let content_width = diff_content_width(ctx.line_area)
                         .saturating_sub(thread_col_width + line_num_width);
                     let max_content = content_width.saturating_sub(2) as usize;
-                    let wrapped = wrap_content(
-                        ctx.file_highlights.get(idx),
-                        &line.content,
-                        max_content,
-                    );
+                    let wrapped =
+                        wrap_content(ctx.file_highlights.get(idx), &line.content, max_content);
                     let rows = wrapped.len().max(1);
                     let is_cursor = cursor.is_cursor_at(rows);
                     let is_selected = cursor.is_selected_at(rows);
@@ -922,7 +924,13 @@ fn render_unified_display_items(
                             y,
                             line,
                             theme,
-                            &LineRenderCtx { area: ctx.line_area, anchor, show_thread_bar, is_cursor, is_selected },
+                            &LineRenderCtx {
+                                area: ctx.line_area,
+                                anchor,
+                                show_thread_bar,
+                                is_cursor,
+                                is_selected,
+                            },
                             &wrapped,
                             row,
                         );
@@ -936,7 +944,13 @@ fn render_unified_display_items(
                             y,
                             display_line,
                             theme,
-                            &LineRenderCtx { area: ctx.line_area, anchor, show_thread_bar, is_cursor, is_selected },
+                            &LineRenderCtx {
+                                area: ctx.line_area,
+                                anchor,
+                                show_thread_bar,
+                                is_cursor,
+                                is_selected,
+                            },
                             ctx.file_highlights.get(idx),
                         );
                     });
@@ -956,8 +970,7 @@ fn render_file_diff_unified(
     orphaned_context: Option<&OrphanedContext<'_>>,
     anchors: &[ThreadAnchor],
 ) -> std::collections::HashSet<String> {
-    let mut emitted_threads: std::collections::HashSet<String> =
-        std::collections::HashSet::new();
+    let mut emitted_threads: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut last_line_num: Option<i64> = None;
 
     let display_data = build_unified_display_data(hunks, ctx.threads, anchors);
@@ -998,22 +1011,13 @@ fn build_sbs_anchor_maps<'a>(
     anchors: &'a [ThreadAnchor],
     threads: &[&ThreadSummary],
     sbs_lines: &[SideBySideLine],
-) -> (
-    AnchorMap<'a>,
-    AnchorMap<'a>,
-) {
-    let mut sbs_anchor_map: AnchorMap<'_> =
-        std::collections::HashMap::new();
-    let mut sbs_comment_map: AnchorMap<'_> =
-        std::collections::HashMap::new();
+) -> (AnchorMap<'a>, AnchorMap<'a>) {
+    let mut sbs_anchor_map: AnchorMap<'_> = std::collections::HashMap::new();
+    let mut sbs_comment_map: AnchorMap<'_> = std::collections::HashMap::new();
     for anchor in anchors {
-        if let Some(thread) = threads
-            .iter()
-            .find(|t| t.thread_id == anchor.thread_id)
-        {
+        if let Some(thread) = threads.iter().find(|t| t.thread_id == anchor.thread_id) {
             let start = thread.selection_start as u32;
-            let end =
-                thread.selection_end.unwrap_or(thread.selection_start) as u32;
+            let end = thread.selection_end.unwrap_or(thread.selection_start) as u32;
             for (si, sl) in sbs_lines.iter().enumerate() {
                 if sl.right.as_ref().is_some_and(|l| l.line_num == start) {
                     sbs_anchor_map.entry(si).or_default().push(anchor);
@@ -1037,33 +1041,34 @@ fn render_sbs_line(
 ) {
     if wrap && !sbs_line.is_header {
         let thread_col_width = THREAD_COL_WIDTH;
-        let divider_width: u32 = 1;
+        let divider_width: u32 = 0;
         let line_num_width = SBS_LINE_NUM_WIDTH;
-        let available = diff_content_width(ctx.area)
-            .saturating_sub(thread_col_width + divider_width);
+        let available =
+            diff_content_width(ctx.area).saturating_sub(thread_col_width + divider_width);
         let half_width = available / 2;
         let left_width = half_width.saturating_sub(line_num_width) as usize;
-        let right_width =
-            half_width.saturating_sub(line_num_width) as usize;
+        let right_width = half_width.saturating_sub(line_num_width) as usize;
 
-        let left_highlights = sbs_line.left.as_ref().and_then(|line| {
-            file_highlights.get(line.display_index)
-        });
-        let right_highlights = sbs_line.right.as_ref().and_then(|line| {
-            file_highlights.get(line.display_index)
-        });
+        let left_highlights = sbs_line
+            .left
+            .as_ref()
+            .and_then(|line| file_highlights.get(line.display_index));
+        let right_highlights = sbs_line
+            .right
+            .as_ref()
+            .and_then(|line| file_highlights.get(line.display_index));
 
-        let left_wrapped = sbs_line.left.as_ref().map(|line| {
-            wrap_content(left_highlights, &line.content, left_width)
-        });
-        let right_wrapped = sbs_line.right.as_ref().map(|line| {
-            wrap_content(right_highlights, &line.content, right_width)
-        });
+        let left_wrapped = sbs_line
+            .left
+            .as_ref()
+            .map(|line| wrap_content(left_highlights, &line.content, left_width));
+        let right_wrapped = sbs_line
+            .right
+            .as_ref()
+            .map(|line| wrap_content(right_highlights, &line.content, right_width));
 
-        let left_rows =
-            left_wrapped.as_ref().map_or(1, Vec::len);
-        let right_rows =
-            right_wrapped.as_ref().map_or(1, Vec::len);
+        let left_rows = left_wrapped.as_ref().map_or(1, Vec::len);
+        let right_rows = right_wrapped.as_ref().map_or(1, Vec::len);
         let rows = left_rows.max(right_rows);
 
         cursor.emit_rows(rows, |buf, y, theme, row| {
@@ -1079,14 +1084,7 @@ fn render_sbs_line(
         });
     } else {
         cursor.emit(|buf, y, theme| {
-            render_side_by_side_line_block(
-                buf,
-                y,
-                sbs_line,
-                theme,
-                ctx,
-                file_highlights,
-            );
+            render_side_by_side_line_block(buf, y, sbs_line, theme, ctx, file_highlights);
         });
     }
 }
@@ -1099,13 +1097,11 @@ fn render_file_diff_sbs(
     orphaned_context: Option<&OrphanedContext<'_>>,
     anchors: &[ThreadAnchor],
 ) -> std::collections::HashSet<String> {
-    let mut emitted_threads: std::collections::HashSet<String> =
-        std::collections::HashSet::new();
+    let mut emitted_threads: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut last_line_num: Option<i64> = None;
 
     let thread_ranges = build_thread_ranges(ctx.threads);
-    let (sbs_anchor_map, sbs_comment_map) =
-        build_sbs_anchor_maps(anchors, ctx.threads, sbs_lines);
+    let (sbs_anchor_map, sbs_comment_map) = build_sbs_anchor_maps(anchors, ctx.threads, sbs_lines);
 
     let mut section_idx = 0usize;
     for (idx, sbs_line) in sbs_lines.iter().enumerate() {
@@ -1152,10 +1148,10 @@ fn render_file_diff_sbs(
         // Used for both line_map recording and cursor/selection highlighting.
         let sbs_rows = if !sbs_line.is_header && ctx.wrap {
             let thread_col_width = THREAD_COL_WIDTH;
-            let divider_width: u32 = 1;
+            let divider_width: u32 = 0;
             let line_num_width = SBS_LINE_NUM_WIDTH;
-            let available = diff_content_width(ctx.line_area)
-                .saturating_sub(thread_col_width + divider_width);
+            let available =
+                diff_content_width(ctx.line_area).saturating_sub(thread_col_width + divider_width);
             let half_width = available / 2;
             let left_w = half_width.saturating_sub(line_num_width) as usize;
             let right_w = half_width.saturating_sub(line_num_width) as usize;
@@ -1191,7 +1187,13 @@ fn render_file_diff_sbs(
         render_sbs_line(
             cursor,
             sbs_line,
-            &LineRenderCtx { area: ctx.line_area, anchor, show_thread_bar, is_cursor, is_selected },
+            &LineRenderCtx {
+                area: ctx.line_area,
+                anchor,
+                show_thread_bar,
+                is_cursor,
+                is_selected,
+            },
             ctx.wrap,
             ctx.file_highlights,
         );
@@ -1208,9 +1210,7 @@ fn render_file_diff_sbs(
                     .iter()
                     .find(|t| t.thread_id == comment_anchor.thread_id)
                 {
-                    if let Some(comments) =
-                        ctx.all_comments.get(&comment_anchor.thread_id)
-                    {
+                    if let Some(comments) = ctx.all_comments.get(&comment_anchor.thread_id) {
                         let rows = comment_block_rows(thread, comments, ctx.area);
                         let is_cursor = cursor.is_cursor_at(rows);
                         let hl = is_cursor || cursor.is_selected_at(rows);
@@ -1241,11 +1241,7 @@ fn render_file_diff_sbs(
     emitted_threads
 }
 
-pub fn render_diff_stream(
-    buffer: &mut OptimizedBuffer,
-    area: Rect,
-    params: &DiffStreamParams<'_>,
-) {
+pub fn render_diff_stream(buffer: &mut OptimizedBuffer, area: Rect, params: &DiffStreamParams<'_>) {
     params.thread_positions.borrow_mut().clear();
     params.line_map.borrow_mut().clear();
     params.cursor_stops.borrow_mut().clear();

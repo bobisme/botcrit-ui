@@ -11,10 +11,12 @@ use crate::view::components::Rect;
 use super::analysis::{build_thread_ranges, line_in_thread_ranges};
 use super::comments::{comment_block_rows, emit_comment_block};
 use super::helpers::{
-    cursor_bg, cursor_fg, selection_bg, draw_diff_base_line,
-    orphaned_context_width, orphaned_context_x,
+    cursor_bg, cursor_fg, draw_diff_base_line, orphaned_context_width, orphaned_context_x,
+    selection_bg,
 };
-use super::text_util::{draw_highlighted_text, draw_wrapped_line, wrap_content, HighlightContent, WrappedLine};
+use super::text_util::{
+    draw_highlighted_text, draw_wrapped_line, wrap_content, HighlightContent, WrappedLine,
+};
 use super::{DisplayItem, LineRange, LineRenderCtx, OrphanedContext, StreamCursor};
 
 // --- Context range calculation ---
@@ -207,14 +209,22 @@ pub(super) fn emit_orphaned_context_section(
                         && end < *line_num
                     {
                         state.emitted_threads.insert(thread.thread_id.clone());
-                        state.thread_positions
+                        state
+                            .thread_positions
                             .borrow_mut()
                             .insert(thread.thread_id.clone(), cursor.stream_row);
                         if let Some(comments) = state.all_comments.get(&thread.thread_id) {
                             let rows = comment_block_rows(thread, comments, comment_area);
                             let is_cursor = cursor.is_cursor_at(rows);
                             let hl = is_cursor || cursor.is_selected_at(rows);
-                            emit_comment_block(cursor, comment_area, thread, comments, hl, is_cursor);
+                            emit_comment_block(
+                                cursor,
+                                comment_area,
+                                thread,
+                                comments,
+                                hl,
+                                is_cursor,
+                            );
                         }
                     }
                 }
@@ -230,7 +240,18 @@ pub(super) fn emit_orphaned_context_section(
         match item {
             DisplayItem::Separator(_) => {
                 cursor.emit(|buf, y, theme| {
-                    render_context_item_block(buf, area, y, item, theme, show_thread_bar, context.highlights, false, false, context.start_line);
+                    render_context_item_block(
+                        buf,
+                        area,
+                        y,
+                        item,
+                        theme,
+                        show_thread_bar,
+                        context.highlights,
+                        false,
+                        false,
+                        context.start_line,
+                    );
                 });
             }
             DisplayItem::Line {
@@ -249,9 +270,19 @@ pub(super) fn emit_orphaned_context_section(
                     let is_selected = cursor.is_selected_at(rows);
                     cursor.emit_rows(rows, |buf, y, theme, row| {
                         render_context_line_wrapped_row(
-                            buf, y, *line_num, theme,
-                            &LineRenderCtx { area, anchor: None, show_thread_bar, is_cursor, is_selected },
-                            &wrapped, row,
+                            buf,
+                            y,
+                            *line_num,
+                            theme,
+                            &LineRenderCtx {
+                                area,
+                                anchor: None,
+                                show_thread_bar,
+                                is_cursor,
+                                is_selected,
+                            },
+                            &wrapped,
+                            row,
                         );
                     });
                 } else {
@@ -259,18 +290,34 @@ pub(super) fn emit_orphaned_context_section(
                     let is_selected = cursor.is_selected_at(1);
                     cursor.emit(|buf, y, theme| {
                         render_context_item_block(
-                            buf, area, y, item, theme, show_thread_bar, context.highlights, is_cursor, is_selected, context.start_line,
+                            buf,
+                            area,
+                            y,
+                            item,
+                            theme,
+                            show_thread_bar,
+                            context.highlights,
+                            is_cursor,
+                            is_selected,
+                            context.start_line,
                         );
                     });
                 }
 
-                let end_match = context.threads.iter().find(|t| {
-                    let end = t.selection_end.unwrap_or(t.selection_start);
-                    end == *line_num && !state.emitted_threads.contains(t.thread_id.as_str())
-                });
-                if let Some(thread) = end_match {
+                let end_matches: Vec<&ThreadSummary> = context
+                    .threads
+                    .iter()
+                    .copied()
+                    .filter(|thread| {
+                        let end = thread.selection_end.unwrap_or(thread.selection_start);
+                        end == *line_num
+                            && !state.emitted_threads.contains(thread.thread_id.as_str())
+                    })
+                    .collect();
+                for thread in end_matches {
                     state.emitted_threads.insert(thread.thread_id.clone());
-                    state.thread_positions
+                    state
+                        .thread_positions
                         .borrow_mut()
                         .insert(thread.thread_id.clone(), cursor.stream_row);
                     if let Some(comments) = state.all_comments.get(&thread.thread_id) {
@@ -337,15 +384,14 @@ pub(super) fn render_context_item_block(
             };
             let sep_x = orphaned_context_x(area)
                 + orphaned_context_width(area).saturating_sub(sep_text.len() as u32) / 2;
-            buffer.draw_text(
-                sep_x,
-                y,
-                &sep_text,
-                theme.style_muted_on(dt.context_bg),
-            );
+            buffer.draw_text(sep_x, y, &sep_text, theme.style_muted_on(dt.context_bg));
         }
         DisplayItem::Line { line_num, content } => {
-            let bg = cursor_bg(selection_bg(dt.context_bg, is_selected, theme), is_cursor, theme);
+            let bg = cursor_bg(
+                selection_bg(dt.context_bg, is_selected, theme),
+                is_cursor,
+                theme,
+            );
             let fg = cursor_fg(dt.context, is_cursor);
             let ln_fg = cursor_fg(dt.line_number, is_cursor);
             draw_diff_base_line(buffer, area, y, bg);
@@ -354,19 +400,17 @@ pub(super) fn render_context_item_block(
             let line_num_width = SBS_LINE_NUM_WIDTH;
             let ln_x = orphaned_context_x(area);
             buffer.fill_rect(ln_x, y, line_num_width, 1, bg);
-            buffer.draw_text(
-                ln_x,
-                y,
-                &ln_str,
-                Style::fg(ln_fg).with_bg(bg),
-            );
+            buffer.draw_text(ln_x, y, &ln_str, Style::fg(ln_fg).with_bg(bg));
 
             let content_x = ln_x + line_num_width;
             let content_width = orphaned_context_width(area).saturating_sub(line_num_width);
             buffer.fill_rect(content_x, y, content_width, 1, bg);
             let highlight = highlighted_lines.get((*line_num - start_line) as usize);
             draw_highlighted_text(
-                buffer, content_x, y, content_width,
+                buffer,
+                content_x,
+                y,
+                content_width,
                 &HighlightContent {
                     spans: highlight,
                     fallback_text: content,
@@ -389,7 +433,11 @@ pub(super) fn render_context_line_wrapped_row(
 ) {
     let dt = &theme.diff;
     let is_cursor = ctx.is_cursor;
-    let bg = cursor_bg(selection_bg(dt.context_bg, ctx.is_selected, theme), is_cursor, theme);
+    let bg = cursor_bg(
+        selection_bg(dt.context_bg, ctx.is_selected, theme),
+        is_cursor,
+        theme,
+    );
     let fg = cursor_fg(dt.context, is_cursor);
     let ln_fg = cursor_fg(dt.line_number, is_cursor);
     draw_diff_base_line(buffer, ctx.area, y, bg);
@@ -399,19 +447,13 @@ pub(super) fn render_context_line_wrapped_row(
     let ln_x = orphaned_context_x(ctx.area);
     buffer.fill_rect(ln_x, y, line_num_width, 1, bg);
     if row == 0 {
-        buffer.draw_text(
-            ln_x, y, &ln_str,
-            Style::fg(ln_fg).with_bg(bg),
-        );
+        buffer.draw_text(ln_x, y, &ln_str, Style::fg(ln_fg).with_bg(bg));
     }
 
     let content_x = ln_x + line_num_width;
     let content_width = orphaned_context_width(ctx.area).saturating_sub(line_num_width);
     buffer.fill_rect(content_x, y, content_width, 1, bg);
     if let Some(line_content) = wrapped.get(row) {
-        draw_wrapped_line(
-            buffer, content_x, y, content_width,
-            line_content, fg, bg,
-        );
+        draw_wrapped_line(buffer, content_x, y, content_width, line_content, fg, bg);
     }
 }

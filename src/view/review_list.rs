@@ -26,9 +26,10 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
     let header_text = model.repo_path.as_ref().map_or_else(
         || "Reviews".to_string(),
         |path| {
-            let display_path = std::env::var("HOME").ok().and_then(|home| {
-                path.strip_prefix(&home).map(|rest| format!("~{rest}"))
-            }).unwrap_or_else(|| path.clone());
+            let display_path = std::env::var("HOME")
+                .ok()
+                .and_then(|home| path.strip_prefix(&home).map(|rest| format!("~{rest}")))
+                .unwrap_or_else(|| path.clone());
             format!("Reviews for {display_path}")
         },
     );
@@ -49,7 +50,9 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
 
     // List area
     let list_y = search_y + SEARCH_HEIGHT;
-    let list_height = area.height.saturating_sub(HEADER_HEIGHT + SEARCH_HEIGHT + 2); // 2 for help bar
+    let list_height = area
+        .height
+        .saturating_sub(HEADER_HEIGHT + SEARCH_HEIGHT + 2); // 2 for help bar
     let list_area = Rect::new(area.x, list_y, area.width, list_height);
 
     let reviews = model.filtered_reviews();
@@ -78,29 +81,34 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
     render_help_bar(model, buffer, area);
 }
 
-fn draw_search_bar(
-    model: &Model,
-    buffer: &mut OptimizedBuffer,
-    x: u32,
-    y: u32,
-    width: u32,
-) {
+fn draw_search_bar(model: &Model, buffer: &mut OptimizedBuffer, x: u32, y: u32, width: u32) {
     let theme = &model.theme;
     buffer.fill_rect(x, y, width, SEARCH_HEIGHT, theme.background);
 
     let text_x = x + 5;
     if model.search_active {
         let max_chars = width.saturating_sub(8) as usize; // 5 margin + "/ " + cursor
-        let visible = if model.search_input.len() > max_chars {
-            &model.search_input[model.search_input.len() - max_chars..]
-        } else {
-            &model.search_input
-        };
+        let visible = tail_chars(&model.search_input, max_chars);
         let prompt = format!("/ {visible}\u{2588}");
         buffer.draw_text(text_x, y, &prompt, theme.style_foreground());
     } else {
         buffer.draw_text(text_x, y, "Press / to search", theme.style_muted());
     }
+}
+
+fn tail_chars(text: &str, max_chars: usize) -> &str {
+    if max_chars == 0 {
+        return "";
+    }
+
+    let total = text.chars().count();
+    if total <= max_chars {
+        return text;
+    }
+
+    let skip = total - max_chars;
+    let start = text.char_indices().nth(skip).map_or(0, |(idx, _)| idx);
+    &text[start..]
 }
 
 fn draw_review_item(
@@ -236,7 +244,14 @@ fn render_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
             HotkeyHint::new("Clear", "Esc"),
             HotkeyHint::new("Quit", "ctrl+c"),
         ];
-        draw_help_bar_ext(buffer, area, &model.theme, hints, model.theme.background, version);
+        draw_help_bar_ext(
+            buffer,
+            area,
+            &model.theme,
+            hints,
+            model.theme.background,
+            version,
+        );
     } else {
         let hints = &[
             HotkeyHint::new("Commands", "ctrl+p"),
@@ -244,6 +259,13 @@ fn render_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
             filter_hint,
             HotkeyHint::new("Quit", "q"),
         ];
-        draw_help_bar_ext(buffer, area, &model.theme, hints, model.theme.background, version);
+        draw_help_bar_ext(
+            buffer,
+            area,
+            &model.theme,
+            hints,
+            model.theme.background,
+            version,
+        );
     }
 }

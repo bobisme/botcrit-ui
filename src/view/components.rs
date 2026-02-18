@@ -128,12 +128,12 @@ pub fn draw_text_truncated(
         return;
     }
 
-    let text = if text.len() > max_width as usize {
-        if max_width <= 1 {
-            text[..max_width as usize].to_string()
+    let max_chars = max_width as usize;
+    let text = if text.chars().count() > max_chars {
+        if max_chars <= 1 {
+            take_chars(text, max_chars).to_string()
         } else {
-            let truncated = &text[..max_width.saturating_sub(1) as usize];
-            format!("{truncated}\u{2026}")
+            format!("{}\u{2026}", take_chars(text, max_chars - 1))
         }
     } else {
         text.to_string()
@@ -171,24 +171,37 @@ pub fn format_thread_count(total: i64, open: i64) -> String {
 /// Truncate a path for display, keeping the filename visible
 #[must_use]
 pub fn truncate_path(path: &str, max_width: usize) -> String {
-    if path.len() <= max_width {
+    if path.chars().count() <= max_width {
         return path.to_string();
     }
 
     // Try to keep the filename
     if let Some(idx) = path.rfind('/') {
         let filename = &path[idx + 1..];
-        if filename.len() + 2 <= max_width {
+        let filename_chars = filename.chars().count();
+        if filename_chars + 2 <= max_width {
             // "\u{2026}/" + filename
-            let available = max_width - filename.len() - 2;
-            let prefix = &path[..available.min(idx)];
+            let available = max_width - filename_chars - 2;
+            let prefix = take_chars(&path[..idx], available);
             return format!("{prefix}\u{2026}/{filename}");
         }
     }
 
     // Just truncate from the end
-    let truncated = &path[..max_width.saturating_sub(1)];
+    let truncated = take_chars(path, max_width.saturating_sub(1));
     format!("{truncated}…")
+}
+
+fn take_chars(text: &str, max_chars: usize) -> &str {
+    if max_chars == 0 {
+        return "";
+    }
+    for (count, (idx, _)) in text.char_indices().enumerate() {
+        if count == max_chars {
+            return &text[..idx];
+        }
+    }
+    text
 }
 
 /// A line of content within a block.
@@ -219,10 +232,11 @@ pub fn draw_block(
     bg: Rgba,
     lines: &[BlockLine<'_>],
 ) -> u32 {
-    use crate::layout::{BLOCK_LEFT_PAD, BLOCK_MARGIN, BLOCK_PADDING, BLOCK_RIGHT_PAD, BLOCK_SIDE_MARGIN};
+    use crate::layout::{
+        BLOCK_LEFT_PAD, BLOCK_MARGIN, BLOCK_PADDING, BLOCK_RIGHT_PAD, BLOCK_SIDE_MARGIN,
+    };
 
-    let total_height =
-        (BLOCK_MARGIN * 2 + BLOCK_PADDING * 2 + lines.len()) as u32;
+    let total_height = (BLOCK_MARGIN * 2 + BLOCK_PADDING * 2 + lines.len()) as u32;
     if area.height < total_height {
         return 0;
     }
@@ -250,12 +264,7 @@ pub fn draw_block(
         let content_width = area.width.saturating_sub(BLOCK_SIDE_MARGIN * 2);
         buf.fill_rect(content_x, y, content_width, 1, bg);
         // Bar character
-        buf.draw_text(
-            content_x,
-            y,
-            "\u{2503}",
-            theme.style_muted_on(bg),
-        );
+        buf.draw_text(content_x, y, "\u{2503}", theme.style_muted_on(bg));
     };
 
     // Top margin
@@ -270,11 +279,19 @@ pub fn draw_block(
     }
     // Content lines
     let inner_x = area.x + BLOCK_SIDE_MARGIN + 1 + BLOCK_LEFT_PAD;
-    let inner_width =
-        area.width.saturating_sub(BLOCK_SIDE_MARGIN * 2 + 1 + BLOCK_LEFT_PAD + BLOCK_RIGHT_PAD);
+    let inner_width = area
+        .width
+        .saturating_sub(BLOCK_SIDE_MARGIN * 2 + 1 + BLOCK_LEFT_PAD + BLOCK_RIGHT_PAD);
     for line in lines {
         draw_bar_line(buffer, y);
-        draw_text_truncated(buffer, inner_x, y, line.text, inner_width, line.style.with_bg(bg));
+        draw_text_truncated(
+            buffer,
+            inner_x,
+            y,
+            line.text,
+            inner_width,
+            line.style.with_bg(bg),
+        );
         y += 1;
     }
     // Bottom padding
@@ -322,7 +339,10 @@ pub struct HotkeyHint {
 impl HotkeyHint {
     #[must_use]
     pub fn new(label: impl Into<Cow<'static, str>>, key: &'static str) -> Self {
-        Self { label: label.into(), key }
+        Self {
+            label: label.into(),
+            key,
+        }
     }
 
     #[must_use]
@@ -377,8 +397,7 @@ pub fn draw_help_bar_ext(
     let total_width: usize = if hints.is_empty() {
         0
     } else {
-        hints.iter().map(HotkeyHint::width).sum::<usize>()
-            + hints.len().saturating_sub(1) * sep_len
+        hints.iter().map(HotkeyHint::width).sum::<usize>() + hints.len().saturating_sub(1) * sep_len
     };
 
     let x_start = if area.width > 0 && !hints.is_empty() {
@@ -396,7 +415,14 @@ pub fn draw_help_bar_ext(
         let label_x = area.x + padding;
         let max_width = x_start.saturating_sub(label_x + 1);
         if max_width > 0 {
-            draw_text_truncated(buffer, label_x, y, left_label, max_width, theme.style_muted());
+            draw_text_truncated(
+                buffer,
+                label_x,
+                y,
+                left_label,
+                max_width,
+                theme.style_muted(),
+            );
         }
     }
 

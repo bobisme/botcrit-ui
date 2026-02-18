@@ -44,7 +44,7 @@ const fn block_wrap_width(pane_width: u32) -> usize {
 }
 
 /// Compute height of description block (if present).
-#[must_use] 
+#[must_use]
 pub fn description_block_height(description: Option<&str>, pane_width: u32) -> usize {
     let Some(desc) = description else {
         return 0;
@@ -75,8 +75,8 @@ const fn context_wrap_width(pane_width: u32) -> usize {
 
 const fn side_by_side_wrap_widths(pane_width: u32) -> (usize, usize) {
     let divider_width: u32 = 0;
-    let available = diff_inner_width(pane_width)
-        .saturating_sub(layout::THREAD_COL_WIDTH + divider_width);
+    let available =
+        diff_inner_width(pane_width).saturating_sub(layout::THREAD_COL_WIDTH + divider_width);
     let half_width = available / 2;
     let left = half_width.saturating_sub(layout::SBS_LINE_NUM_WIDTH) as usize;
     let right = half_width.saturating_sub(layout::SBS_LINE_NUM_WIDTH) as usize;
@@ -123,11 +123,13 @@ pub fn compute_stream_layout(params: &StreamLayoutParams<'_>) -> StreamLayout {
                     entry.file_content.as_ref().map_or(0, |content| {
                         context_display_count(
                             content.lines.as_slice(),
+                            content.start_line,
                             threads,
                             &file.path,
                             wrap,
                             content_width,
                         ) + all_context_extra_lines(
+                            content.start_line,
                             content.lines.len(),
                             &file_threads,
                             all_comments,
@@ -155,10 +157,10 @@ pub fn compute_stream_layout(params: &StreamLayoutParams<'_>) -> StreamLayout {
 
                     if !orphaned_threads.is_empty() {
                         if let Some(content) = &entry.file_content {
-                            let hunk_ranges =
-                                crate::diff::hunk_exclusion_ranges(&diff.hunks);
+                            let hunk_ranges = crate::diff::hunk_exclusion_ranges(&diff.hunks);
                             count += orphaned_context_display_count(
                                 content.lines.as_slice(),
+                                content.start_line,
                                 &orphaned_threads,
                                 &hunk_ranges,
                                 wrap,
@@ -186,7 +188,7 @@ pub fn compute_stream_layout(params: &StreamLayoutParams<'_>) -> StreamLayout {
     }
 }
 
-#[must_use] 
+#[must_use]
 pub fn active_file_index(layout: &StreamLayout, scroll: usize) -> usize {
     let mut idx = 0;
     for (i, offset) in layout.file_offsets.iter().enumerate() {
@@ -199,7 +201,7 @@ pub fn active_file_index(layout: &StreamLayout, scroll: usize) -> usize {
     idx
 }
 
-#[must_use] 
+#[must_use]
 pub fn file_scroll_offset(layout: &StreamLayout, index: usize) -> usize {
     layout.file_offsets.get(index).copied().unwrap_or(0)
 }
@@ -327,8 +329,8 @@ fn comment_block_height(comments: &[Comment], content_width: u32) -> usize {
     if comments.is_empty() {
         return 0;
     }
-    let max_width = content_width
-        .saturating_sub(BLOCK_SIDE_MARGIN * 2 + 1 + BLOCK_LEFT_PAD + BLOCK_RIGHT_PAD);
+    let max_width =
+        content_width.saturating_sub(BLOCK_SIDE_MARGIN * 2 + 1 + BLOCK_LEFT_PAD + BLOCK_RIGHT_PAD);
     let max_width = max_width as usize;
     let mut content_lines = 2; // thread header line + spacing
     for comment in comments {
@@ -341,19 +343,22 @@ fn comment_block_height(comments: &[Comment], content_width: u32) -> usize {
 
 fn context_display_count(
     lines: &[String],
+    start_line: i64,
     threads: &[ThreadSummary],
     file_path: &str,
     wrap: bool,
     content_width: u32,
 ) -> usize {
     let mut ranges = Vec::new();
-    let total_lines = lines.len();
+    #[allow(clippy::cast_possible_wrap)]
+    let end_line = start_line + lines.len() as i64 - 1;
     for thread in threads.iter().filter(|t| t.file_path == file_path) {
         let thread_end = thread.selection_end.unwrap_or(thread.selection_start);
-        let start = (thread.selection_start - layout::CONTEXT_LINES).max(1);
-        #[allow(clippy::cast_possible_wrap)]
-        let end = (thread_end + layout::CONTEXT_LINES).min(total_lines as i64);
-        ranges.push((start, end));
+        let start = (thread.selection_start - layout::CONTEXT_LINES).max(start_line);
+        let end = (thread_end + layout::CONTEXT_LINES).min(end_line);
+        if start <= end {
+            ranges.push((start, end));
+        }
     }
 
     if ranges.is_empty() {
@@ -384,7 +389,7 @@ fn context_display_count(
         }
         let max_width = context_wrap_width(content_width);
         for line in start..=end {
-            if let Some(text) = lines.get((line - 1) as usize) {
+            if let Some(text) = lines.get((line - start_line) as usize) {
                 if wrap {
                     count += wrap_line_count(text, max_width);
                 } else {
@@ -404,21 +409,23 @@ fn context_display_count(
 /// `exclude_ranges` are (start, end) pairs of new-file lines already shown in the diff.
 fn orphaned_context_display_count(
     lines: &[String],
+    start_line: i64,
     orphaned_threads: &[&ThreadSummary],
     exclude_ranges: &[(i64, i64)],
     wrap: bool,
     content_width: u32,
 ) -> usize {
-    let total_lines = lines.len();
+    #[allow(clippy::cast_possible_wrap)]
+    let end_line = start_line + lines.len() as i64 - 1;
     let mut ranges: Vec<(i64, i64)> = orphaned_threads
         .iter()
         .map(|t| {
             let thread_end = t.selection_end.unwrap_or(t.selection_start);
-            let start = (t.selection_start - layout::CONTEXT_LINES).max(1);
-            #[allow(clippy::cast_possible_wrap)]
-            let end = (thread_end + layout::CONTEXT_LINES).min(total_lines as i64);
+            let start = (t.selection_start - layout::CONTEXT_LINES).max(start_line);
+            let end = (thread_end + layout::CONTEXT_LINES).min(end_line);
             (start, end)
         })
+        .filter(|(start, end)| start <= end)
         .collect();
 
     if ranges.is_empty() {
@@ -476,7 +483,7 @@ fn orphaned_context_display_count(
         }
         let max_width = context_wrap_width(content_width);
         for line in start..=end {
-            if let Some(text) = lines.get((line - 1) as usize) {
+            if let Some(text) = lines.get((line - start_line) as usize) {
                 if wrap {
                     count += wrap_line_count(text, max_width);
                 } else {
@@ -508,14 +515,17 @@ fn threads_comment_height(
 }
 
 fn all_context_extra_lines(
+    start_line: i64,
     total_lines: usize,
     file_threads: &[&ThreadSummary],
     all_comments: &HashMap<String, Vec<Comment>>,
     content_width: u32,
 ) -> usize {
+    #[allow(clippy::cast_possible_wrap)]
+    let end_line = start_line + total_lines as i64 - 1;
     let mut total = 0;
     for thread in file_threads {
-        if thread.selection_start <= 0 || thread.selection_start as usize > total_lines {
+        if thread.selection_start < start_line || thread.selection_start > end_line {
             continue;
         }
         if let Some(comments) = all_comments.get(&thread.thread_id) {
@@ -523,4 +533,45 @@ fn all_context_extra_lines(
         }
     }
     total
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::ThreadSummary;
+
+    fn thread(file_path: &str, start: i64, end: Option<i64>) -> ThreadSummary {
+        ThreadSummary {
+            thread_id: "th-1".to_string(),
+            file_path: file_path.to_string(),
+            selection_start: start,
+            selection_end: end,
+            status: "open".to_string(),
+            comment_count: 1,
+        }
+    }
+
+    #[test]
+    fn context_display_count_uses_window_start_line() {
+        let lines: Vec<String> = (100..=109).map(|n| format!("line {n}")).collect();
+        let threads = vec![thread("src/lib.rs", 105, None)];
+
+        let count = context_display_count(&lines, 100, &threads, "src/lib.rs", false, 120);
+
+        assert_eq!(count, 10);
+    }
+
+    #[test]
+    fn orphaned_context_count_uses_window_start_line_and_exclusions() {
+        let lines: Vec<String> = (100..=109).map(|n| format!("line {n}")).collect();
+        let thread = thread("src/lib.rs", 105, None);
+        let threads = vec![&thread];
+
+        let unclipped = orphaned_context_display_count(&lines, 100, &threads, &[], false, 120);
+        assert_eq!(unclipped, 10);
+
+        let clipped =
+            orphaned_context_display_count(&lines, 100, &threads, &[(103, 106)], false, 120);
+        assert_eq!(clipped, 7);
+    }
 }

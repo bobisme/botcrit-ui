@@ -118,7 +118,8 @@ fn map_review_list_mouse(model: &mut Model, mouse: opentui::MouseEvent) -> Messa
         return Message::Noop;
     }
 
-    let header_height = 1u32;
+    // Must match review_list.rs: HEADER_HEIGHT(5) + SEARCH_HEIGHT(2)
+    let header_height = 7u32;
     let footer_height = 2u32;
     let height = u32::from(model.height);
     if height <= header_height + footer_height {
@@ -132,7 +133,8 @@ fn map_review_list_mouse(model: &mut Model, mouse: opentui::MouseEvent) -> Messa
     }
 
     let row = (mouse.y - list_start) as usize;
-    let index = model.list_scroll + row;
+    // Each review item is 2 lines tall (ITEM_HEIGHT)
+    let index = model.list_scroll + row / 2;
     let reviews = model.filtered_reviews();
     if let Some(review) = reviews.get(index) {
         return Message::SelectReview(review.review_id.clone());

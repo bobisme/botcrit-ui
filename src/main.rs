@@ -619,7 +619,10 @@ fn open_file_in_editor(repo_path: Option<&Path>, request: EditorRequest) -> Resu
         return Ok(());
     }
 
-    let mut cmd = Command::new("nvim");
+    let editor = std::env::var("EDITOR")
+        .or_else(|_| std::env::var("VISUAL"))
+        .unwrap_or_else(|_| "vi".to_string());
+    let mut cmd = Command::new(editor);
     if let Some(line) = request.line {
         cmd.arg(format!("+{line}"));
     }

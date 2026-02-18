@@ -699,7 +699,7 @@ fn render_file_content_no_diff(
                 if let Some(comments) = sctx.all_comments.get(&thread.thread_id) {
                     let rows = comment_block_rows(thread, comments, area);
                     let is_cursor = cursor.is_cursor_at(rows);
-                    let hl = is_cursor;
+                    let hl = is_cursor || cursor.is_selected_at(rows);
                     emit_comment_block(cursor, area, thread, comments, hl, is_cursor);
                 }
             }
@@ -1148,41 +1148,46 @@ fn render_file_diff_sbs(
                     .or_insert(cursor.stream_row);
             }
         }
+        // Compute wrapped row count for this line (must match render_sbs_line).
+        // Used for both line_map recording and cursor/selection highlighting.
+        let sbs_rows = if !sbs_line.is_header && ctx.wrap {
+            let thread_col_width = THREAD_COL_WIDTH;
+            let divider_width: u32 = 1;
+            let line_num_width = SBS_LINE_NUM_WIDTH;
+            let available = diff_content_width(ctx.line_area)
+                .saturating_sub(thread_col_width + divider_width);
+            let half_width = available / 2;
+            let left_w = half_width.saturating_sub(line_num_width) as usize;
+            let right_w = half_width.saturating_sub(line_num_width) as usize;
+            let left_rows = sbs_line
+                .left
+                .as_ref()
+                .map_or(1, |l| wrap_content(None, &l.content, left_w).len().max(1));
+            let right_rows = sbs_line
+                .right
+                .as_ref()
+                .map_or(1, |r| wrap_content(None, &r.content, right_w).len().max(1));
+            left_rows.max(right_rows)
+        } else {
+            1
+        };
+
         // Record new-side line mapping for comment targeting (right side = new)
         if !sbs_line.is_header {
             if let Some(right) = &sbs_line.right {
                 let nl = i64::from(right.line_num);
                 let base = cursor.stream_row;
-                if ctx.wrap {
-                    // Compute row count for wrapped SBS (must match render_sbs_line)
-                    let thread_col_width = THREAD_COL_WIDTH;
-                    let divider_width: u32 = 1;
-                    let line_num_width = SBS_LINE_NUM_WIDTH;
-                    let available = diff_content_width(ctx.line_area)
-                        .saturating_sub(thread_col_width + divider_width);
-                    let half_width = available / 2;
-                    let left_w = half_width.saturating_sub(line_num_width) as usize;
-                    let right_w = half_width.saturating_sub(line_num_width) as usize;
-                    let left_rows = sbs_line
-                        .left
-                        .as_ref()
-                        .map_or(1, |l| wrap_content(None, &l.content, left_w).len().max(1));
-                    let right_rows = wrap_content(None, &right.content, right_w).len().max(1);
-                    let rows = left_rows.max(right_rows);
-                    let mut lm = ctx.line_map.borrow_mut();
-                    for r in 0..rows {
-                        lm.insert(base + r, nl);
-                    }
-                } else {
-                    ctx.line_map.borrow_mut().insert(base, nl);
+                let mut lm = ctx.line_map.borrow_mut();
+                for r in 0..sbs_rows {
+                    lm.insert(base + r, nl);
                 }
             }
         }
         if !sbs_line.is_header {
             cursor.mark_cursor_stop();
         }
-        let is_cursor = !sbs_line.is_header && cursor.is_cursor_at(1);
-        let is_selected = !sbs_line.is_header && cursor.is_selected_at(1);
+        let is_cursor = !sbs_line.is_header && cursor.is_cursor_at(sbs_rows);
+        let is_selected = !sbs_line.is_header && cursor.is_selected_at(sbs_rows);
         render_sbs_line(
             cursor,
             sbs_line,
@@ -1208,7 +1213,7 @@ fn render_file_diff_sbs(
                     {
                         let rows = comment_block_rows(thread, comments, ctx.area);
                         let is_cursor = cursor.is_cursor_at(rows);
-                        let hl = is_cursor;
+                        let hl = is_cursor || cursor.is_selected_at(rows);
                         emit_comment_block(cursor, ctx.area, thread, comments, hl, is_cursor);
                     }
                 }

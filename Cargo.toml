@@ -10,17 +10,12 @@ license = "MIT"
 name = "crit-ui"
 path = "src/main.rs"
 
-[features]
-default = ["backend-ftui"]
-backend-ftui = ["dep:ftui-core", "dep:ftui-render", "dep:ftui-style", "dep:palette"]
-ftui-migration = ["backend-ftui"]
-
 [dependencies]
 # Rendering
-ftui-core = { version = "0.2.1", features = ["crossterm"], optional = true }
-ftui-render = { version = "0.2.1", optional = true }
-ftui-style = { version = "0.2.1", optional = true }
-palette = { version = "0.7.6", optional = true }
+ftui-core = { version = "0.2.1", features = ["crossterm"] }
+ftui-render = { version = "0.2.1" }
+ftui-style = { version = "0.2.1" }
+palette = { version = "0.7.6" }
 
 # Core
 anyhow = "1.0"

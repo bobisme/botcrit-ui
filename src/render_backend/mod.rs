@@ -3,14 +3,11 @@
 //! The hard-switch to ftui is complete; this module exposes a stable app-facing
 //! API backed by the ftui runtime and rendering stack.
 
-#[cfg(feature = "backend-ftui")]
 pub use ftui_render::cell::PackedRgba;
-#[cfg(feature = "backend-ftui")]
 mod ftui_compat;
-#[cfg(feature = "backend-ftui")]
 pub use ftui_compat::*;
 
-#[cfg(all(test, feature = "backend-ftui"))]
+#[cfg(test)]
 mod tests {
     use super::{
         color_blend_over, color_lerp, color_luminance, color_with_alpha, event_from_ftui,

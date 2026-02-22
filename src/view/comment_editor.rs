@@ -5,7 +5,7 @@
 //! - Text area with existing comments context
 //! - Bottom bar with title (left) and hotkeys (right)
 
-use opentui::{OptimizedBuffer, Style};
+use crate::render_backend::{buffer_draw_text, buffer_fill_rect, OptimizedBuffer, Style};
 
 use crate::model::{Focus, InlineEditor, Model};
 use crate::theme::Theme;
@@ -41,7 +41,14 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
     let panel = compute_panel(screen, editor, diff_pane_x, diff_pane_width);
 
     // Fill panel background
-    buffer.fill_rect(panel.x, panel.y, panel.width, panel.height, model.theme.panel_bg);
+    buffer_fill_rect(
+        buffer,
+        panel.x,
+        panel.y,
+        panel.width,
+        panel.height,
+        model.theme.panel_bg,
+    );
 
     let content_x = panel.x + H_PAD;
     let content_width = panel.width.saturating_sub(H_PAD * 2);
@@ -49,12 +56,28 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
     let mut y = panel.y + 1;
 
     // --- Existing comments context (dimmed) ---
-    y = render_existing_comments(buffer, &model.theme, editor, &panel, content_x, content_width, y);
+    y = render_existing_comments(
+        buffer,
+        &model.theme,
+        editor,
+        &panel,
+        content_x,
+        content_width,
+        y,
+    );
 
     // --- Text area ---
     // render_text_area naturally leaves a 1-row gap before hotkey_row
     let hotkey_row = panel.y + panel.height - 2;
-    render_text_area(buffer, &model.theme, editor, content_x, content_width, y, hotkey_row);
+    render_text_area(
+        buffer,
+        &model.theme,
+        editor,
+        content_x,
+        content_width,
+        y,
+        hotkey_row,
+    );
 
     // --- Bottom bar: title left + hotkeys right ---
     let title = build_title(editor);
@@ -63,13 +86,23 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
         HotkeyHint::new("Submit", "ctrl+s"),
         HotkeyHint::new("Cancel", "esc"),
     ];
-    draw_help_bar_ext(buffer, help_area, &model.theme, &hints, model.theme.panel_bg, &title);
+    draw_help_bar_ext(
+        buffer,
+        help_area,
+        &model.theme,
+        &hints,
+        model.theme.panel_bg,
+        &title,
+    );
 }
 
 fn build_title(editor: &InlineEditor) -> String {
     let line_range = match editor.request.end_line {
         Some(end) if end != editor.request.start_line => {
-            format!("{}:{}-{}", editor.request.file_path, editor.request.start_line, end)
+            format!(
+                "{}:{}-{}",
+                editor.request.file_path, editor.request.start_line, end
+            )
         }
         _ => format!("{}:{}", editor.request.file_path, editor.request.start_line),
     };
@@ -133,7 +166,14 @@ fn render_existing_comments(
             break;
         }
         let text = format!("{}: {}", comment.author, comment.body);
-        draw_text_truncated(buffer, content_x, y, &text, content_width, theme.style_muted());
+        draw_text_truncated(
+            buffer,
+            content_x,
+            y,
+            &text,
+            content_width,
+            theme.style_muted(),
+        );
         y += 1;
     }
     y + 1 // blank separator
@@ -166,7 +206,16 @@ fn render_text_area(
         }
         let line = &editor.lines[line_idx];
         if line_idx == editor.cursor_row {
-            render_line_with_cursor(buffer, text_x, line_y, line, editor.cursor_col, text_width, text_style, cursor_style);
+            render_line_with_cursor(
+                buffer,
+                text_x,
+                line_y,
+                line,
+                editor.cursor_col,
+                text_width,
+                text_style,
+                cursor_style,
+            );
         } else {
             draw_text_truncated(buffer, text_x, line_y, line, text_width, text_style);
         }
@@ -174,7 +223,7 @@ fn render_text_area(
 
     // Show cursor on empty first line
     if editor.lines.len() == 1 && editor.lines[0].is_empty() && editor.cursor_col == 0 {
-        buffer.draw_text(text_x, text_area_top, " ", cursor_style);
+        buffer_draw_text(buffer, text_x, text_area_top, " ", cursor_style);
     }
 }
 
@@ -197,14 +246,18 @@ fn render_line_with_cursor(
         if col >= max_width {
             break;
         }
-        let style = if i == cursor_col { cursor_style } else { text_style };
+        let style = if i == cursor_col {
+            cursor_style
+        } else {
+            text_style
+        };
         let s = ch.to_string();
-        buffer.draw_text(x + col, y, &s, style);
+        buffer_draw_text(buffer, x + col, y, &s, style);
         col += 1;
     }
 
     // If cursor is at end of line, draw cursor block on the space after
     if cursor_col >= chars.len() && col < max_width {
-        buffer.draw_text(x + col, y, " ", cursor_style);
+        buffer_draw_text(buffer, x + col, y, " ", cursor_style);
     }
 }

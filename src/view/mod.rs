@@ -9,7 +9,7 @@ mod review_list;
 
 pub use diff::map_threads_to_diff;
 
-use opentui::OptimizedBuffer;
+use crate::render_backend::{buffer_clear, OptimizedBuffer};
 
 use crate::model::{Model, Screen};
 
@@ -18,7 +18,7 @@ pub use components::Rect;
 /// Render the current model state to the buffer
 pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
     // Clear with background color
-    buffer.clear(model.theme.background);
+    buffer_clear(buffer, model.theme.background);
 
     match model.screen {
         Screen::ReviewList => review_list::view(model, buffer),

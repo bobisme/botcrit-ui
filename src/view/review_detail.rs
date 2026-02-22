@@ -1,11 +1,17 @@
 //! Review detail screen rendering
 
-use opentui::{OptimizedBuffer, Rgba, Style};
+use crate::render_backend::{buffer_draw_text, buffer_fill_rect, OptimizedBuffer, Rgba, Style};
 
-use super::components::{dim_rect, draw_help_bar, draw_help_bar_with_bg, draw_text_truncated, truncate_path, HotkeyHint, Rect};
-use super::diff::{diff_change_counts, render_diff_stream, render_pinned_header_block, DiffStreamParams};
-use crate::model::{Focus, LayoutMode, Model, SidebarItem};
+use super::components::{
+    dim_rect, draw_help_bar, draw_help_bar_with_bg, draw_text_truncated, truncate_path, HotkeyHint,
+    Rect,
+};
+use super::diff::{
+    diff_change_counts, render_diff_stream, render_pinned_header_block, DiffStreamParams,
+};
 use crate::layout::{BLOCK_MARGIN, BLOCK_PADDING, DIFF_MARGIN};
+use crate::model::{Focus, LayoutMode, Model, SidebarItem};
+use crate::render_backend::color_lerp;
 use crate::stream::{block_height, description_block_height};
 
 struct SidebarPadding {
@@ -54,7 +60,14 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
 
 fn draw_loading_splash(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     let theme = &model.theme;
-    buffer.fill_rect(area.x, area.y, area.width, area.height, theme.background);
+    buffer_fill_rect(
+        buffer,
+        area.x,
+        area.y,
+        area.width,
+        area.height,
+        theme.background,
+    );
 
     let title = "Loading review...";
     let title_width = title.len() as u32;
@@ -62,7 +75,7 @@ fn draw_loading_splash(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) 
         .x
         .saturating_add(area.width.saturating_sub(title_width) / 2);
     let y = area.y.saturating_add(area.height / 2);
-    buffer.draw_text(x, y, title, Style::fg(theme.foreground).with_bold());
+    buffer_draw_text(buffer, x, y, title, Style::fg(theme.foreground).with_bold());
 }
 
 /// Render a file item in the sidebar
@@ -88,27 +101,24 @@ fn draw_sidebar_file_item(
         let row_bg = if selected && focused {
             theme.selection_bg
         } else if selected {
-            theme.panel_bg.lerp(theme.selection_bg, 0.5)
+            color_lerp(theme.panel_bg, theme.selection_bg, 0.5)
         } else {
             theme.panel_bg
         };
 
         if selected {
-            buffer.fill_rect(inner.x, y, inner.width, 1, row_bg);
+            buffer_fill_rect(buffer, inner.x, y, inner.width, 1, row_bg);
         }
 
         let collapse_indicator = if *collapsed { "▸ " } else { "▾ " };
         let (prefix, style) = if *file_idx == model.file_index {
             (collapse_indicator, theme.style_primary().with_bg(row_bg))
         } else {
-            (
-                collapse_indicator,
-                theme.style_foreground_on(row_bg),
-            )
+            (collapse_indicator, theme.style_foreground_on(row_bg))
         };
 
         let prefix_x = inner.x + pad.left;
-        buffer.draw_text(prefix_x, y, prefix, style);
+        buffer_draw_text(buffer, prefix_x, y, prefix, style);
 
         // Thread count indicator
         let thread_indicator = if entry.open_threads > 0 {
@@ -145,7 +155,8 @@ fn draw_sidebar_file_item(
             .x
             .saturating_add(inner.width)
             .saturating_sub(pad.right + indicator_len);
-        buffer.draw_text(
+        buffer_draw_text(
+            buffer,
             indicator_x,
             y,
             &thread_indicator,
@@ -178,13 +189,13 @@ fn draw_sidebar_thread_item(
         let row_bg = if is_cursor && focused {
             theme.selection_bg
         } else if is_cursor {
-            theme.panel_bg.lerp(theme.selection_bg, 0.5)
+            color_lerp(theme.panel_bg, theme.selection_bg, 0.5)
         } else {
             theme.panel_bg
         };
 
         if is_cursor {
-            buffer.fill_rect(inner.x, y, inner.width, 1, row_bg);
+            buffer_fill_rect(buffer, inner.x, y, inner.width, 1, row_bg);
         }
 
         let indent: u32 = 4;
@@ -213,7 +224,8 @@ fn draw_sidebar_thread_item(
         };
         draw_text_truncated(buffer, thread_x, y, thread_id, id_width, text_style);
 
-        buffer.draw_text(
+        buffer_draw_text(
+            buffer,
             indicator_x,
             y,
             &count_text,
@@ -225,7 +237,14 @@ fn draw_sidebar_thread_item(
 fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     let theme = &model.theme;
     let inner = area;
-    buffer.fill_rect(inner.x, inner.y, inner.width, inner.height, theme.panel_bg);
+    buffer_fill_rect(
+        buffer,
+        inner.x,
+        inner.y,
+        inner.width,
+        inner.height,
+        theme.panel_bg,
+    );
     let items = model.sidebar_items();
 
     let pad = SidebarPadding { left: 2, right: 2 };
@@ -248,7 +267,7 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         );
         let sep_x = text_x + id_len;
         if sep_x + 3 < text_x + text_width {
-            buffer.draw_text(sep_x, y, " \u{b7} ", theme.style_muted());
+            buffer_draw_text(buffer, sep_x, y, " \u{b7} ", theme.style_muted());
             let status_x = sep_x + 3;
             let status_color = match review.status.as_str() {
                 "open" | "merged" => theme.success,
@@ -274,23 +293,44 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
                 if y >= bottom {
                     break;
                 }
-                draw_text_truncated(buffer, text_x, y, &line, text_width, theme.style_foreground());
+                draw_text_truncated(
+                    buffer,
+                    text_x,
+                    y,
+                    &line,
+                    text_width,
+                    theme.style_foreground(),
+                );
                 y += 1;
             }
         }
         y += 1;
 
-        // Change ID + commit ID (first 8 chars each)
-        let change_id = short_hash(&review.jj_change_id);
-        let commit_id = short_hash(&review.initial_commit);
-        let ids = format!("{change_id}  {commit_id}");
-        draw_text_truncated(buffer, text_x, y, &ids, text_width, theme.style_muted());
+        // Ref and commit ID on separate rows.
+        let ref_display = format_ref_for_display(&review.jj_change_id, text_width as usize);
+        draw_text_truncated(
+            buffer,
+            text_x,
+            y,
+            &ref_display,
+            text_width,
+            theme.style_muted(),
+        );
+        y += 1;
+        draw_text_truncated(
+            buffer,
+            text_x,
+            y,
+            &review.initial_commit,
+            text_width,
+            theme.style_muted(),
+        );
         y += 2;
     }
 
     if items.is_empty() {
         if y < bottom {
-            buffer.draw_text(text_x, y, "No files", theme.style_muted());
+            buffer_draw_text(buffer, text_x, y, "No files", theme.style_muted());
         }
         return;
     }
@@ -312,12 +352,6 @@ fn draw_file_sidebar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
 
         y += 1;
     }
-}
-
-fn short_hash(hash: &str) -> &str {
-    let len = hash.len();
-    let end = len.min(8);
-    &hash[..end]
 }
 
 /// Simple word-wrap: split text into lines that fit within `max_width` characters.
@@ -349,6 +383,81 @@ fn word_wrap_lines(text: &str, max_width: usize) -> Vec<String> {
     lines
 }
 
+fn format_ref_for_display(raw: &str, max_width: usize) -> String {
+    if max_width == 0 {
+        return String::new();
+    }
+
+    let branch = if let Some(rest) = raw.strip_prefix("refs/heads/") {
+        rest
+    } else if let Some(rest) = raw.strip_prefix("refs/remotes/") {
+        rest
+    } else if let Some(rest) = raw.strip_prefix("refs/tags/") {
+        return format_with_prefix("⎇ ", &format!("tag:{rest}"), max_width);
+    } else if let Some(rest) = raw.strip_prefix("refs/") {
+        rest
+    } else {
+        raw
+    };
+
+    format_with_prefix("⎇ ", branch, max_width)
+}
+
+fn format_with_prefix(prefix: &str, body: &str, max_width: usize) -> String {
+    let prefix_chars = prefix.chars().count();
+    if max_width <= prefix_chars {
+        return take_chars(prefix, max_width).to_string();
+    }
+
+    let body_width = max_width - prefix_chars;
+    let truncated = truncate_middle(body, body_width);
+    format!("{prefix}{truncated}")
+}
+
+fn truncate_middle(text: &str, max_chars: usize) -> String {
+    let count = text.chars().count();
+    if count <= max_chars {
+        return text.to_string();
+    }
+
+    if max_chars == 0 {
+        return String::new();
+    }
+    if max_chars == 1 {
+        return "…".to_string();
+    }
+
+    let keep = max_chars - 1;
+    let head = keep / 2;
+    let tail = keep - head;
+    let start = take_chars(text, head);
+    let end = take_last_chars(text, tail);
+    format!("{start}…{end}")
+}
+
+fn take_chars(text: &str, max_chars: usize) -> &str {
+    if max_chars == 0 {
+        return "";
+    }
+    for (count, (idx, _)) in text.char_indices().enumerate() {
+        if count == max_chars {
+            return &text[..idx];
+        }
+    }
+    text
+}
+
+fn take_last_chars(text: &str, max_chars: usize) -> String {
+    if max_chars == 0 {
+        return String::new();
+    }
+    let total = text.chars().count();
+    if total <= max_chars {
+        return text.to_string();
+    }
+    text.chars().skip(total - max_chars).collect()
+}
+
 fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     let theme = &model.theme;
     let inner = area;
@@ -362,7 +471,8 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
 
     let files = model.files_with_threads();
     if files.is_empty() {
-        buffer.draw_text(
+        buffer_draw_text(
+            buffer,
             inner.x + 2,
             inner.y + 1,
             "No content available",
@@ -403,7 +513,8 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         content_area.height.saturating_sub(pinned_height),
     );
 
-    buffer.fill_rect(
+    buffer_fill_rect(
+        buffer,
         content_area.x,
         content_area.y,
         content_area.width,
@@ -462,7 +573,7 @@ fn draw_diff_pane(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
     // Bottom margin between content and footer
     if inner.height >= 3 {
         let margin_y = inner.y + inner.height - 3;
-        buffer.fill_rect(inner.x, margin_y, inner.width, 1, theme.background);
+        buffer_fill_rect(buffer, inner.x, margin_y, inner.width, 1, theme.background);
     }
 
     if model.focus == Focus::FileSidebar {
@@ -532,10 +643,7 @@ fn render_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
             ]);
         }
         _ => {
-            all_hints.extend([
-                HotkeyHint::new("Back", "Esc"),
-                HotkeyHint::new("Quit", "q"),
-            ]);
+            all_hints.extend([HotkeyHint::new("Back", "Esc"), HotkeyHint::new("Quit", "q")]);
         }
     }
 
@@ -544,9 +652,16 @@ fn render_help_bar(model: &Model, buffer: &mut OptimizedBuffer, area: Rect) {
         // Render flash message in error color instead of normal hints.
         let bg = model.theme.background;
         let y = footer.y + footer.height.saturating_sub(2);
-        buffer.fill_rect(footer.x, y, footer.width, 2, bg);
+        buffer_fill_rect(buffer, footer.x, y, footer.width, 2, bg);
         let style = Style::fg(model.theme.error).with_bg(bg);
-        draw_text_truncated(buffer, footer.x + 2, y, flash, footer.width.saturating_sub(4), style);
+        draw_text_truncated(
+            buffer,
+            footer.x + 2,
+            y,
+            flash,
+            footer.width.saturating_sub(4),
+            style,
+        );
     } else if model.focus == Focus::FileSidebar {
         let scale = 0.7;
         let bg = &model.theme.background;

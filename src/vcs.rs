@@ -15,7 +15,7 @@ pub enum VcsType {
 }
 
 /// Detect the VCS type for a directory
-#[must_use] 
+#[must_use]
 pub fn detect_vcs(path: &Path) -> Option<VcsType> {
     // Check for jj first (it can coexist with git)
     if path.join(".jj").exists() {
@@ -30,7 +30,7 @@ pub fn detect_vcs(path: &Path) -> Option<VcsType> {
 /// Get the diff for a specific file between two commits.
 ///
 /// If `to_commit` is None, diffs against the working copy.
-#[must_use] 
+#[must_use]
 pub fn get_file_diff(
     repo_path: &Path,
     file_path: &str,
@@ -150,7 +150,7 @@ pub fn get_file_content(repo_path: &Path, file_path: &str, commit: &str) -> Opti
 }
 
 /// Get the full diff for all files between two commits.
-#[must_use] 
+#[must_use]
 pub fn get_full_diff(
     repo_path: &Path,
     from_commit: &str,

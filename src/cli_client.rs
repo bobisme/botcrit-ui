@@ -1,6 +1,7 @@
 //! `CritClient` implementation that shells out to the `crit` CLI with `--format json`.
 
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -25,7 +26,11 @@ impl CliClient {
     }
 
     /// Run `crit <args> --format json --path <repo>` and return stdout bytes.
-    fn run_crit(&self, args: &[&str]) -> Result<Vec<u8>> {
+    fn run_crit<I, S>(&self, args: I) -> Result<Vec<u8>>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
         let output = Command::new("crit")
             .args(args)
             .arg("--format")
@@ -44,6 +49,13 @@ impl CliClient {
         }
 
         Ok(output.stdout)
+    }
+
+    fn comment_agent() -> String {
+        std::env::var("USER")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| "unknown".to_string())
     }
 }
 
@@ -142,7 +154,7 @@ impl From<CombinedReview> for ReviewDetail {
 
 impl CritClient for CliClient {
     fn list_reviews(&self, status: Option<&str>) -> Result<Vec<ReviewSummary>> {
-        let stdout = self.run_crit(&["reviews", "list"])?;
+        let stdout = self.run_crit(["reviews", "list"])?;
         let resp: ReviewsListResponse =
             serde_json::from_slice(&stdout).context("Failed to parse `crit reviews list` JSON")?;
         let reviews = resp.reviews;
@@ -154,7 +166,7 @@ impl CritClient for CliClient {
     }
 
     fn load_review_data(&self, review_id: &str) -> Result<Option<ReviewData>> {
-        let stdout = self.run_crit(&["review", review_id, "--include-diffs"])?;
+        let stdout = self.run_crit(["review", review_id, "--include-diffs"])?;
         let resp: CombinedResponse =
             serde_json::from_slice(&stdout).context("Failed to parse `crit review` JSON")?;
 
@@ -223,14 +235,17 @@ impl CritClient for CliClient {
             Some(end) if end != start_line => format!("{start_line}-{end}"),
             _ => start_line.to_string(),
         };
-        self.run_crit(&[
-            "comment", review_id, body, "--file", file_path, "--line", &lines_arg, "--user",
+        let agent = Self::comment_agent();
+        self.run_crit([
+            "comment", review_id, body, "--file", file_path, "--line", &lines_arg, "--agent",
+            &agent,
         ])?;
         Ok(())
     }
 
     fn reply(&self, thread_id: &str, body: &str) -> Result<()> {
-        self.run_crit(&["reply", thread_id, body, "--user"])?;
+        let agent = Self::comment_agent();
+        self.run_crit(["reply", thread_id, body, "--agent", &agent])?;
         Ok(())
     }
 }

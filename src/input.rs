@@ -5,11 +5,12 @@
 
 use std::time::{Duration, Instant};
 
-use opentui::input::{MouseButton, MouseEventKind};
-use opentui::{Event, KeyCode, KeyModifiers};
+use crate::render_backend::{
+    Event, KeyCode, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 
-use crate::model::{Focus, LayoutMode, Model, Screen};
 use crate::message::Message;
+use crate::model::{Focus, LayoutMode, Model, Screen};
 
 pub fn map_event_to_message(model: &mut Model, event: &Event) -> Message {
     match event {
@@ -60,9 +61,11 @@ fn map_review_list_key(key: KeyCode, modifiers: KeyModifiers, model: &Model) -> 
             KeyCode::Enter => {
                 // Select current review from filtered results
                 let reviews = model.filtered_reviews();
-                reviews.get(model.list_index).map_or(Message::Noop, |review| {
-                    Message::SelectReview(review.review_id.clone())
-                })
+                reviews
+                    .get(model.list_index)
+                    .map_or(Message::Noop, |review| {
+                        Message::SelectReview(review.review_id.clone())
+                    })
             }
             KeyCode::Char(c) => Message::SearchInput(c.to_string()),
             _ => Message::Noop,
@@ -79,9 +82,11 @@ fn map_review_list_key(key: KeyCode, modifiers: KeyModifiers, model: &Model) -> 
         KeyCode::PageDown => Message::ListPageDown,
         KeyCode::Enter | KeyCode::Char('l') => {
             let reviews = model.filtered_reviews();
-            reviews.get(model.list_index).map_or(Message::Noop, |review| {
-                Message::SelectReview(review.review_id.clone())
-            })
+            reviews
+                .get(model.list_index)
+                .map_or(Message::Noop, |review| {
+                    Message::SelectReview(review.review_id.clone())
+                })
         }
         KeyCode::Char('s') => Message::CycleStatusFilter,
         KeyCode::Char('/') => Message::SearchActivate,
@@ -89,7 +94,7 @@ fn map_review_list_key(key: KeyCode, modifiers: KeyModifiers, model: &Model) -> 
     }
 }
 
-fn map_review_list_mouse(model: &mut Model, mouse: opentui::MouseEvent) -> Message {
+fn map_review_list_mouse(model: &mut Model, mouse: MouseEvent) -> Message {
     if model.focus == Focus::CommandPalette {
         return Message::Noop;
     }
@@ -143,7 +148,7 @@ fn map_review_list_mouse(model: &mut Model, mouse: opentui::MouseEvent) -> Messa
     Message::Noop
 }
 
-fn map_review_detail_mouse(model: &mut Model, mouse: opentui::MouseEvent) -> Message {
+fn map_review_detail_mouse(model: &mut Model, mouse: MouseEvent) -> Message {
     if model.focus == Focus::CommandPalette || model.focus == Focus::Commenting {
         return Message::Noop;
     }
@@ -303,10 +308,10 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
             KeyCode::Char('s') => Message::ToggleSidebar,
             KeyCode::Enter => {
                 // Expand the current thread (if one is selected via n/p)
-                model.expanded_thread.as_ref().map_or(
-                    Message::NextThread,
-                    |id| Message::ExpandThread(id.clone()),
-                )
+                model
+                    .expanded_thread
+                    .as_ref()
+                    .map_or(Message::NextThread, |id| Message::ExpandThread(id.clone()))
             }
             KeyCode::Char('a') => Message::StartComment,
             KeyCode::Char('A') => Message::StartCommentExternal,
@@ -321,11 +326,10 @@ fn map_review_detail_key(model: &Model, key: KeyCode, modifiers: KeyModifiers) -
             KeyCode::Char('k') | KeyCode::Up => Message::ScrollUp,
             KeyCode::Char('g') | KeyCode::Home => Message::ScrollTop,
             KeyCode::Char('G') | KeyCode::End => Message::ScrollBottom,
-            KeyCode::Char('r' | 'R') => {
-                model.expanded_thread.as_ref().map_or(Message::Noop, |id| {
-                    Message::ResolveThread(id.clone())
-                })
-            }
+            KeyCode::Char('r' | 'R') => model
+                .expanded_thread
+                .as_ref()
+                .map_or(Message::Noop, |id| Message::ResolveThread(id.clone())),
             _ => Message::Noop,
         },
         Focus::Commenting => {

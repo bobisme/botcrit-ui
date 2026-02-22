@@ -23,7 +23,7 @@ pub struct CommandSpec {
     pub active: bool,
 }
 
-#[must_use] 
+#[must_use]
 pub fn get_commands() -> Vec<CommandSpec> {
     vec![
         // --- View ---
@@ -79,7 +79,7 @@ pub fn get_commands() -> Vec<CommandSpec> {
     ]
 }
 
-#[must_use] 
+#[must_use]
 pub const fn command_id_to_message(id: CommandId) -> Message {
     match id {
         CommandId::Quit => Message::Quit,

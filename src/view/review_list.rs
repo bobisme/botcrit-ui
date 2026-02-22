@@ -1,6 +1,6 @@
 //! Review list screen rendering
 
-use opentui::{OptimizedBuffer, Style};
+use crate::render_backend::{buffer_draw_text, buffer_fill_rect, OptimizedBuffer, Style};
 
 use super::components::{
     draw_block, draw_help_bar_ext, draw_text_truncated, BlockLine, HotkeyHint, Rect,
@@ -20,7 +20,14 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
     let area = Rect::from_size(model.width, model.height);
 
     // Fill background
-    buffer.fill_rect(area.x, area.y, area.width, area.height, theme.background);
+    buffer_fill_rect(
+        buffer,
+        area.x,
+        area.y,
+        area.width,
+        area.height,
+        theme.background,
+    );
 
     // Header block
     let header_text = model.repo_path.as_ref().map_or_else(
@@ -58,7 +65,8 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
     let reviews = model.filtered_reviews();
 
     if reviews.is_empty() {
-        buffer.draw_text(
+        buffer_draw_text(
+            buffer,
             list_area.x + 4,
             list_area.y,
             "No reviews found",
@@ -83,16 +91,16 @@ pub fn view(model: &Model, buffer: &mut OptimizedBuffer) {
 
 fn draw_search_bar(model: &Model, buffer: &mut OptimizedBuffer, x: u32, y: u32, width: u32) {
     let theme = &model.theme;
-    buffer.fill_rect(x, y, width, SEARCH_HEIGHT, theme.background);
+    buffer_fill_rect(buffer, x, y, width, SEARCH_HEIGHT, theme.background);
 
     let text_x = x + 5;
     if model.search_active {
         let max_chars = width.saturating_sub(8) as usize; // 5 margin + "/ " + cursor
         let visible = tail_chars(&model.search_input, max_chars);
         let prompt = format!("/ {visible}\u{2588}");
-        buffer.draw_text(text_x, y, &prompt, theme.style_foreground());
+        buffer_draw_text(buffer, text_x, y, &prompt, theme.style_foreground());
     } else {
-        buffer.draw_text(text_x, y, "Press / to search", theme.style_muted());
+        buffer_draw_text(buffer, text_x, y, "Press / to search", theme.style_muted());
     }
 }
 
@@ -130,7 +138,7 @@ fn draw_review_item(
     let margin: u32 = 2;
     let item_x = area.x + margin;
     let item_width = area.width.saturating_sub(margin * 2);
-    buffer.fill_rect(item_x, y, item_width, ITEM_HEIGHT, bg);
+    buffer_fill_rect(buffer, item_x, y, item_width, ITEM_HEIGHT, bg);
 
     let left_pad: u32 = 3;
     let right_pad: u32 = 2;
@@ -142,7 +150,7 @@ fn draw_review_item(
     // Review ID
     let id_style = Style::fg(theme.primary).with_bg(bg);
     let id_len = review.review_id.len() as u32;
-    buffer.draw_text(x, y, &review.review_id, id_style);
+    buffer_draw_text(buffer, x, y, &review.review_id, id_style);
     x += id_len + 2;
 
     // Thread count (right-aligned): "N th"
@@ -156,7 +164,8 @@ fn draw_review_item(
     } else {
         theme.muted
     };
-    buffer.draw_text(
+    buffer_draw_text(
+        buffer,
         thread_x,
         y,
         &thread_text,
@@ -188,7 +197,7 @@ fn draw_review_item(
             _ => theme.foreground,
         }
     };
-    buffer.draw_text(x2, y2, &badge, Style::fg(badge_color).with_bg(bg));
+    buffer_draw_text(buffer, x2, y2, &badge, Style::fg(badge_color).with_bg(bg));
     x2 += badge.len() as u32 + 2;
 
     // Author -> Reviewers

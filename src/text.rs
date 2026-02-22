@@ -1,7 +1,7 @@
 //! Text utilities
 
 /// Wrap text to a maximum width, preserving line breaks.
-#[must_use] 
+#[must_use]
 pub fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
     if max_width == 0 {
         return Vec::new();
@@ -59,7 +59,7 @@ pub fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
     lines
 }
 
-#[must_use] 
+#[must_use]
 pub fn wrap_text_preserve(text: &str, max_width: usize) -> Vec<String> {
     if max_width == 0 {
         return Vec::new();

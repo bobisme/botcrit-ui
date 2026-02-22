@@ -21,7 +21,7 @@ pub fn diff_change_counts(diff: &ParsedDiff) -> ChangeCounts {
 }
 
 /// Map threads to display line indices within the diff
-#[must_use] 
+#[must_use]
 pub fn map_threads_to_diff(diff: &ParsedDiff, threads: &[&ThreadSummary]) -> Vec<ThreadAnchor> {
     let mut anchors = Vec::new();
 

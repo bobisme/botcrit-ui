@@ -1,10 +1,15 @@
 //! State update logic (Elm Architecture)
 
 use crate::command::{command_id_to_message, get_commands};
-use crate::message::Message;
-use crate::model::{CommentRequest, DiffViewMode, EditorRequest, Focus, InlineEditor, Model, PaletteMode, PendingCommentSubmission, ReviewFilter, Screen};
-use crate::stream::{active_file_index, compute_stream_layout, file_scroll_offset, StreamLayoutParams};
 use crate::layout::visible_stream_rows;
+use crate::message::Message;
+use crate::model::{
+    CommentRequest, DiffViewMode, EditorRequest, Focus, InlineEditor, Model, PaletteMode,
+    PendingCommentSubmission, ReviewFilter, Screen,
+};
+use crate::stream::{
+    active_file_index, compute_stream_layout, file_scroll_offset, StreamLayoutParams,
+};
 use crate::{config, theme, Highlighter};
 
 fn update_list_nav(model: &mut Model, msg: &Message) {
@@ -111,7 +116,9 @@ fn update_cursor(model: &mut Model, msg: &Message) {
                 model.diff_cursor = model.max_stream_row.get().saturating_sub(1);
             }
         }
-        _ => { drop(stops); }
+        _ => {
+            drop(stops);
+        }
     }
 
     center_cursor_scroll(model);
@@ -749,8 +756,12 @@ pub fn update(model: &mut Model, msg: Message) {
     }
 
     match msg {
-        Message::ListUp | Message::ListDown | Message::ListPageUp | Message::ListPageDown
-        | Message::ListTop | Message::ListBottom => {
+        Message::ListUp
+        | Message::ListDown
+        | Message::ListPageUp
+        | Message::ListPageDown
+        | Message::ListTop
+        | Message::ListBottom => {
             update_list_nav(model, &msg);
         }
 
@@ -768,20 +779,33 @@ pub fn update(model: &mut Model, msg: Message) {
             model.needs_redraw = true;
         }
 
-        Message::ScrollUp | Message::ScrollDown | Message::ScrollTop | Message::ScrollBottom
-        | Message::ScrollHalfPageUp | Message::ScrollHalfPageDown | Message::ScrollTenUp
-        | Message::ScrollTenDown | Message::PageUp | Message::PageDown => {
+        Message::ScrollUp
+        | Message::ScrollDown
+        | Message::ScrollTop
+        | Message::ScrollBottom
+        | Message::ScrollHalfPageUp
+        | Message::ScrollHalfPageDown
+        | Message::ScrollTenUp
+        | Message::ScrollTenDown
+        | Message::PageUp
+        | Message::PageDown => {
             update_scroll(model, &msg);
         }
 
-        Message::NextThread | Message::PrevThread | Message::ExpandThread(_)
+        Message::NextThread
+        | Message::PrevThread
+        | Message::ExpandThread(_)
         | Message::CollapseThread => {
             update_thread_nav(model, msg);
         }
 
-        Message::ShowCommandPalette | Message::HideCommandPalette | Message::CommandPaletteNext
-        | Message::CommandPalettePrev | Message::CommandPaletteUpdateInput(_)
-        | Message::CommandPaletteInputBackspace | Message::CommandPaletteDeleteWord
+        Message::ShowCommandPalette
+        | Message::HideCommandPalette
+        | Message::CommandPaletteNext
+        | Message::CommandPalettePrev
+        | Message::CommandPaletteUpdateInput(_)
+        | Message::CommandPaletteInputBackspace
+        | Message::CommandPaletteDeleteWord
         | Message::CommandPaletteExecute => {
             update_command_palette(model, msg);
         }
@@ -794,12 +818,22 @@ pub fn update(model: &mut Model, msg: Message) {
             handle_start_comment_external(model);
         }
 
-        Message::EnterCommentMode | Message::CommentInput(_) | Message::CommentInputBackspace
-        | Message::CommentNewline | Message::CommentCursorUp | Message::CommentCursorDown
-        | Message::CommentCursorLeft | Message::CommentCursorRight | Message::CommentHome
-        | Message::CommentEnd | Message::CommentWordLeft | Message::CommentWordRight
-        | Message::CommentDeleteWord | Message::CommentClearLine
-        | Message::SaveComment | Message::CancelComment => {
+        Message::EnterCommentMode
+        | Message::CommentInput(_)
+        | Message::CommentInputBackspace
+        | Message::CommentNewline
+        | Message::CommentCursorUp
+        | Message::CommentCursorDown
+        | Message::CommentCursorLeft
+        | Message::CommentCursorRight
+        | Message::CommentHome
+        | Message::CommentEnd
+        | Message::CommentWordLeft
+        | Message::CommentWordRight
+        | Message::CommentDeleteWord
+        | Message::CommentClearLine
+        | Message::SaveComment
+        | Message::CancelComment => {
             update_comment(model, msg);
         }
 
@@ -807,8 +841,13 @@ pub fn update(model: &mut Model, msg: Message) {
             update_navigation(model, &msg);
         }
 
-        Message::NextFile | Message::PrevFile | Message::SidebarTop | Message::SidebarBottom
-        | Message::SelectFile(_) | Message::ClickSidebarItem(_) | Message::SidebarSelect => {
+        Message::NextFile
+        | Message::PrevFile
+        | Message::SidebarTop
+        | Message::SidebarBottom
+        | Message::SelectFile(_)
+        | Message::ClickSidebarItem(_)
+        | Message::SidebarSelect => {
             update_file_sidebar(model, &msg);
         }
 
@@ -825,8 +864,11 @@ pub fn update(model: &mut Model, msg: Message) {
             // TODO: Write to event log
         }
 
-        Message::CycleStatusFilter | Message::ToggleDiffView
-        | Message::ToggleSidebar | Message::ToggleDiffWrap | Message::OpenFileInEditor => {
+        Message::CycleStatusFilter
+        | Message::ToggleDiffView
+        | Message::ToggleSidebar
+        | Message::ToggleDiffWrap
+        | Message::OpenFileInEditor => {
             update_view_filter(model, &msg);
         }
 
@@ -866,7 +908,9 @@ pub fn update(model: &mut Model, msg: Message) {
             model.needs_redraw = true;
         }
 
-        Message::Resize { .. } | Message::Quit | Message::ShowThemePicker
+        Message::Resize { .. }
+        | Message::Quit
+        | Message::ShowThemePicker
         | Message::ApplyTheme(_) => {
             update_system_theme(model, &msg);
         }
@@ -926,9 +970,7 @@ fn build_comment_request(model: &mut Model) -> Option<CommentRequest> {
             for thread in model.threads.iter().filter(|t| t.file_path == file_path) {
                 if let Some(&pos) = positions.get(&thread.thread_id) {
                     if pos <= model.diff_cursor
-                        && best
-                            .as_ref()
-                            .is_none_or(|(best_pos, _)| pos > *best_pos)
+                        && best.as_ref().is_none_or(|(best_pos, _)| pos > *best_pos)
                     {
                         best = Some((pos, thread.thread_id.clone()));
                     }
@@ -1069,9 +1111,7 @@ fn active_thread_from_scroll(model: &Model) -> Option<String> {
                 if in_view.is_none_or(|(best, _)| pos < best) {
                     in_view = Some((pos, thread.thread_id.as_str()));
                 }
-            } else if pos < model.diff_scroll
-                && above.is_none_or(|(best, _)| pos > best)
-            {
+            } else if pos < model.diff_scroll && above.is_none_or(|(best, _)| pos > best) {
                 above = Some((pos, thread.thread_id.as_str()));
             }
         }

@@ -2,8 +2,10 @@
 
 use std::borrow::Cow;
 
-use opentui::buffer::BoxStyle;
-use opentui::{OptimizedBuffer, Rgba, Style};
+use crate::render_backend::{
+    buffer_dim_cell_rgb, buffer_draw_box, buffer_draw_text, buffer_fill_rect, BoxStyle,
+    OptimizedBuffer, Rgba, Style,
+};
 
 use crate::theme::Theme;
 
@@ -90,7 +92,8 @@ pub fn draw_box(
     title: Option<&str>,
     title_color: Rgba,
 ) {
-    buffer.draw_box(
+    buffer_draw_box(
+        buffer,
         area.x,
         area.y,
         area.width,
@@ -100,7 +103,8 @@ pub fn draw_box(
 
     if let Some(title) = title {
         let title_str = format!(" {title} ");
-        buffer.draw_text(
+        buffer_draw_text(
+            buffer,
             area.x + 2,
             area.y,
             &title_str,
@@ -112,7 +116,7 @@ pub fn draw_box(
 /// Draw a filled rectangle
 #[allow(dead_code)]
 pub fn fill_rect(buffer: &mut OptimizedBuffer, area: Rect, color: Rgba) {
-    buffer.fill_rect(area.x, area.y, area.width, area.height, color);
+    buffer_fill_rect(buffer, area.x, area.y, area.width, area.height, color);
 }
 
 /// Draw text, truncating if necessary
@@ -139,21 +143,21 @@ pub fn draw_text_truncated(
         text.to_string()
     };
 
-    buffer.draw_text(x, y, &text, style);
+    buffer_draw_text(buffer, x, y, &text, style);
 }
 
 /// Draw a horizontal line
 #[allow(dead_code)]
 pub fn draw_hline(buffer: &mut OptimizedBuffer, x: u32, y: u32, width: u32, color: Rgba) {
     let line = "─".repeat(width as usize);
-    buffer.draw_text(x, y, &line, Style::fg(color));
+    buffer_draw_text(buffer, x, y, &line, Style::fg(color));
 }
 
 /// Draw a status badge (e.g., "[open]", "[merged]")
 #[allow(dead_code)]
 pub fn draw_badge(buffer: &mut OptimizedBuffer, x: u32, y: u32, text: &str, fg: Rgba, bg: Rgba) {
     let badge = format!("[{text}]");
-    buffer.draw_text(x, y, &badge, Style::fg(fg).with_bg(bg));
+    buffer_draw_text(buffer, x, y, &badge, Style::fg(fg).with_bg(bg));
 }
 
 /// Format a thread count display
@@ -244,14 +248,15 @@ pub fn draw_block(
     let mut y = area.y;
 
     let draw_margin_line = |buf: &mut OptimizedBuffer, y: u32| {
-        buf.fill_rect(area.x, y, area.width, 1, theme.background);
+        buffer_fill_rect(buf, area.x, y, area.width, 1, theme.background);
     };
 
     let draw_bar_line = |buf: &mut OptimizedBuffer, y: u32| {
         // Side margins
         if BLOCK_SIDE_MARGIN > 0 {
-            buf.fill_rect(area.x, y, BLOCK_SIDE_MARGIN, 1, theme.background);
-            buf.fill_rect(
+            buffer_fill_rect(buf, area.x, y, BLOCK_SIDE_MARGIN, 1, theme.background);
+            buffer_fill_rect(
+                buf,
                 area.x + area.width.saturating_sub(BLOCK_SIDE_MARGIN),
                 y,
                 BLOCK_SIDE_MARGIN,
@@ -262,9 +267,9 @@ pub fn draw_block(
         // Content area fill
         let content_x = area.x + BLOCK_SIDE_MARGIN;
         let content_width = area.width.saturating_sub(BLOCK_SIDE_MARGIN * 2);
-        buf.fill_rect(content_x, y, content_width, 1, bg);
+        buffer_fill_rect(buf, content_x, y, content_width, 1, bg);
         // Bar character
-        buf.draw_text(content_x, y, "\u{2503}", theme.style_muted_on(bg));
+        buffer_draw_text(buf, content_x, y, "\u{2503}", theme.style_muted_on(bg));
     };
 
     // Top margin
@@ -312,20 +317,7 @@ pub fn draw_block(
 pub fn dim_rect(buffer: &mut OptimizedBuffer, area: Rect, scale: f32) {
     for row in area.y..area.y + area.height {
         for col in area.x..area.x + area.width {
-            if let Some(cell) = buffer.get_mut(col, row) {
-                cell.fg = Rgba::new(
-                    cell.fg.r * scale,
-                    cell.fg.g * scale,
-                    cell.fg.b * scale,
-                    cell.fg.a,
-                );
-                cell.bg = Rgba::new(
-                    cell.bg.r * scale,
-                    cell.bg.g * scale,
-                    cell.bg.b * scale,
-                    cell.bg.a,
-                );
-            }
+            buffer_dim_cell_rgb(buffer, col, row, scale);
         }
     }
 }
@@ -386,8 +378,8 @@ pub fn draw_help_bar_ext(
 ) {
     let y = area.y + area.height.saturating_sub(2);
     let bottom_y = area.y + area.height.saturating_sub(1);
-    buffer.fill_rect(area.x, bottom_y, area.width, 1, bg);
-    buffer.fill_rect(area.x, y, area.width, 1, bg);
+    buffer_fill_rect(buffer, area.x, bottom_y, area.width, 1, bg);
+    buffer_fill_rect(buffer, area.x, y, area.width, 1, bg);
 
     let padding: u32 = 2;
 
@@ -432,14 +424,14 @@ pub fn draw_help_bar_ext(
     let mut x = x_start;
     for (i, hint) in hints.iter().enumerate() {
         if i > 0 {
-            buffer.draw_text(x, y, separator, dim);
+            buffer_draw_text(buffer, x, y, separator, dim);
             x += sep_len as u32;
         }
-        buffer.draw_text(x, y, &hint.label, dim);
+        buffer_draw_text(buffer, x, y, &hint.label, dim);
         x += hint.label.len() as u32;
-        buffer.draw_text(x, y, " ", dim);
+        buffer_draw_text(buffer, x, y, " ", dim);
         x += 1;
-        buffer.draw_text(x, y, hint.key, bright);
+        buffer_draw_text(buffer, x, y, hint.key, bright);
         x += hint.key.len() as u32;
     }
 }

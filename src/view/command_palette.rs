@@ -11,7 +11,7 @@
 //! - Commands: shows categorized command list
 //! - Themes: shows flat theme name list with current theme highlighted
 
-use opentui::{OptimizedBuffer, Style};
+use crate::render_backend::{buffer_draw_text, buffer_fill_rect, OptimizedBuffer, Style};
 
 use crate::{
     command::CommandSpec,
@@ -64,7 +64,14 @@ fn render_commands(model: &Model, buffer: &mut OptimizedBuffer, screen: Rect) {
     let modal_y = screen.height / 4;
 
     // Fill modal background
-    buffer.fill_rect(modal_x, modal_y, modal_width, modal_height, model.theme.panel_bg);
+    buffer_fill_rect(
+        buffer,
+        modal_x,
+        modal_y,
+        modal_width,
+        modal_height,
+        model.theme.panel_bg,
+    );
 
     let text_x = modal_x + TEXT_INDENT;
     let text_width = modal_width.saturating_sub(TEXT_INDENT + OUTER_PAD);
@@ -77,9 +84,15 @@ fn render_commands(model: &Model, buffer: &mut OptimizedBuffer, screen: Rect) {
     y += 1;
 
     // --- Title row: "Commands" (bold left) + "esc" (dim right) ---
-    buffer.draw_text(text_x, y, "Commands", model.theme.style_foreground().with_bold());
+    buffer_draw_text(
+        buffer,
+        text_x,
+        y,
+        "Commands",
+        model.theme.style_foreground().with_bold(),
+    );
     let esc_x = esc_right.saturating_sub(esc_label.len() as u32);
-    buffer.draw_text(esc_x, y, esc_label, model.theme.style_muted());
+    buffer_draw_text(buffer, esc_x, y, esc_label, model.theme.style_muted());
     y += 1;
 
     // --- 1 blank row ---
@@ -100,7 +113,13 @@ fn render_commands(model: &Model, buffer: &mut OptimizedBuffer, screen: Rect) {
         }
         match row {
             Row::Category(name) => {
-                buffer.draw_text(text_x, y, name, model.theme.style_primary().with_bold());
+                buffer_draw_text(
+                    buffer,
+                    text_x,
+                    y,
+                    name,
+                    model.theme.style_primary().with_bold(),
+                );
             }
             Row::Separator => {
                 // blank row between categories
@@ -124,7 +143,14 @@ fn render_themes(model: &Model, buffer: &mut OptimizedBuffer, screen: Rect) {
     let modal_x = (screen.width.saturating_sub(modal_width)) / 2;
     let modal_y = screen.height / 4;
 
-    buffer.fill_rect(modal_x, modal_y, modal_width, modal_height, model.theme.panel_bg);
+    buffer_fill_rect(
+        buffer,
+        modal_x,
+        modal_y,
+        modal_width,
+        modal_height,
+        model.theme.panel_bg,
+    );
 
     let text_x = modal_x + TEXT_INDENT;
     let text_width = modal_width.saturating_sub(TEXT_INDENT + OUTER_PAD);
@@ -137,9 +163,15 @@ fn render_themes(model: &Model, buffer: &mut OptimizedBuffer, screen: Rect) {
     y += 1;
 
     // --- Title row ---
-    buffer.draw_text(text_x, y, "Themes", model.theme.style_foreground().with_bold());
+    buffer_draw_text(
+        buffer,
+        text_x,
+        y,
+        "Themes",
+        model.theme.style_foreground().with_bold(),
+    );
     let esc_x = esc_right.saturating_sub(esc_label.len() as u32);
-    buffer.draw_text(esc_x, y, esc_label, model.theme.style_muted());
+    buffer_draw_text(buffer, esc_x, y, esc_label, model.theme.style_muted());
     y += 1;
 
     // --- 1 blank row ---
@@ -160,7 +192,18 @@ fn render_themes(model: &Model, buffer: &mut OptimizedBuffer, screen: Rect) {
         }
         let selected = idx == model.command_palette_selection;
         let is_current = *name == model.theme.name;
-        render_theme_row(buffer, &ModalLayout { x: modal_x, width: modal_width }, y, name, selected, is_current, model);
+        render_theme_row(
+            buffer,
+            &ModalLayout {
+                x: modal_x,
+                width: modal_width,
+            },
+            y,
+            name,
+            selected,
+            is_current,
+            model,
+        );
         y += 1;
     }
 }
@@ -173,7 +216,7 @@ fn render_search_field(
     text_width: u32,
 ) {
     if model.command_palette_input.is_empty() {
-        buffer.draw_text(text_x, y, "Search", model.theme.style_muted());
+        buffer_draw_text(buffer, text_x, y, "Search", model.theme.style_muted());
     } else {
         let input_text = format!("{}\u{2588}", model.command_palette_input);
         draw_text_truncated(
@@ -206,12 +249,12 @@ fn render_item_row(
     } else {
         (model.theme.panel_bg, model.theme.foreground)
     };
-    buffer.fill_rect(highlight_x, y, highlight_width, 1, bg);
+    buffer_fill_rect(buffer, highlight_x, y, highlight_width, 1, bg);
 
     // Bullet
     let bullet_x = highlight_x + INNER_PAD;
     let bullet = if cmd.active { "●" } else { " " };
-    buffer.draw_text(bullet_x, y, bullet, Style::fg(fg));
+    buffer_draw_text(buffer, bullet_x, y, bullet, Style::fg(fg));
 
     // Content area: name left, shortcut right
     let name_x = bullet_x + BULLET_W + BULLET_GAP;
@@ -222,7 +265,7 @@ fn render_item_row(
         let shortcut_len = shortcut.len() as u32;
         if shortcut_len < content_width {
             let shortcut_x = content_end - shortcut_len;
-            buffer.draw_text(shortcut_x, y, shortcut, model.theme.style_muted());
+            buffer_draw_text(buffer, shortcut_x, y, shortcut, model.theme.style_muted());
 
             let name_max = content_width.saturating_sub(shortcut_len + 1);
             draw_text_truncated(buffer, name_x, y, cmd.name, name_max, Style::fg(fg));
@@ -258,12 +301,12 @@ fn render_theme_row(
     } else {
         (model.theme.panel_bg, model.theme.foreground)
     };
-    buffer.fill_rect(highlight_x, y, highlight_width, 1, bg);
+    buffer_fill_rect(buffer, highlight_x, y, highlight_width, 1, bg);
 
     // Bullet: show ● for current theme
     let bullet_x = highlight_x + INNER_PAD;
     let bullet = if is_current { "●" } else { " " };
-    buffer.draw_text(bullet_x, y, bullet, Style::fg(fg));
+    buffer_draw_text(buffer, bullet_x, y, bullet, Style::fg(fg));
 
     // Theme name
     let name_x = bullet_x + BULLET_W + BULLET_GAP;

@@ -13,7 +13,7 @@ pub struct ParsedDiff {
 /// Line ranges covered by diff hunks (union of old-side and new-side),
 /// merged and sorted. Used to exclude already-displayed lines from orphaned
 /// context sections.
-#[must_use] 
+#[must_use]
 pub fn hunk_exclusion_ranges(hunks: &[DiffHunk]) -> Vec<(i64, i64)> {
     let mut ranges: Vec<(i64, i64)> = Vec::new();
     for h in hunks {

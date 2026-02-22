@@ -6,7 +6,9 @@
 
 use std::path::Path;
 
-use opentui::Rgba;
+use crate::render_backend::{
+    color_blend_over, color_from_hex, color_lerp, color_luminance, color_with_alpha, Rgba, Style,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::syntax::SyntaxColors;
@@ -86,29 +88,27 @@ impl Default for Theme {
 // Style token methods
 // ---------------------------------------------------------------------------
 
-use opentui::Style;
-
 impl Theme {
     /// `Style::fg(self.muted)`
-    #[must_use] 
+    #[must_use]
     pub const fn style_muted(&self) -> Style {
         Style::fg(self.muted)
     }
 
     /// `Style::fg(self.muted).with_bg(bg)`
-    #[must_use] 
+    #[must_use]
     pub const fn style_muted_on(&self, bg: Rgba) -> Style {
         Style::fg(self.muted).with_bg(bg)
     }
 
     /// `Style::fg(self.foreground)`
-    #[must_use] 
+    #[must_use]
     pub const fn style_foreground(&self) -> Style {
         Style::fg(self.foreground)
     }
 
     /// `Style::fg(self.foreground).with_bg(bg)`
-    #[must_use] 
+    #[must_use]
     pub const fn style_foreground_on(&self, bg: Rgba) -> Style {
         Style::fg(self.foreground).with_bg(bg)
     }
@@ -128,7 +128,7 @@ impl Theme {
 
 impl DiffTheme {
     /// `Style::fg(self.line_number).with_bg(bg)`
-    #[must_use] 
+    #[must_use]
     pub const fn style_line_number(&self, bg: Rgba) -> Style {
         Style::fg(self.line_number).with_bg(bg)
     }
@@ -207,30 +207,30 @@ impl Theme {
         let warning = parse_color(&seeds.warning)?;
         let error = parse_color(&seeds.error)?;
 
-        let is_dark = bg.luminance() < 0.5;
+        let is_dark = color_luminance(bg) < 0.5;
 
         // --- Derive UI chrome ---
-        let mut panel_bg = bg.lerp(fg, 0.05);
-        let mut selection_bg = primary.with_alpha(0.25).blend_over(bg);
+        let mut panel_bg = color_lerp(bg, fg, 0.05);
+        let mut selection_bg = color_blend_over(color_with_alpha(primary, 0.25), bg);
         let mut selection_fg = fg;
-        let mut border = bg.lerp(fg, 0.15);
+        let mut border = color_lerp(bg, fg, 0.15);
         let mut border_focused = primary;
         let mut cursor = fg;
 
         // --- Derive diff colors ---
         let mut diff = DiffTheme {
-            added: success.lerp(fg, 0.3),
-            removed: error.lerp(fg, 0.3),
+            added: color_lerp(success, fg, 0.3),
+            removed: color_lerp(error, fg, 0.3),
             context: fg,
             hunk_header: muted,
-            highlight_added: success.lerp(primary, 0.3),
-            highlight_removed: error.lerp(fg, 0.15),
-            added_bg: success.with_alpha(0.08).blend_over(bg),
-            removed_bg: error.with_alpha(0.08).blend_over(bg),
+            highlight_added: color_lerp(success, primary, 0.3),
+            highlight_removed: color_lerp(error, fg, 0.15),
+            added_bg: color_blend_over(color_with_alpha(success, 0.08), bg),
+            removed_bg: color_blend_over(color_with_alpha(error, 0.08), bg),
             context_bg: bg,
             line_number: muted,
-            added_line_number_bg: success.with_alpha(0.05).blend_over(bg),
-            removed_line_number_bg: error.with_alpha(0.05).blend_over(bg),
+            added_line_number_bg: color_blend_over(color_with_alpha(success, 0.05), bg),
+            removed_line_number_bg: color_blend_over(color_with_alpha(error, 0.05), bg),
         };
 
         // --- Syntax defaults based on lightness ---
@@ -254,13 +254,22 @@ impl Theme {
             apply_override(&mut diff.context, ov.diff_context.as_ref())?;
             apply_override(&mut diff.hunk_header, ov.diff_hunk_header.as_ref())?;
             apply_override(&mut diff.highlight_added, ov.diff_highlight_added.as_ref())?;
-            apply_override(&mut diff.highlight_removed, ov.diff_highlight_removed.as_ref())?;
+            apply_override(
+                &mut diff.highlight_removed,
+                ov.diff_highlight_removed.as_ref(),
+            )?;
             apply_override(&mut diff.added_bg, ov.diff_added_bg.as_ref())?;
             apply_override(&mut diff.removed_bg, ov.diff_removed_bg.as_ref())?;
             apply_override(&mut diff.context_bg, ov.diff_context_bg.as_ref())?;
             apply_override(&mut diff.line_number, ov.diff_line_number.as_ref())?;
-            apply_override(&mut diff.added_line_number_bg, ov.diff_added_line_number_bg.as_ref())?;
-            apply_override(&mut diff.removed_line_number_bg, ov.diff_removed_line_number_bg.as_ref())?;
+            apply_override(
+                &mut diff.added_line_number_bg,
+                ov.diff_added_line_number_bg.as_ref(),
+            )?;
+            apply_override(
+                &mut diff.removed_line_number_bg,
+                ov.diff_removed_line_number_bg.as_ref(),
+            )?;
 
             apply_override(&mut syntax.keyword, ov.syntax_keyword.as_ref())?;
             apply_override(&mut syntax.function, ov.syntax_function.as_ref())?;
@@ -498,7 +507,7 @@ impl TryFrom<ThemeFile> for Theme {
 // ---------------------------------------------------------------------------
 
 fn parse_color(hex: &str) -> anyhow::Result<Rgba> {
-    Rgba::from_hex(hex).ok_or_else(|| anyhow::anyhow!("Invalid hex color: {hex}"))
+    color_from_hex(hex).ok_or_else(|| anyhow::anyhow!("Invalid hex color: {hex}"))
 }
 
 fn apply_override(target: &mut Rgba, source: Option<&String>) -> anyhow::Result<()> {
@@ -527,17 +536,11 @@ const BUILTIN_THEMES: &[(&str, &str)] = &[
         "default-light",
         include_str!("../../themes/default-light.json"),
     ),
-    (
-        "catppuccin",
-        include_str!("../../themes/catppuccin.json"),
-    ),
+    ("catppuccin", include_str!("../../themes/catppuccin.json")),
     ("dracula", include_str!("../../themes/dracula.json")),
     ("gruvbox", include_str!("../../themes/gruvbox.json")),
     ("nord", include_str!("../../themes/nord.json")),
-    (
-        "solarized",
-        include_str!("../../themes/solarized.json"),
-    ),
+    ("solarized", include_str!("../../themes/solarized.json")),
     ("monokai", include_str!("../../themes/monokai.json")),
     ("ayu", include_str!("../../themes/ayu.json")),
     ("vesper", include_str!("../../themes/vesper.json")),
@@ -585,7 +588,7 @@ pub fn load_theme_from_str(json: &str) -> anyhow::Result<ThemeLoadResult> {
     }
 }
 
-#[must_use] 
+#[must_use]
 pub fn load_built_in_theme(name: &str) -> Option<ThemeLoadResult> {
     BUILTIN_THEMES
         .iter()
@@ -593,7 +596,7 @@ pub fn load_built_in_theme(name: &str) -> Option<ThemeLoadResult> {
         .and_then(|(_, json)| load_theme_from_str(json).ok())
 }
 
-#[must_use] 
+#[must_use]
 pub fn built_in_theme_names() -> Vec<&'static str> {
     BUILTIN_THEMES.iter().map(|(name, _)| *name).collect()
 }

@@ -17,7 +17,7 @@ mod side_by_side;
 mod text_util;
 mod unified;
 
-use opentui::OptimizedBuffer;
+use crate::render_backend::{buffer_draw_text, buffer_fill_rect, OptimizedBuffer};
 
 use super::components::Rect;
 use crate::db::ThreadSummary;
@@ -358,7 +358,7 @@ pub fn render_pinned_header_block(
 
     for _ in 0..BLOCK_MARGIN {
         cursor.emit(|buf, y, _| {
-            buf.fill_rect(area.x, y, area.width, 1, theme.background);
+            buffer_fill_rect(buf, area.x, y, area.width, 1, theme.background);
         });
     }
     for _ in 0..BLOCK_PADDING {
@@ -376,7 +376,7 @@ pub fn render_pinned_header_block(
     }
     for _ in 0..BLOCK_MARGIN {
         cursor.emit(|buf, y, _| {
-            buf.fill_rect(area.x, y, area.width, 1, theme.background);
+            buffer_fill_rect(buf, area.x, y, area.width, 1, theme.background);
         });
     }
 
@@ -391,8 +391,8 @@ fn render_description_block(
     description: &str,
     _theme: &Theme,
 ) {
+    use crate::render_backend::Style;
     use crate::text::wrap_text;
-    use opentui::Style;
 
     let block = comment_block_area(area);
     let padded = comment_content_area(block);
@@ -420,32 +420,39 @@ fn render_description_block(
             let rc = block.x + block.width.saturating_sub(1);
             let rc2 = block.x + block.width.saturating_sub(2);
             if row < top_margin {
-                buf.fill_rect(area.x, y, area.width, 1, theme.background);
+                buffer_fill_rect(buf, area.x, y, area.width, 1, theme.background);
             } else if row == top_margin {
                 // Top border:  ▛▀…▀▜
-                buf.fill_rect(area.x, y, area.width, 1, theme.background);
-                buf.fill_rect(block.x + 1, y, block.width.saturating_sub(2), 1, block_bg);
-                buf.draw_text(block.x + 1, y, "▛", border_style);
+                buffer_fill_rect(buf, area.x, y, area.width, 1, theme.background);
+                buffer_fill_rect(
+                    buf,
+                    block.x + 1,
+                    y,
+                    block.width.saturating_sub(2),
+                    1,
+                    block_bg,
+                );
+                buffer_draw_text(buf, block.x + 1, y, "▛", border_style);
                 for col in 2..block.width.saturating_sub(2) {
-                    buf.draw_text(block.x + col, y, "▀", border_style);
+                    buffer_draw_text(buf, block.x + col, y, "▀", border_style);
                 }
-                buf.draw_text(rc2, y, "▜", border_style);
+                buffer_draw_text(buf, rc2, y, "▜", border_style);
             } else if row < content_start {
                 // Padding rows: ▌▌ ... ▐▐
-                buf.fill_rect(area.x, y, area.width, 1, theme.background);
-                buf.fill_rect(block.x, y, block.width, 1, block_bg);
-                buf.draw_text(block.x, y, "▌", bar_style);
-                buf.draw_text(block.x + 1, y, "▌", bar_style);
-                buf.draw_text(rc2, y, "▐", bar_style);
-                buf.draw_text(rc, y, "▐", bar_style);
+                buffer_fill_rect(buf, area.x, y, area.width, 1, theme.background);
+                buffer_fill_rect(buf, block.x, y, block.width, 1, block_bg);
+                buffer_draw_text(buf, block.x, y, "▌", bar_style);
+                buffer_draw_text(buf, block.x + 1, y, "▌", bar_style);
+                buffer_draw_text(buf, rc2, y, "▐", bar_style);
+                buffer_draw_text(buf, rc, y, "▐", bar_style);
             } else if row < content_end {
                 // Content rows: ▌▌ text ▐▐
-                buf.fill_rect(area.x, y, area.width, 1, theme.background);
-                buf.fill_rect(block.x, y, block.width, 1, block_bg);
-                buf.draw_text(block.x, y, "▌", bar_style);
-                buf.draw_text(block.x + 1, y, "▌", bar_style);
-                buf.draw_text(rc2, y, "▐", bar_style);
-                buf.draw_text(rc, y, "▐", bar_style);
+                buffer_fill_rect(buf, area.x, y, area.width, 1, theme.background);
+                buffer_fill_rect(buf, block.x, y, block.width, 1, block_bg);
+                buffer_draw_text(buf, block.x, y, "▌", bar_style);
+                buffer_draw_text(buf, block.x + 1, y, "▌", bar_style);
+                buffer_draw_text(buf, rc2, y, "▐", bar_style);
+                buffer_draw_text(buf, rc, y, "▐", bar_style);
                 if let Some(text) = line_text {
                     draw_plain_line_with_right(
                         buf,
@@ -461,24 +468,31 @@ fn render_description_block(
                     );
                 }
             } else if row < content_end + BLOCK_PADDING {
-                buf.fill_rect(area.x, y, area.width, 1, theme.background);
+                buffer_fill_rect(buf, area.x, y, area.width, 1, theme.background);
                 if row == content_end + BLOCK_PADDING - 1 {
                     // Bottom border:  ▙▄…▄▟
-                    buf.fill_rect(block.x + 1, y, block.width.saturating_sub(2), 1, block_bg);
-                    buf.draw_text(block.x + 1, y, "▙", border_style);
+                    buffer_fill_rect(
+                        buf,
+                        block.x + 1,
+                        y,
+                        block.width.saturating_sub(2),
+                        1,
+                        block_bg,
+                    );
+                    buffer_draw_text(buf, block.x + 1, y, "▙", border_style);
                     for col in 2..block.width.saturating_sub(2) {
-                        buf.draw_text(block.x + col, y, "▄", border_style);
+                        buffer_draw_text(buf, block.x + col, y, "▄", border_style);
                     }
-                    buf.draw_text(rc2, y, "▟", border_style);
+                    buffer_draw_text(buf, rc2, y, "▟", border_style);
                 } else {
-                    buf.fill_rect(block.x, y, block.width, 1, block_bg);
-                    buf.draw_text(block.x, y, "▌", bar_style);
-                    buf.draw_text(block.x + 1, y, "▌", bar_style);
-                    buf.draw_text(rc2, y, "▐", bar_style);
-                    buf.draw_text(rc, y, "▐", bar_style);
+                    buffer_fill_rect(buf, block.x, y, block.width, 1, block_bg);
+                    buffer_draw_text(buf, block.x, y, "▌", bar_style);
+                    buffer_draw_text(buf, block.x + 1, y, "▌", bar_style);
+                    buffer_draw_text(buf, rc2, y, "▐", bar_style);
+                    buffer_draw_text(buf, rc, y, "▐", bar_style);
                 }
             } else {
-                buf.fill_rect(area.x, y, area.width, 1, theme.background);
+                buffer_fill_rect(buf, area.x, y, area.width, 1, theme.background);
             }
         });
     }
@@ -715,7 +729,7 @@ fn render_file_header(
 ) {
     for _ in 0..BLOCK_MARGIN {
         cursor.emit(|buf, y, _| {
-            buf.fill_rect(area.x, y, area.width, 1, theme.background);
+            buffer_fill_rect(buf, area.x, y, area.width, 1, theme.background);
         });
     }
     for _ in 0..BLOCK_PADDING {
@@ -737,7 +751,7 @@ fn render_file_header(
     }
     for _ in 0..BLOCK_MARGIN {
         cursor.emit(|buf, y, _| {
-            buf.fill_rect(area.x, y, area.width, 1, theme.background);
+            buffer_fill_rect(buf, area.x, y, area.width, 1, theme.background);
         });
     }
 }
@@ -1325,7 +1339,8 @@ pub fn render_diff_stream(buffer: &mut OptimizedBuffer, area: Rect, params: &Dif
     if cursor.remaining_rows() > 0 {
         let remaining_start = area.y + cursor.screen_row as u32;
         let remaining_height = area.height.saturating_sub(cursor.screen_row as u32);
-        buffer.fill_rect(
+        buffer_fill_rect(
+            buffer,
             area.x,
             remaining_start,
             area.width,

@@ -1,13 +1,15 @@
 //! Comment block rendering (thread comment bubbles in the diff stream).
 
-use opentui::Style;
+use crate::render_backend::{buffer_draw_text, buffer_fill_rect, color_lerp, Style};
 
 use crate::db::ThreadSummary;
 use crate::layout::BLOCK_PADDING;
 use crate::text::wrap_text;
 use crate::view::components::Rect;
 
-use super::helpers::{comment_block_area, comment_content_area, draw_plain_line_with_right, PlainLineContent};
+use super::helpers::{
+    comment_block_area, comment_content_area, draw_plain_line_with_right, PlainLineContent,
+};
 use super::StreamCursor;
 
 #[derive(Clone)]
@@ -101,8 +103,7 @@ pub(super) fn comment_block_rows(
     let content_lines = build_comment_lines(thread, comments, content_width);
     let content_start = BLOCK_PADDING;
     let content_end = content_start + content_lines.len();
-    content_end
-        .saturating_add(BLOCK_PADDING)
+    content_end.saturating_add(BLOCK_PADDING)
 }
 
 pub(super) fn emit_comment_block(
@@ -135,12 +136,12 @@ pub(super) fn emit_comment_block(
         cursor.mark_cursor_stop();
         cursor.emit(|buf, y, theme| {
             let base_bg = if is_highlighted {
-                theme.panel_bg.lerp(theme.primary, 0.06)
+                color_lerp(theme.panel_bg, theme.primary, 0.06)
             } else {
                 theme.panel_bg
             };
             let block_bg = if is_cursor {
-                base_bg.lerp(theme.primary, 0.15)
+                color_lerp(base_bg, theme.primary, 0.15)
             } else {
                 base_bg
             };
@@ -149,23 +150,30 @@ pub(super) fn emit_comment_block(
             let rc = block.x + block.width.saturating_sub(1);
             let rc2 = block.x + block.width.saturating_sub(2);
             if row < top_margin {
-                buf.fill_rect(area.x, y, area.width, 1, theme.background);
+                buffer_fill_rect(buf, area.x, y, area.width, 1, theme.background);
             } else if row == top_margin {
                 // Top border:  ▛▀…▀▜  (outer corners match window bg)
-                buf.fill_rect(area.x, y, area.width, 1, theme.background);
-                buf.fill_rect(block.x + 1, y, block.width.saturating_sub(2), 1, block_bg);
-                buf.draw_text(block.x + 1, y, "▛", border_style);
+                buffer_fill_rect(buf, area.x, y, area.width, 1, theme.background);
+                buffer_fill_rect(
+                    buf,
+                    block.x + 1,
+                    y,
+                    block.width.saturating_sub(2),
+                    1,
+                    block_bg,
+                );
+                buffer_draw_text(buf, block.x + 1, y, "▛", border_style);
                 for col in 2..block.width.saturating_sub(2) {
-                    buf.draw_text(block.x + col, y, "▀", border_style);
+                    buffer_draw_text(buf, block.x + col, y, "▀", border_style);
                 }
-                buf.draw_text(rc2, y, "▜", border_style);
+                buffer_draw_text(buf, rc2, y, "▜", border_style);
             } else if row < content_start {
-                buf.fill_rect(area.x, y, area.width, 1, theme.background);
-                buf.fill_rect(block.x, y, block.width, 1, block_bg);
-                buf.draw_text(block.x, y, "▌", bar_style);
-                buf.draw_text(block.x + 1, y, "▌", bar_style);
-                buf.draw_text(rc2, y, "▐", bar_style);
-                buf.draw_text(rc, y, "▐", bar_style);
+                buffer_fill_rect(buf, area.x, y, area.width, 1, theme.background);
+                buffer_fill_rect(buf, block.x, y, block.width, 1, block_bg);
+                buffer_draw_text(buf, block.x, y, "▌", bar_style);
+                buffer_draw_text(buf, block.x + 1, y, "▌", bar_style);
+                buffer_draw_text(buf, rc2, y, "▐", bar_style);
+                buffer_draw_text(buf, rc, y, "▐", bar_style);
             } else if row < content_end {
                 let line = &content_lines[row - content_start];
                 let (left_style, right_style) = match line.kind {
@@ -182,12 +190,12 @@ pub(super) fn emit_comment_block(
                         theme.style_muted_on(block_bg),
                     ),
                 };
-                buf.fill_rect(area.x, y, area.width, 1, theme.background);
-                buf.fill_rect(block.x, y, block.width, 1, block_bg);
-                buf.draw_text(block.x, y, "▌", bar_style);
-                buf.draw_text(block.x + 1, y, "▌", bar_style);
-                buf.draw_text(rc2, y, "▐", bar_style);
-                buf.draw_text(rc, y, "▐", bar_style);
+                buffer_fill_rect(buf, area.x, y, area.width, 1, theme.background);
+                buffer_fill_rect(buf, block.x, y, block.width, 1, block_bg);
+                buffer_draw_text(buf, block.x, y, "▌", bar_style);
+                buffer_draw_text(buf, block.x + 1, y, "▌", bar_style);
+                buffer_draw_text(buf, rc2, y, "▐", bar_style);
+                buffer_draw_text(buf, rc, y, "▐", bar_style);
                 draw_plain_line_with_right(
                     buf,
                     padded,
@@ -201,24 +209,31 @@ pub(super) fn emit_comment_block(
                     },
                 );
             } else if row < content_end + BLOCK_PADDING {
-                buf.fill_rect(area.x, y, area.width, 1, theme.background);
+                buffer_fill_rect(buf, area.x, y, area.width, 1, theme.background);
                 if row == content_end + BLOCK_PADDING - 1 {
                     // Bottom border:  ▙▄…▄▟  (outer corners match window bg)
-                    buf.fill_rect(block.x + 1, y, block.width.saturating_sub(2), 1, block_bg);
-                    buf.draw_text(block.x + 1, y, "▙", border_style);
+                    buffer_fill_rect(
+                        buf,
+                        block.x + 1,
+                        y,
+                        block.width.saturating_sub(2),
+                        1,
+                        block_bg,
+                    );
+                    buffer_draw_text(buf, block.x + 1, y, "▙", border_style);
                     for col in 2..block.width.saturating_sub(2) {
-                        buf.draw_text(block.x + col, y, "▄", border_style);
+                        buffer_draw_text(buf, block.x + col, y, "▄", border_style);
                     }
-                    buf.draw_text(rc2, y, "▟", border_style);
+                    buffer_draw_text(buf, rc2, y, "▟", border_style);
                 } else {
-                    buf.fill_rect(block.x, y, block.width, 1, block_bg);
-                    buf.draw_text(block.x, y, "▌", bar_style);
-                    buf.draw_text(block.x + 1, y, "▌", bar_style);
-                    buf.draw_text(rc2, y, "▐", bar_style);
-                    buf.draw_text(rc, y, "▐", bar_style);
+                    buffer_fill_rect(buf, block.x, y, block.width, 1, block_bg);
+                    buffer_draw_text(buf, block.x, y, "▌", bar_style);
+                    buffer_draw_text(buf, block.x + 1, y, "▌", bar_style);
+                    buffer_draw_text(buf, rc2, y, "▐", bar_style);
+                    buffer_draw_text(buf, rc, y, "▐", bar_style);
                 }
             } else {
-                buf.fill_rect(area.x, y, area.width, 1, theme.background);
+                buffer_fill_rect(buf, area.x, y, area.width, 1, theme.background);
             }
         });
     }

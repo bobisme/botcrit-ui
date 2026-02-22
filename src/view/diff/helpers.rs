@@ -1,6 +1,8 @@
 //! Block, diff, and comment bar helpers — core draw primitives.
 
-use opentui::{OptimizedBuffer, Rgba, Style};
+use crate::render_backend::{
+    buffer_draw_text, buffer_fill_rect, color_lerp, OptimizedBuffer, Rgba, Style,
+};
 
 use crate::layout::{
     BLOCK_LEFT_PAD, BLOCK_RIGHT_PAD, BLOCK_SIDE_MARGIN, COMMENT_H_MARGIN, COMMENT_H_PAD,
@@ -30,8 +32,8 @@ pub(super) fn draw_block_bar(
     bg: Rgba,
     theme: &Theme,
 ) {
-    buffer.fill_rect(x, y, 1, 1, bg);
-    buffer.draw_text(x, y, "┃", theme.style_muted_on(bg));
+    buffer_fill_rect(buffer, x, y, 1, 1, bg);
+    buffer_draw_text(buffer, x, y, "┃", theme.style_muted_on(bg));
 }
 
 pub(super) fn draw_block_base_line(
@@ -42,8 +44,9 @@ pub(super) fn draw_block_base_line(
     theme: &Theme,
 ) {
     if BLOCK_SIDE_MARGIN > 0 {
-        buffer.fill_rect(area.x, y, BLOCK_SIDE_MARGIN, 1, theme.background);
-        buffer.fill_rect(
+        buffer_fill_rect(buffer, area.x, y, BLOCK_SIDE_MARGIN, 1, theme.background);
+        buffer_fill_rect(
+            buffer,
             area.x + area.width.saturating_sub(BLOCK_SIDE_MARGIN),
             y,
             BLOCK_SIDE_MARGIN,
@@ -54,7 +57,7 @@ pub(super) fn draw_block_base_line(
 
     let content_x = area.x + BLOCK_SIDE_MARGIN;
     let content_width = area.width.saturating_sub(BLOCK_SIDE_MARGIN * 2);
-    buffer.fill_rect(content_x, y, content_width, 1, bg);
+    buffer_fill_rect(buffer, content_x, y, content_width, 1, bg);
     draw_block_bar(buffer, content_x, y, bg, theme);
 }
 
@@ -67,8 +70,9 @@ pub(super) fn draw_comment_block_base_line(
     theme: &Theme,
 ) {
     if BLOCK_SIDE_MARGIN > 0 {
-        buffer.fill_rect(area.x, y, BLOCK_SIDE_MARGIN, 1, theme.background);
-        buffer.fill_rect(
+        buffer_fill_rect(buffer, area.x, y, BLOCK_SIDE_MARGIN, 1, theme.background);
+        buffer_fill_rect(
+            buffer,
             area.x + area.width.saturating_sub(BLOCK_SIDE_MARGIN),
             y,
             BLOCK_SIDE_MARGIN,
@@ -79,7 +83,7 @@ pub(super) fn draw_comment_block_base_line(
 
     let content_x = area.x + BLOCK_SIDE_MARGIN;
     let content_width = area.width.saturating_sub(BLOCK_SIDE_MARGIN * 2);
-    buffer.fill_rect(content_x, y, content_width, 1, bg);
+    buffer_fill_rect(buffer, content_x, y, content_width, 1, bg);
     draw_comment_bar(buffer, content_x, y, bg, theme);
 }
 
@@ -101,13 +105,8 @@ pub(super) const fn orphaned_context_width(area: Rect) -> u32 {
     area.width.saturating_sub(ORPHANED_CONTEXT_LEFT_PAD)
 }
 
-pub(super) fn draw_diff_base_line(
-    buffer: &mut OptimizedBuffer,
-    area: Rect,
-    y: u32,
-    bg: Rgba,
-) {
-    buffer.fill_rect(area.x, y, area.width, 1, bg);
+pub(super) fn draw_diff_base_line(buffer: &mut OptimizedBuffer, area: Rect, y: u32, bg: Rgba) {
+    buffer_fill_rect(buffer, area.x, y, area.width, 1, bg);
 }
 
 pub(super) const fn diff_margin_area(area: Rect) -> Rect {
@@ -128,8 +127,8 @@ pub(super) fn draw_comment_bar(
     bg: Rgba,
     theme: &Theme,
 ) {
-    buffer.fill_rect(x, y, 1, 1, bg);
-    buffer.draw_text(x, y, "┃", Style::fg(theme.background).with_bg(bg));
+    buffer_fill_rect(buffer, x, y, 1, 1, bg);
+    buffer_draw_text(buffer, x, y, "┃", Style::fg(theme.background).with_bg(bg));
 }
 
 pub(super) fn draw_thread_range_bar(
@@ -139,8 +138,8 @@ pub(super) fn draw_thread_range_bar(
     bg: Rgba,
     theme: &Theme,
 ) {
-    buffer.fill_rect(x, y, 2, 1, bg);
-    buffer.draw_text(x, y, "┃", Style::fg(theme.background).with_bg(bg));
+    buffer_fill_rect(buffer, x, y, 2, 1, bg);
+    buffer_draw_text(buffer, x, y, "┃", Style::fg(theme.background).with_bg(bg));
 }
 
 pub(super) fn draw_cursor_bar(
@@ -150,8 +149,8 @@ pub(super) fn draw_cursor_bar(
     bg: Rgba,
     theme: &Theme,
 ) {
-    buffer.fill_rect(x, y, 2, 1, bg);
-    buffer.draw_text(x, y, "┃", Style::fg(theme.primary).with_bg(bg));
+    buffer_fill_rect(buffer, x, y, 2, 1, bg);
+    buffer_draw_text(buffer, x, y, "┃", Style::fg(theme.primary).with_bg(bg));
 }
 
 /// The comment block area inset by the horizontal margin (bar goes here).
@@ -185,7 +184,7 @@ pub(super) fn draw_block_text_line(
     let content_width = block_inner_width(area) as usize;
     let display_text = truncate_chars(text, content_width);
     draw_block_base_line(buffer, area, y, bg, theme);
-    buffer.draw_text(content_x, y, display_text, style.with_bg(bg));
+    buffer_draw_text(buffer, content_x, y, display_text, style.with_bg(bg));
 }
 
 /// Like `draw_block_text_line` but uses comment bar color (theme.background)
@@ -202,7 +201,7 @@ pub(super) fn draw_comment_block_text_line(
     let content_width = block_inner_width(area) as usize;
     let display_text = truncate_chars(text, content_width);
     draw_comment_block_base_line(buffer, area, y, bg, theme);
-    buffer.draw_text(content_x, y, display_text, style.with_bg(bg));
+    buffer_draw_text(buffer, content_x, y, display_text, style.with_bg(bg));
 }
 
 /// Content for a line with left-aligned and optional right-aligned text.
@@ -237,18 +236,30 @@ pub(super) fn draw_plain_line_with_right(
         truncate_chars(content.left, left_max)
     };
 
-    buffer.draw_text(content_x, y, left_text, content.left_style.with_bg(bg));
+    buffer_draw_text(
+        buffer,
+        content_x,
+        y,
+        left_text,
+        content.left_style.with_bg(bg),
+    );
 
     if right_len > 0 && right_len <= content_width {
         let right_x = content_x + content_width as u32 - right_len as u32;
-        buffer.draw_text(right_x, y, right_text, content.right_style.with_bg(bg));
+        buffer_draw_text(
+            buffer,
+            right_x,
+            y,
+            right_text,
+            content.right_style.with_bg(bg),
+        );
     }
 }
 
 /// Tint a background color when the line is part of a visual selection.
 pub(super) fn selection_bg(bg: Rgba, is_selected: bool, theme: &Theme) -> Rgba {
     if is_selected {
-        bg.lerp(theme.primary, 0.08)
+        color_lerp(bg, theme.primary, 0.08)
     } else {
         bg
     }
@@ -257,7 +268,7 @@ pub(super) fn selection_bg(bg: Rgba, is_selected: bool, theme: &Theme) -> Rgba {
 /// Blend a background color with the cursor accent when the line is under the cursor.
 pub(super) fn cursor_bg(bg: Rgba, is_cursor: bool, theme: &Theme) -> Rgba {
     if is_cursor {
-        bg.lerp(theme.primary, 0.15)
+        color_lerp(bg, theme.primary, 0.15)
     } else {
         bg
     }
@@ -266,7 +277,7 @@ pub(super) fn cursor_bg(bg: Rgba, is_cursor: bool, theme: &Theme) -> Rgba {
 /// Lighten a foreground color toward white when the line is under the cursor.
 pub(super) fn cursor_fg(fg: Rgba, is_cursor: bool) -> Rgba {
     if is_cursor {
-        fg.lerp(Rgba::WHITE, 0.20)
+        color_lerp(fg, Rgba::WHITE, 0.20)
     } else {
         fg
     }
@@ -304,7 +315,8 @@ pub(super) fn draw_file_header_line(
         truncate_chars(file_path, left_max)
     };
 
-    buffer.draw_text(
+    buffer_draw_text(
+        buffer,
         content_x,
         y,
         left_text,
@@ -317,12 +329,18 @@ pub(super) fn draw_file_header_line(
         if right_width > 0 && right_width as usize <= content_width {
             let mut x = content_x + block_inner_width(area) - right_width;
             let add_text = format!("+{}", counts.added);
-            buffer.draw_text(x, y, &add_text, Style::fg(theme.success).with_bg(bg));
+            buffer_draw_text(
+                buffer,
+                x,
+                y,
+                &add_text,
+                Style::fg(theme.success).with_bg(bg),
+            );
             x += add_text.len() as u32;
-            buffer.draw_text(x, y, " / ", theme.style_muted_on(bg));
+            buffer_draw_text(buffer, x, y, " / ", theme.style_muted_on(bg));
             x += 3;
             let rem_text = format!("-{}", counts.removed);
-            buffer.draw_text(x, y, &rem_text, Style::fg(theme.error).with_bg(bg));
+            buffer_draw_text(buffer, x, y, &rem_text, Style::fg(theme.error).with_bg(bg));
         }
     }
 }

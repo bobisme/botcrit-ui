@@ -1,6 +1,6 @@
 //! Orphaned context building, rendering, and `calculate_context_ranges`.
 
-use opentui::{OptimizedBuffer, Style};
+use crate::render_backend::{buffer_draw_text, buffer_fill_rect, OptimizedBuffer, Style};
 
 use crate::db::ThreadSummary;
 use crate::layout::{CONTEXT_LINES, SBS_LINE_NUM_WIDTH};
@@ -384,7 +384,13 @@ pub(super) fn render_context_item_block(
             };
             let sep_x = orphaned_context_x(area)
                 + orphaned_context_width(area).saturating_sub(sep_text.len() as u32) / 2;
-            buffer.draw_text(sep_x, y, &sep_text, theme.style_muted_on(dt.context_bg));
+            buffer_draw_text(
+                buffer,
+                sep_x,
+                y,
+                &sep_text,
+                theme.style_muted_on(dt.context_bg),
+            );
         }
         DisplayItem::Line { line_num, content } => {
             let bg = cursor_bg(
@@ -399,12 +405,12 @@ pub(super) fn render_context_item_block(
             let ln_str = format!("{line_num:5} ");
             let line_num_width = SBS_LINE_NUM_WIDTH;
             let ln_x = orphaned_context_x(area);
-            buffer.fill_rect(ln_x, y, line_num_width, 1, bg);
-            buffer.draw_text(ln_x, y, &ln_str, Style::fg(ln_fg).with_bg(bg));
+            buffer_fill_rect(buffer, ln_x, y, line_num_width, 1, bg);
+            buffer_draw_text(buffer, ln_x, y, &ln_str, Style::fg(ln_fg).with_bg(bg));
 
             let content_x = ln_x + line_num_width;
             let content_width = orphaned_context_width(area).saturating_sub(line_num_width);
-            buffer.fill_rect(content_x, y, content_width, 1, bg);
+            buffer_fill_rect(buffer, content_x, y, content_width, 1, bg);
             let highlight = highlighted_lines.get((*line_num - start_line) as usize);
             draw_highlighted_text(
                 buffer,
@@ -445,14 +451,14 @@ pub(super) fn render_context_line_wrapped_row(
     let ln_str = format!("{line_num:5} ");
     let line_num_width = SBS_LINE_NUM_WIDTH;
     let ln_x = orphaned_context_x(ctx.area);
-    buffer.fill_rect(ln_x, y, line_num_width, 1, bg);
+    buffer_fill_rect(buffer, ln_x, y, line_num_width, 1, bg);
     if row == 0 {
-        buffer.draw_text(ln_x, y, &ln_str, Style::fg(ln_fg).with_bg(bg));
+        buffer_draw_text(buffer, ln_x, y, &ln_str, Style::fg(ln_fg).with_bg(bg));
     }
 
     let content_x = ln_x + line_num_width;
     let content_width = orphaned_context_width(ctx.area).saturating_sub(line_num_width);
-    buffer.fill_rect(content_x, y, content_width, 1, bg);
+    buffer_fill_rect(buffer, content_x, y, content_width, 1, bg);
     if let Some(line_content) = wrapped.get(row) {
         draw_wrapped_line(buffer, content_x, y, content_width, line_content, fg, bg);
     }

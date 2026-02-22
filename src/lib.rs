@@ -1,6 +1,6 @@
 //! botcrit-ui - GitHub-style code review TUI for botcrit
 //!
-//! Uses Elm Architecture (Model/Message/Update/View) with `opentui_rust` rendering.
+//! Uses Elm Architecture (Model/Message/Update/View) with ftui rendering.
 
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_sign_loss)]
@@ -14,6 +14,7 @@ pub mod input;
 pub mod layout;
 pub mod message;
 pub mod model;
+pub mod render_backend;
 pub mod stream;
 pub mod syntax;
 pub mod text;

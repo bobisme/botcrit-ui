@@ -5,10 +5,11 @@
 
 use std::path::Path;
 
-use opentui::Rgba;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Color, FontStyle, Theme as SyntectTheme, ThemeSet};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
+
+use crate::render_backend::{color_from_hex, Rgba};
 
 /// Highlighted text span with color information
 #[derive(Debug, Clone)]
@@ -193,7 +194,7 @@ impl FileHighlighter<'_> {
     }
 }
 
-/// Convert syntect Color to opentui Rgba
+/// Convert syntect `Color` to backend `Rgba`.
 fn syntect_color_to_rgba(color: Color) -> Rgba {
     Rgba::new(
         f32::from(color.r) / 255.0,
@@ -244,17 +245,17 @@ impl SyntaxColors {
     #[must_use]
     pub fn tokyo_night() -> Self {
         Self {
-            keyword: Rgba::from_hex("#bb9af7").unwrap_or(Rgba::WHITE), // purple
-            function: Rgba::from_hex("#7aa2f7").unwrap_or(Rgba::WHITE), // blue
-            type_name: Rgba::from_hex("#2ac3de").unwrap_or(Rgba::WHITE), // cyan
-            string: Rgba::from_hex("#9ece6a").unwrap_or(Rgba::WHITE),  // green
-            number: Rgba::from_hex("#ff9e64").unwrap_or(Rgba::WHITE),  // orange
-            comment: Rgba::from_hex("#565f89").unwrap_or(Rgba::WHITE), // gray
-            operator: Rgba::from_hex("#89ddff").unwrap_or(Rgba::WHITE), // light cyan
-            punctuation: Rgba::from_hex("#a9b1d6").unwrap_or(Rgba::WHITE), // light gray
-            variable: Rgba::from_hex("#c0caf5").unwrap_or(Rgba::WHITE), // foreground
-            constant: Rgba::from_hex("#ff9e64").unwrap_or(Rgba::WHITE), // orange
-            attribute: Rgba::from_hex("#bb9af7").unwrap_or(Rgba::WHITE), // purple
+            keyword: color_from_hex("#bb9af7").unwrap_or(Rgba::WHITE), // purple
+            function: color_from_hex("#7aa2f7").unwrap_or(Rgba::WHITE), // blue
+            type_name: color_from_hex("#2ac3de").unwrap_or(Rgba::WHITE), // cyan
+            string: color_from_hex("#9ece6a").unwrap_or(Rgba::WHITE),  // green
+            number: color_from_hex("#ff9e64").unwrap_or(Rgba::WHITE),  // orange
+            comment: color_from_hex("#565f89").unwrap_or(Rgba::WHITE), // gray
+            operator: color_from_hex("#89ddff").unwrap_or(Rgba::WHITE), // light cyan
+            punctuation: color_from_hex("#a9b1d6").unwrap_or(Rgba::WHITE), // light gray
+            variable: color_from_hex("#c0caf5").unwrap_or(Rgba::WHITE), // foreground
+            constant: color_from_hex("#ff9e64").unwrap_or(Rgba::WHITE), // orange
+            attribute: color_from_hex("#bb9af7").unwrap_or(Rgba::WHITE), // purple
         }
     }
 
@@ -262,17 +263,17 @@ impl SyntaxColors {
     #[must_use]
     pub fn light() -> Self {
         Self {
-            keyword: Rgba::from_hex("#5c21a5").unwrap_or(Rgba::BLACK), // purple
-            function: Rgba::from_hex("#0550ae").unwrap_or(Rgba::BLACK), // blue
-            type_name: Rgba::from_hex("#0969da").unwrap_or(Rgba::BLACK), // cyan
-            string: Rgba::from_hex("#0a3069").unwrap_or(Rgba::BLACK),  // dark blue
-            number: Rgba::from_hex("#953800").unwrap_or(Rgba::BLACK),  // orange
-            comment: Rgba::from_hex("#6e7781").unwrap_or(Rgba::BLACK), // gray
-            operator: Rgba::from_hex("#0550ae").unwrap_or(Rgba::BLACK), // blue
-            punctuation: Rgba::from_hex("#24292f").unwrap_or(Rgba::BLACK), // dark
-            variable: Rgba::from_hex("#24292f").unwrap_or(Rgba::BLACK), // foreground
-            constant: Rgba::from_hex("#953800").unwrap_or(Rgba::BLACK), // orange
-            attribute: Rgba::from_hex("#5c21a5").unwrap_or(Rgba::BLACK), // purple
+            keyword: color_from_hex("#5c21a5").unwrap_or(Rgba::BLACK), // purple
+            function: color_from_hex("#0550ae").unwrap_or(Rgba::BLACK), // blue
+            type_name: color_from_hex("#0969da").unwrap_or(Rgba::BLACK), // cyan
+            string: color_from_hex("#0a3069").unwrap_or(Rgba::BLACK),  // dark blue
+            number: color_from_hex("#953800").unwrap_or(Rgba::BLACK),  // orange
+            comment: color_from_hex("#6e7781").unwrap_or(Rgba::BLACK), // gray
+            operator: color_from_hex("#0550ae").unwrap_or(Rgba::BLACK), // blue
+            punctuation: color_from_hex("#24292f").unwrap_or(Rgba::BLACK), // dark
+            variable: color_from_hex("#24292f").unwrap_or(Rgba::BLACK), // foreground
+            constant: color_from_hex("#953800").unwrap_or(Rgba::BLACK), // orange
+            attribute: color_from_hex("#5c21a5").unwrap_or(Rgba::BLACK), // purple
         }
     }
 }

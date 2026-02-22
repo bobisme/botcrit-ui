@@ -227,7 +227,9 @@ impl InlineEditor {
         let byte_idx = char_to_byte_index(line, self.cursor_col);
         let before = &line[..byte_idx];
         let trimmed = before.trim_end();
-        let word_start = trimmed.rfind(|c: char| c.is_whitespace()).map_or(0, |i| i + 1);
+        let word_start = trimmed
+            .rfind(|c: char| c.is_whitespace())
+            .map_or(0, |i| i + 1);
         self.cursor_col = before[..word_start].chars().count();
     }
 
@@ -261,7 +263,9 @@ impl InlineEditor {
         let before = &line[..byte_idx];
         let trimmed = before.trim_end();
         // Find start of last word
-        let word_start = trimmed.rfind(|c: char| c.is_whitespace()).map_or(0, |i| i + 1);
+        let word_start = trimmed
+            .rfind(|c: char| c.is_whitespace())
+            .map_or(0, |i| i + 1);
         let new_col = before[..word_start].chars().count();
         let start_byte = char_to_byte_index(&self.lines[self.cursor_row], new_col);
         self.lines[self.cursor_row].drain(start_byte..byte_idx);
@@ -549,11 +553,7 @@ impl Model {
         let status_filtered: Vec<&ReviewSummary> = match self.filter {
             ReviewFilter::All => self.reviews.iter().collect(),
             ReviewFilter::Open => self.reviews.iter().filter(|r| r.status == "open").collect(),
-            ReviewFilter::Closed => self
-                .reviews
-                .iter()
-                .filter(|r| r.status != "open")
-                .collect(),
+            ReviewFilter::Closed => self.reviews.iter().filter(|r| r.status != "open").collect(),
         };
         if self.search_input.is_empty() {
             return status_filtered;
@@ -647,12 +647,8 @@ impl Model {
                     .iter()
                     .filter(|t| t.file_path == file.path)
                     .collect();
-                file_threads.sort_by_key(|t| {
-                    positions
-                        .get(&t.thread_id)
-                        .copied()
-                        .unwrap_or(usize::MAX)
-                });
+                file_threads
+                    .sort_by_key(|t| positions.get(&t.thread_id).copied().unwrap_or(usize::MAX));
 
                 for thread in file_threads {
                     items.push(SidebarItem::Thread {

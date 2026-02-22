@@ -1,6 +1,6 @@
 //! Text wrapping, truncation, and highlighted-text drawing utilities.
 
-use opentui::{OptimizedBuffer, Rgba, Style};
+use crate::render_backend::{buffer_draw_text, OptimizedBuffer, Rgba, Style};
 
 use crate::syntax::HighlightSpan;
 use crate::text::wrap_text_preserve;
@@ -116,14 +116,32 @@ pub(super) fn draw_wrapped_line(
 ) {
     match line {
         WrappedLine::Spans(spans) => {
-            draw_highlighted_text(buffer, x, y, max_width, &HighlightContent {
-                spans: Some(spans), fallback_text: "", fallback_fg, bg,
-            });
+            draw_highlighted_text(
+                buffer,
+                x,
+                y,
+                max_width,
+                &HighlightContent {
+                    spans: Some(spans),
+                    fallback_text: "",
+                    fallback_fg,
+                    bg,
+                },
+            );
         }
         WrappedLine::Text(text) => {
-            draw_highlighted_text(buffer, x, y, max_width, &HighlightContent {
-                spans: None, fallback_text: text, fallback_fg, bg,
-            });
+            draw_highlighted_text(
+                buffer,
+                x,
+                y,
+                max_width,
+                &HighlightContent {
+                    spans: None,
+                    fallback_text: text,
+                    fallback_fg,
+                    bg,
+                },
+            );
         }
     }
 }
@@ -149,7 +167,13 @@ pub(super) fn draw_highlighted_text(
     if let Some(spans) = content.spans {
         if spans.is_empty() {
             let text = truncate_chars(content.fallback_text, max_chars);
-            buffer.draw_text(x, y, text, Style::fg(content.fallback_fg).with_bg(bg));
+            buffer_draw_text(
+                buffer,
+                x,
+                y,
+                text,
+                Style::fg(content.fallback_fg).with_bg(bg),
+            );
             return;
         }
 
@@ -168,13 +192,19 @@ pub(super) fn draw_highlighted_text(
             };
             if !text.is_empty() {
                 let drawn = text.chars().count();
-                buffer.draw_text(col, y, text, Style::fg(span.fg).with_bg(bg));
+                buffer_draw_text(buffer, col, y, text, Style::fg(span.fg).with_bg(bg));
                 col += drawn as u32;
                 chars_drawn += drawn;
             }
         }
     } else {
         let text = truncate_chars(content.fallback_text, max_chars);
-        buffer.draw_text(x, y, text, Style::fg(content.fallback_fg).with_bg(bg));
+        buffer_draw_text(
+            buffer,
+            x,
+            y,
+            text,
+            Style::fg(content.fallback_fg).with_bg(bg),
+        );
     }
 }

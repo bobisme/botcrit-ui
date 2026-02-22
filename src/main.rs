@@ -16,23 +16,42 @@ use std::process::Command;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use opentui::input::ParseError;
-use opentui::{
-    enable_raw_mode, terminal_size, Event, InputParser, KeyCode, Renderer,
-    RendererOptions,
-};
 
 use botcrit_ui::config::{load_ui_config, save_ui_config};
 use botcrit_ui::input::map_event_to_message;
 use botcrit_ui::model::{CommentRequest, DiffViewMode, EditorRequest};
+use botcrit_ui::render_backend::{
+    enable_raw_mode, Event, RawModeGuard, Renderer, RendererOptions,
+};
+#[cfg(not(feature = "backend-ftui"))]
+use botcrit_ui::render_backend::terminal_size;
+#[cfg(feature = "backend-ftui")]
+use botcrit_ui::render_backend::{event_from_ftui, rgba_to_packed, OptimizedBuffer};
+#[cfg(feature = "backend-ftui")]
+use botcrit_ui::render_backend::{Cell as OtCell, CellContent as OtCellContent, TextAttributes as OtTextAttributes};
+#[cfg(not(feature = "backend-ftui"))]
+use botcrit_ui::render_backend::{InputParser, KeyCode, KeyEvent, ParseError};
 use botcrit_ui::stream::{
     compute_stream_layout, file_scroll_offset, StreamLayoutParams, SIDE_BY_SIDE_MIN_WIDTH,
 };
 use botcrit_ui::theme::{load_built_in_theme, load_theme_from_path};
 use botcrit_ui::{
-    update, view, CliClient, CritClient, Focus, Highlighter, LayoutMode, Message, Model,
-    Screen, Theme,
+    update, view, CliClient, CritClient, Focus, Highlighter, LayoutMode, Message, Model, Screen,
+    Theme,
 };
+#[cfg(feature = "backend-ftui")]
+use ftui_render::buffer::Buffer as FtuiBuffer;
+#[cfg(feature = "backend-ftui")]
+use ftui_render::cell::{
+    Cell as FtuiCell, CellAttrs as FtuiCellAttrs, CellContent as FtuiCellContent,
+    StyleFlags as FtuiStyleFlags,
+};
+#[cfg(feature = "backend-ftui")]
+use ftui_core::terminal_session::{SessionOptions as FtuiSessionOptions, TerminalSession};
+#[cfg(feature = "backend-ftui")]
+use ftui_render::diff::BufferDiff as FtuiBufferDiff;
+#[cfg(feature = "backend-ftui")]
+use ftui_render::presenter::{Presenter as FtuiPresenter, TerminalCapabilities};
 
 fn main() -> Result<()> {
     let args = parse_args()?;
@@ -88,6 +107,9 @@ fn main() -> Result<()> {
     }
 
     // Get terminal size
+    #[cfg(feature = "backend-ftui")]
+    let (width, height) = (80, 24);
+    #[cfg(not(feature = "backend-ftui"))]
     let (width, height) = terminal_size().unwrap_or((80, 24));
 
     // Create model
@@ -119,11 +141,7 @@ fn main() -> Result<()> {
 
     // Apply --review: jump directly to a review if specified
     if let Some(review_id) = model.pending_review.take() {
-        if let Some(index) = model
-            .reviews
-            .iter()
-            .position(|r| r.review_id == review_id)
-        {
+        if let Some(index) = model.reviews.iter().position(|r| r.review_id == review_id) {
             model.list_index = index;
             model.screen = Screen::ReviewDetail;
             model.focus = Focus::DiffPane;
@@ -150,10 +168,21 @@ fn main() -> Result<()> {
         model.pending_thread = None;
     }
 
-    // Enter raw mode for input handling
+    // Raw mode guard is managed by backend/session integrations.
+    #[cfg(feature = "backend-ftui")]
+    let mut raw_guard: Option<RawModeGuard> = None;
+    #[cfg(not(feature = "backend-ftui"))]
     let mut raw_guard = Some(enable_raw_mode().context("Failed to enable raw mode")?);
 
     // Initialize renderer
+    #[cfg(feature = "backend-ftui")]
+    let options = RendererOptions {
+        use_alt_screen: false,
+        hide_cursor: false,
+        enable_mouse: false,
+        query_capabilities: false,
+    };
+    #[cfg(not(feature = "backend-ftui"))]
     let options = RendererOptions {
         use_alt_screen: true,
         hide_cursor: true,
@@ -166,23 +195,65 @@ fn main() -> Result<()> {
     let mut cursor_guard = Some(CursorGuard::new().context("Failed to hide cursor")?);
     renderer.set_background(model.theme.background);
 
+    #[cfg(feature = "backend-ftui")]
+    let mut ftui_presenter = FtuiPresenter::new(std::io::stdout(), TerminalCapabilities::detect());
+    #[cfg(feature = "backend-ftui")]
+    let mut ftui_prev = FtuiBuffer::new(width, height);
+    #[cfg(feature = "backend-ftui")]
+    let mut ftui_next = FtuiBuffer::new(width, height);
+    #[cfg(feature = "backend-ftui")]
+    let mut terminal_session = Some(TerminalSession::new(FtuiSessionOptions {
+        alternate_screen: true,
+        mouse_capture: true,
+        bracketed_paste: true,
+        focus_events: true,
+        ..Default::default()
+    })
+    .context("Failed to initialize ftui terminal session")?);
+    #[cfg(feature = "backend-ftui")]
+    terminal_session
+        .as_ref()
+        .expect("ftui session initialized")
+        .hide_cursor()
+        .context("Failed to hide cursor via ftui terminal session")?;
+    #[cfg(feature = "backend-ftui")]
+    if let Ok((term_width, term_height)) = terminal_session
+        .as_ref()
+        .expect("ftui session initialized")
+        .size()
+    {
+        if term_width != model.width || term_height != model.height {
+            model.resize(term_width, term_height);
+            renderer
+                .resize(term_width.into(), term_height.into())
+                .context("Failed to apply initial ftui terminal size")?;
+            ftui_prev = FtuiBuffer::new(term_width, term_height);
+            ftui_next = FtuiBuffer::new(term_width, term_height);
+        }
+    }
+
     // Input parser
+    #[cfg(not(feature = "backend-ftui"))]
     let mut input = InputParser::new();
     // Track pending standalone Escape (parser returns Incomplete for bare 0x1b)
+    #[cfg(not(feature = "backend-ftui"))]
     let mut pending_esc = false;
 
     // Main loop
     loop {
-        // Detect external terminal resize even if no input events are received
-        if let Ok((term_width, term_height)) = terminal_size() {
-            let term_width_u16 = term_width;
-            let term_height_u16 = term_height;
-            if term_width_u16 != model.width || term_height_u16 != model.height {
-                model.resize(term_width_u16, term_height_u16);
-                model.needs_redraw = true;
-                renderer
-                    .resize(term_width.into(), term_height.into())
-                    .context("Failed to resize renderer")?;
+        #[cfg(not(feature = "backend-ftui"))]
+        {
+            // Detect external terminal resize even if no input events are received.
+            if let Ok((term_width, term_height)) = terminal_size() {
+                let term_width_u16 = term_width;
+                let term_height_u16 = term_height;
+                if term_width_u16 != model.width || term_height_u16 != model.height {
+                    model.resize(term_width_u16, term_height_u16);
+                    model.needs_redraw = true;
+                    renderer
+                        .resize(term_width.into(), term_height.into())
+                        .context("Failed to resize renderer")?;
+                }
             }
         }
 
@@ -193,6 +264,19 @@ fn main() -> Result<()> {
         // Render
         renderer.clear();
         view(&model, renderer.buffer());
+        #[cfg(feature = "backend-ftui")]
+        {
+            bridge_buffer_to_ftui(renderer.buffer(), &mut ftui_next);
+            let diff = FtuiBufferDiff::compute(&ftui_prev, &ftui_next);
+            ftui_presenter
+                .present(&ftui_next, &diff)
+                .context("Failed to present ftui frame")?;
+            ftui_presenter
+                .hide_cursor()
+                .context("Failed to keep cursor hidden")?;
+            std::mem::swap(&mut ftui_prev, &mut ftui_next);
+        }
+        #[cfg(not(feature = "backend-ftui"))]
         renderer.present().context("Failed to present frame")?;
 
         if model.should_quit {
@@ -206,89 +290,150 @@ fn main() -> Result<()> {
         }
 
         // Poll for input (with timeout for potential refresh)
+        #[cfg(not(feature = "backend-ftui"))]
         let mut buf = [0u8; 32];
-        if let Ok(n) = read_with_timeout(&mut buf, Duration::from_millis(100)) {
-            if n > 0 {
-                // If we had a pending escape and new data arrived, feed ESC + new data
-                // together so the parser can resolve the sequence.
-                if pending_esc {
-                    pending_esc = false;
-                    // Prepend 0x1b to the buffer
-                    let mut combined = Vec::with_capacity(1 + n);
-                    combined.push(0x1b);
-                    combined.extend_from_slice(&buf[..n]);
-                    let combined_len = combined.len();
-                    let mut offset = 0usize;
-                    while offset < combined_len {
-                        match input.parse(&combined[offset..combined_len]) {
-                            Ok((event, consumed)) => {
-                                offset = offset.saturating_add(consumed);
-                                process_event(
-                                    &event,
-                                    &mut model,
-                                    &mut EventContext {
-                                        renderer: &mut renderer,
-                                        raw_guard: &mut raw_guard,
-                                        wrap_guard: &mut wrap_guard,
-                                        cursor_guard: &mut cursor_guard,
-                                        client: &client,
-                                        repo_path: repo_path.as_deref(),
-                                        options,
-                                    },
-                                )?;
-                            }
-                            Err(ParseError::Empty | ParseError::Incomplete) => {
-                                // Check if stuck on a bare escape again
-                                if offset < combined_len
-                                    && combined[offset] == 0x1b
-                                    && offset + 1 == combined_len
-                                {
-                                    pending_esc = true;
-                                }
-                                break;
-                            }
-                            Err(_) => {
-                                offset = offset.saturating_add(1);
-                            }
-                        }
-                    }
+        #[cfg(feature = "backend-ftui")]
+        {
+            if terminal_session
+                .as_ref()
+                .expect("ftui session available")
+                .poll_event(Duration::from_millis(100))
+                .context("Failed polling ftui terminal events")?
+                && let Some(ft_event) = terminal_session
+                    .as_ref()
+                    .expect("ftui session available")
+                    .read_event()
+                    .context("Failed reading ftui terminal event")?
+                && let Some(event) = event_from_ftui(ft_event)
+            {
+                let resized_to = if let Event::Resize(resize) = &event {
+                    Some((resize.width, resize.height))
                 } else {
-                    let mut offset = 0usize;
-                    while offset < n {
-                        match input.parse(&buf[offset..n]) {
-                            Ok((event, consumed)) => {
-                                offset = offset.saturating_add(consumed);
-                                process_event(
-                                    &event,
-                                    &mut model,
-                                    &mut EventContext {
-                                        renderer: &mut renderer,
-                                        raw_guard: &mut raw_guard,
-                                        wrap_guard: &mut wrap_guard,
-                                        cursor_guard: &mut cursor_guard,
-                                        client: &client,
-                                        repo_path: repo_path.as_deref(),
-                                        options,
-                                    },
-                                )?;
-                            }
-                            Err(ParseError::Empty | ParseError::Incomplete) => {
-                                // If the remaining buffer is just 0x1b, mark pending
-                                if offset < n && buf[offset] == 0x1b && offset + 1 == n {
-                                    pending_esc = true;
+                    None
+                };
+                process_event(
+                    &event,
+                    &mut model,
+                    &mut EventContext {
+                        renderer: &mut renderer,
+                        raw_guard: &mut raw_guard,
+                        wrap_guard: &mut wrap_guard,
+                        cursor_guard: &mut cursor_guard,
+                        client: &client,
+                        repo_path: repo_path.as_deref(),
+                        options,
+                        terminal_session: &mut terminal_session,
+                    },
+                )?;
+                if let Some((width, height)) = resized_to {
+                    ftui_prev = FtuiBuffer::new(width, height);
+                    ftui_next = FtuiBuffer::new(width, height);
+                }
+            }
+        }
+
+        #[cfg(not(feature = "backend-ftui"))]
+        {
+            if let Ok(n) = read_with_timeout(&mut buf, Duration::from_millis(100)) {
+                if n > 0 {
+                    // If we had a pending escape and new data arrived, feed ESC + new data
+                    // together so the parser can resolve the sequence.
+                    if pending_esc {
+                        pending_esc = false;
+                        // Prepend 0x1b to the buffer
+                        let mut combined = Vec::with_capacity(1 + n);
+                        combined.push(0x1b);
+                        combined.extend_from_slice(&buf[..n]);
+                        let combined_len = combined.len();
+                        let mut offset = 0usize;
+                        while offset < combined_len {
+                            match input.parse(&combined[offset..combined_len]) {
+                                Ok((event, consumed)) => {
+                                    offset = offset.saturating_add(consumed);
+                                    process_event(
+                                        &event,
+                                        &mut model,
+                                        &mut EventContext {
+                                            renderer: &mut renderer,
+                                            raw_guard: &mut raw_guard,
+                                            wrap_guard: &mut wrap_guard,
+                                            cursor_guard: &mut cursor_guard,
+                                            client: &client,
+                                            repo_path: repo_path.as_deref(),
+                                            options,
+                                        },
+                                    )?;
                                 }
-                                break;
+                                Err(ParseError::Empty | ParseError::Incomplete) => {
+                                    // Check if stuck on a bare escape again
+                                    if offset < combined_len
+                                        && combined[offset] == 0x1b
+                                        && offset + 1 == combined_len
+                                    {
+                                        pending_esc = true;
+                                    }
+                                    break;
+                                }
+                                Err(_) => {
+                                    offset = offset.saturating_add(1);
+                                }
                             }
-                            Err(_) => {
-                                offset = offset.saturating_add(1);
+                        }
+                    } else {
+                        let mut offset = 0usize;
+                        while offset < n {
+                            match input.parse(&buf[offset..n]) {
+                                Ok((event, consumed)) => {
+                                    offset = offset.saturating_add(consumed);
+                                    process_event(
+                                        &event,
+                                        &mut model,
+                                        &mut EventContext {
+                                            renderer: &mut renderer,
+                                            raw_guard: &mut raw_guard,
+                                            wrap_guard: &mut wrap_guard,
+                                            cursor_guard: &mut cursor_guard,
+                                            client: &client,
+                                            repo_path: repo_path.as_deref(),
+                                            options,
+                                        },
+                                    )?;
+                                }
+                                Err(ParseError::Empty | ParseError::Incomplete) => {
+                                    // If the remaining buffer is just 0x1b, mark pending
+                                    if offset < n && buf[offset] == 0x1b && offset + 1 == n {
+                                        pending_esc = true;
+                                    }
+                                    break;
+                                }
+                                Err(_) => {
+                                    offset = offset.saturating_add(1);
+                                }
                             }
                         }
                     }
+                } else if pending_esc {
+                    // No new data arrived — resolve pending escape as standalone Esc key
+                    pending_esc = false;
+                    let esc_event = Event::Key(KeyEvent::key(KeyCode::Esc));
+                    process_event(
+                        &esc_event,
+                        &mut model,
+                        &mut EventContext {
+                            renderer: &mut renderer,
+                            raw_guard: &mut raw_guard,
+                            wrap_guard: &mut wrap_guard,
+                            cursor_guard: &mut cursor_guard,
+                            client: &client,
+                            repo_path: repo_path.as_deref(),
+                            options,
+                        },
+                    )?;
                 }
             } else if pending_esc {
-                // No new data arrived — resolve pending escape as standalone Esc key
+                // Read error/timeout — resolve pending escape
                 pending_esc = false;
-                let esc_event = Event::Key(opentui::KeyEvent::key(KeyCode::Esc));
+                let esc_event = Event::Key(KeyEvent::key(KeyCode::Esc));
                 process_event(
                     &esc_event,
                     &mut model,
@@ -303,37 +448,86 @@ fn main() -> Result<()> {
                     },
                 )?;
             }
-        } else if pending_esc {
-            // Read error/timeout — resolve pending escape
-            pending_esc = false;
-            let esc_event = Event::Key(opentui::KeyEvent::key(KeyCode::Esc));
-            process_event(
-                &esc_event,
-                &mut model,
-                &mut EventContext {
-                    renderer: &mut renderer,
-                    raw_guard: &mut raw_guard,
-                    wrap_guard: &mut wrap_guard,
-                    cursor_guard: &mut cursor_guard,
-                    client: &client,
-                    repo_path: repo_path.as_deref(),
-                    options,
-                },
-            )?;
         }
     }
 
     Ok(())
 }
 
+#[cfg(feature = "backend-ftui")]
+fn bridge_buffer_to_ftui(src: &OptimizedBuffer, dst: &mut FtuiBuffer) {
+    let width = src.width().min(u32::from(dst.width())) as u16;
+    let height = src.height().min(u32::from(dst.height())) as u16;
+    dst.clear();
+
+    for y in 0..height {
+        for x in 0..width {
+            if let Some(cell) = src.get(u32::from(x), u32::from(y)) {
+                dst.set_raw(x, y, convert_backend_cell(cell));
+            }
+        }
+    }
+}
+
+#[cfg(feature = "backend-ftui")]
+fn convert_backend_cell(cell: &OtCell) -> FtuiCell {
+    let mut flags = FtuiStyleFlags::empty();
+    if cell.attributes.contains(OtTextAttributes::BOLD) {
+        flags |= FtuiStyleFlags::BOLD;
+    }
+    if cell.attributes.contains(OtTextAttributes::DIM) {
+        flags |= FtuiStyleFlags::DIM;
+    }
+    if cell.attributes.contains(OtTextAttributes::ITALIC) {
+        flags |= FtuiStyleFlags::ITALIC;
+    }
+    if cell.attributes.contains(OtTextAttributes::UNDERLINE) {
+        flags |= FtuiStyleFlags::UNDERLINE;
+    }
+    if cell.attributes.contains(OtTextAttributes::BLINK) {
+        flags |= FtuiStyleFlags::BLINK;
+    }
+    if cell.attributes.contains(OtTextAttributes::INVERSE) {
+        flags |= FtuiStyleFlags::REVERSE;
+    }
+    if cell.attributes.contains(OtTextAttributes::HIDDEN) {
+        flags |= FtuiStyleFlags::HIDDEN;
+    }
+    if cell.attributes.contains(OtTextAttributes::STRIKETHROUGH) {
+        flags |= FtuiStyleFlags::STRIKETHROUGH;
+    }
+    let attrs = FtuiCellAttrs::new(
+        flags,
+        cell.attributes
+            .link_id()
+            .unwrap_or(FtuiCellAttrs::LINK_ID_NONE),
+    );
+
+    let content = match cell.content {
+        OtCellContent::Char(c) => FtuiCellContent::from_char(c),
+        OtCellContent::Empty => FtuiCellContent::EMPTY,
+        OtCellContent::Continuation => FtuiCellContent::CONTINUATION,
+        OtCellContent::Grapheme(_) => FtuiCellContent::from_char('�'),
+    };
+
+    FtuiCell {
+        content,
+        fg: rgba_to_packed(cell.fg),
+        bg: rgba_to_packed(cell.bg),
+        attrs,
+    }
+}
+
 struct EventContext<'a> {
     renderer: &'a mut Renderer,
-    raw_guard: &'a mut Option<opentui::RawModeGuard>,
+    raw_guard: &'a mut Option<RawModeGuard>,
     wrap_guard: &'a mut Option<AutoWrapGuard>,
     cursor_guard: &'a mut Option<CursorGuard>,
     client: &'a Option<Box<dyn CritClient>>,
     repo_path: Option<&'a Path>,
     options: RendererOptions,
+    #[cfg(feature = "backend-ftui")]
+    terminal_session: &'a mut Option<TerminalSession>,
 }
 
 fn process_event(event: &Event, model: &mut Model, ctx: &mut EventContext<'_>) -> Result<()> {
@@ -354,6 +548,10 @@ fn process_event(event: &Event, model: &mut Model, ctx: &mut EventContext<'_>) -
     }
 
     if let Some(request) = model.pending_editor_request.take() {
+        #[cfg(feature = "backend-ftui")]
+        {
+            ctx.terminal_session.take();
+        }
         let (prev_width, prev_height) = ctx.renderer.size();
         let prev_width = prev_width as u16;
         let prev_height = prev_height as u16;
@@ -368,6 +566,24 @@ fn process_event(event: &Event, model: &mut Model, ctx: &mut EventContext<'_>) -
         let _ = open_file_in_editor(ctx.repo_path, request);
 
         *ctx.raw_guard = Some(enable_raw_mode().context("Failed to enable raw mode")?);
+        #[cfg(feature = "backend-ftui")]
+        let (width, height) = {
+            let session = TerminalSession::new(FtuiSessionOptions {
+                alternate_screen: true,
+                mouse_capture: true,
+                bracketed_paste: true,
+                focus_events: true,
+                ..Default::default()
+            })
+            .context("Failed to reinitialize ftui terminal session")?;
+            session
+                .hide_cursor()
+                .context("Failed to hide cursor via ftui terminal session")?;
+            let size = session.size().unwrap_or((prev_width, prev_height));
+            *ctx.terminal_session = Some(session);
+            size
+        };
+        #[cfg(not(feature = "backend-ftui"))]
         let (width, height) = terminal_size().unwrap_or((prev_width, prev_height));
         *ctx.renderer = Renderer::new_with_options(width.into(), height.into(), ctx.options)
             .context("Failed to initialize renderer")?;
@@ -380,6 +596,10 @@ fn process_event(event: &Event, model: &mut Model, ctx: &mut EventContext<'_>) -
     }
 
     if let Some(request) = model.pending_comment_request.take() {
+        #[cfg(feature = "backend-ftui")]
+        {
+            ctx.terminal_session.take();
+        }
         let (prev_width, prev_height) = ctx.renderer.size();
         let prev_width = prev_width as u16;
         let prev_height = prev_height as u16;
@@ -396,7 +616,8 @@ fn process_event(event: &Event, model: &mut Model, ctx: &mut EventContext<'_>) -
         // Persist the comment if editor returned content
         if let Ok(Some(body)) = &comment_result {
             if let Some(client) = ctx.client.as_ref() {
-                let persist_result = persist_comment(client.as_ref(), ctx.repo_path, &request, body);
+                let persist_result =
+                    persist_comment(client.as_ref(), ctx.repo_path, &request, body);
                 if persist_result.is_ok() {
                     // Refresh review data to show the new comment
                     reload_review_data(model, client.as_ref(), ctx.repo_path);
@@ -405,6 +626,24 @@ fn process_event(event: &Event, model: &mut Model, ctx: &mut EventContext<'_>) -
         }
 
         *ctx.raw_guard = Some(enable_raw_mode().context("Failed to enable raw mode")?);
+        #[cfg(feature = "backend-ftui")]
+        let (width, height) = {
+            let session = TerminalSession::new(FtuiSessionOptions {
+                alternate_screen: true,
+                mouse_capture: true,
+                bracketed_paste: true,
+                focus_events: true,
+                ..Default::default()
+            })
+            .context("Failed to reinitialize ftui terminal session")?;
+            session
+                .hide_cursor()
+                .context("Failed to hide cursor via ftui terminal session")?;
+            let size = session.size().unwrap_or((prev_width, prev_height));
+            *ctx.terminal_session = Some(session);
+            size
+        };
+        #[cfg(not(feature = "backend-ftui"))]
         let (width, height) = terminal_size().unwrap_or((prev_width, prev_height));
         *ctx.renderer = Renderer::new_with_options(width.into(), height.into(), ctx.options)
             .context("Failed to initialize renderer")?;
@@ -419,8 +658,12 @@ fn process_event(event: &Event, model: &mut Model, ctx: &mut EventContext<'_>) -
     // Handle inline editor submission (no TUI teardown needed)
     if let Some(submission) = model.pending_comment_submission.take() {
         if let Some(client) = ctx.client.as_ref() {
-            let persist_result =
-                persist_comment(client.as_ref(), ctx.repo_path, &submission.request, &submission.body);
+            let persist_result = persist_comment(
+                client.as_ref(),
+                ctx.repo_path,
+                &submission.request,
+                &submission.body,
+            );
             match persist_result {
                 Ok(()) => reload_review_data(model, client.as_ref(), ctx.repo_path),
                 Err(e) => {
@@ -633,7 +876,10 @@ fn open_file_in_editor(repo_path: Option<&Path>, request: EditorRequest) -> Resu
 
 /// Open $EDITOR with a temp file for writing a comment.
 /// Returns `Ok(Some(body))` if the user wrote content, `Ok(None)` if cancelled.
-fn run_comment_editor(_repo_path: Option<&Path>, request: &CommentRequest) -> Result<Option<String>> {
+fn run_comment_editor(
+    _repo_path: Option<&Path>,
+    request: &CommentRequest,
+) -> Result<Option<String>> {
     use std::io::Read;
 
     let dir = std::env::temp_dir();
@@ -641,8 +887,8 @@ fn run_comment_editor(_repo_path: Option<&Path>, request: &CommentRequest) -> Re
 
     // Build the temp file with context
     {
-        let mut f = std::fs::File::create(&tmp_path)
-            .context("Failed to create temp file for comment")?;
+        let mut f =
+            std::fs::File::create(&tmp_path).context("Failed to create temp file for comment")?;
 
         // Write context as comments (lines starting with # are stripped later)
         writeln!(f, "# File: {}", request.file_path)?;
@@ -662,7 +908,10 @@ fn run_comment_editor(_repo_path: Option<&Path>, request: &CommentRequest) -> Re
             }
         }
         writeln!(f, "#")?;
-        writeln!(f, "# Write your comment below. Lines starting with # are ignored.")?;
+        writeln!(
+            f,
+            "# Write your comment below. Lines starting with # are ignored."
+        )?;
         writeln!(f, "# Save and exit to submit. Leave empty to cancel.")?;
         writeln!(f)?;
         f.flush()?;
@@ -692,7 +941,11 @@ fn run_comment_editor(_repo_path: Option<&Path>, request: &CommentRequest) -> Re
                 .trim()
                 .to_string();
 
-            if body.is_empty() { None } else { Some(body) }
+            if body.is_empty() {
+                None
+            } else {
+                Some(body)
+            }
         } else {
             None // Editor exited non-zero → cancel
         }
@@ -728,10 +981,7 @@ fn persist_comment(
 }
 
 /// Build file cache entries from data returned by crit (no VCS calls needed).
-fn populate_file_cache(
-    model: &mut Model,
-    files: Vec<botcrit_ui::db::FileData>,
-) {
+fn populate_file_cache(model: &mut Model, files: Vec<botcrit_ui::db::FileData>) {
     use botcrit_ui::diff::ParsedDiff;
 
     model.file_cache.clear();
@@ -790,7 +1040,11 @@ fn reload_review_data(model: &mut Model, client: &dyn CritClient, _repo_path: Op
     }
 }
 
-fn handle_data_loading(model: &mut Model, client: &dyn CritClient, _repo_path: Option<&std::path::Path>) {
+fn handle_data_loading(
+    model: &mut Model,
+    client: &dyn CritClient,
+    _repo_path: Option<&std::path::Path>,
+) {
     // Load review details when entering detail screen
     if model.screen == Screen::ReviewDetail && model.current_review.is_none() {
         let reviews = model.filtered_reviews();
@@ -1070,8 +1324,7 @@ fn populate_demo_threads(model: &mut Model) {
             Comment {
                 comment_id: "cm-002b".to_string(),
                 author: "alice".to_string(),
-                body: "Exactly. The old unwrap_or(false) was masking bcrypt errors."
-                    .to_string(),
+                body: "Exactly. The old unwrap_or(false) was masking bcrypt errors.".to_string(),
                 created_at: "2025-01-15T14:30:00Z".to_string(),
             },
         ],
@@ -1082,8 +1335,7 @@ fn populate_demo_threads(model: &mut Model) {
         vec![Comment {
             comment_id: "cm-003a".to_string(),
             author: "bob".to_string(),
-            body: "Should we also add a shutdown hook for graceful cleanup?"
-                .to_string(),
+            body: "Should we also add a shutdown hook for graceful cleanup?".to_string(),
             created_at: "2025-01-16T09:00:00Z".to_string(),
         }],
     );
@@ -1196,6 +1448,7 @@ index 111222..333444 100644
 }
 
 /// Read from stdin with a timeout
+#[cfg(not(feature = "backend-ftui"))]
 fn read_with_timeout(buf: &mut [u8], _timeout: Duration) -> std::io::Result<usize> {
     use std::io::Read;
     // Note: This is a simplified version. In production, you'd use
